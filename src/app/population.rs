@@ -50,8 +50,9 @@ impl PlayableApp {
     }
 
 
-    /// Resolve every already-positioned non-player actor (frame 0, same Entity
-    /// projection as the protagonist) into `out` for the dynamic depth pass.
+    /// Resolve every already-positioned non-player actor (live action/frame from
+    /// [`ActorMotion`], same Entity projection as the protagonist) into `out` for
+    /// the dynamic depth pass.
     /// Visual-resolution failures are returned with an explicit reason; no actor
     /// is silently skipped.
     pub(super) fn collect_actor_sprites(&mut self, out: &mut Vec<WorldSprite>) -> Vec<String> {
@@ -106,9 +107,60 @@ impl PlayableApp {
     }
 
 
+    /// The non-player actor whose drawn sprite covers virtual `(mx, my)`, as
+    /// `(source entity id, archetype, dialogue_id)`. Uses the same projection and
+    /// frame as [`Self::collect_actor_sprites`]; the front-most hit wins. `None`
+    /// when no actor is under the cursor.
+    pub(super) fn actor_at(&mut self, mx: i32, my: i32) -> Option<(usize, u8, u8)> {
+        let loc = self.current_map;
+        let iox = self.detail_pan[0].round() as i32;
+        let ioy = self.detail_pan[1].round() as i32;
+        let mut best: Option<(usize, u8, u8)> = None;
+        let PlayableApp {
+            world,
+            population_cache,
+            ..
+        } = self;
+        let Some(pop) = population_cache.get(&loc) else {
+            return None;
+        };
+        for a in &pop.actors {
+            let (facing, cell, action, frame) = pop
+                .motion
+                .get(&a.source_entity_id())
+                .map(|m| (m.facing, m.cell, m.action as usize, m.frame as usize))
+                .unwrap_or_else(|| {
+                    let battle = crate::anim::battle_from_flags(a.entity.flags_b);
+                    (
+                        a.entity.facing,
+                        (a.entity.x as i32, a.entity.y as i32),
+                        crate::anim::idle_action(battle),
+                        0,
+                    )
+                });
+            if let Ok((im, gx, gy)) = world.res.actor_frame_state(
+                &a.entity.equipment,
+                a.entity.archetype,
+                a.entity.visual_index,
+                a.entity.palette_offset,
+                facing,
+                action,
+                frame,
+            ) {
+                let (lx, ly) = entity_to_local_px_f(cell.0 as f64, cell.1 as f64);
+                let x = iox + lx.round() as i32 + gx;
+                let y = ioy + ly.round() as i32 + gy;
+                if mx >= x && mx < x + im.w as i32 && my >= y && my < y + im.h as i32 {
+                    best = Some((a.source_entity_id(), a.entity.archetype, a.entity.dialogue_id));
+                }
+            }
+        }
+        best
+    }
+
+
     /// Diagnostic: full authored state of a source `Entity` by id (task §7).
-    pub fn entity_debug_block(&self, id: usize) -> Option<String> {
-        self.tables
+    pub fn entity_debug_block(&self, id: usize) -> Option<String> {        self.tables
             .as_ref()?
             .entities
             .get(id)

@@ -22,6 +22,17 @@ pub(crate) fn parse_object_index(objects: &[u8]) -> Vec<Option<(usize, usize)>> 
 }
 
 
+/// Block-relative byte offset of an object/monster per-frame gx/gy entry.
+///
+/// Original `FUN_00414078` object branch (`0x41410a`-`0x414143`) computes
+/// `block + 0x1728 + row*0x480 + direction*0x90 + fi*8`; the table therefore has
+/// 18 frame slots per direction (`0x90/8`) and 144 per row (`0x480/8`). It is
+/// **not** indexed by the animation frame id.
+pub(crate) fn monster_anchor_offset(row: usize, direction: usize, fi: usize) -> usize {
+    0x1728 + row * 0x480 + (direction & 7) * 0x90 + fi * 8
+}
+
+
 impl Res {
     pub fn prop_sprite(&mut self, object_id: usize, frame: usize, palette_override: u32) -> (Img, i32, i32) {
         let key = (object_id, palette_override);
@@ -157,8 +168,14 @@ impl Res {
 
 
     /// Stateful object/monster frame: `action`/`direction` select the original
-    /// 6-row table (actions `6..=11` alias rows `0..=5`), `anim_frame_index`
-    /// wraps at the row's frame count.
+    /// 6-row animation table (actions `6..=11` alias rows `0..=5`), and
+    /// `anim_frame_index` wraps at the row's frame count.
+    ///
+    /// The **sprite id** comes from that row/direction animation table
+    /// (`block + row*0x130 + dir*0x26 + fi*2 + 0x0A`), but the screen **anchor**
+    /// is a separate per-`(row, direction, frame_index)` table (`FUN_00414078`
+    /// object branch `0x41410a`-`0x414143`):
+    /// `block + 0x1728 + row*0x480 + direction*0x90 + fi*8`.
     pub fn monster_frame_state(
         &mut self,
         object_id: usize,
@@ -168,39 +185,69 @@ impl Res {
         anim_frame_index: usize,
     ) -> (Img, i32, i32, usize) {
         let (frame_id, count) = self.monster_mapped_frame(object_id, action, direction, anim_frame_index);
+        let row = Self::object_row(action);
+        let dir = direction & 7;
+        let fi = if count == 0 { 0 } else { anim_frame_index % count };
+        let im = self.monster_sprite(object_id, palette_id, frame_id);
+        let (gx, gy) = self.monster_anchor(object_id, row, dir, fi);
+        (im, gx, gy, count)
+    }
+
+
+    /// Decoded (cached) monster sprite image for an animation frame id. The
+    /// anchor is resolved separately because a frame id is shared across rows
+    /// and directions (`monster_anchor`).
+    fn monster_sprite(&mut self, object_id: usize, palette_id: usize, frame_id: usize) -> Img {
         let key = (object_id, palette_id as u32, frame_id);
         if let Some(v) = self.monster_frame_cache.get(&key) {
             return v.clone();
         }
-        let value = self.decode_monster_frame(object_id, palette_id, frame_id, count);
+        let value = self.decode_monster_sprite(object_id, palette_id, frame_id);
         self.monster_frame_cache.insert(key, value.clone());
         value
     }
 
 
-    pub(super) fn decode_monster_frame(&self, object_id: usize, pid: usize, frame_id: usize, seq_len: usize) -> (Img, i32, i32, usize) {
+    /// Per-frame screen anchor from the original object anchor table
+    /// (`FUN_00414078` object branch, `0x41410a`-`0x414143`): the entry lives at
+    /// `block + 0x1728 + row*0x480 + direction*0x90 + fi*8`, with the `u16` gx
+    /// at `+4` and gy at `+6`. `(0, 0)` when the entry is out of range.
+    ///
+    /// This is **not** indexed by animation frame id; doing so reads unrelated
+    /// slots and makes any object animation visibly jump.
+    pub(super) fn monster_anchor(
+        &self,
+        object_id: usize,
+        row: usize,
+        direction: usize,
+        fi: usize,
+    ) -> (i32, i32) {
         let blk = self.object_block(object_id);
-        let value = if blk.len() < 0x3228 + 8 {
-            (Rc::new(Image::new(1, 1, [0, 0, 0, 0])), 0, 0, seq_len)
+        let go = monster_anchor_offset(row, direction, fi);
+        if go + 8 <= blk.len() {
+            (i16(blk, go + 4), i16(blk, go + 6))
         } else {
-            let sprite_off = if 0x728 + frame_id * 8 + 8 <= blk.len() {
-                u32(blk, 0x728 + frame_id * 8 + 4) as usize
-            } else {
-                0
-            };
-            let payload = &blk[0x3228..];
-            let (idx, alpha, w, h) = decode_indexed_rle(payload, sprite_off);
-            let pal = &self.palettes[pid.min(255)];
-            let im = indexed_to_rgba(&idx, &alpha, w, h, pal);
-            let go = 0x1728 + frame_id * 8;
-            let (gx, gy) = if go + 8 <= blk.len() {
-                (i16(blk, go + 4), i16(blk, go + 6))
-            } else {
-                (0, 0)
-            };
-            (Rc::new(im), gx, gy, seq_len)
+            (0, 0)
+        }
+    }
+
+
+    /// Decode one object/monster sprite by animation frame id. The sprite
+    /// offset table is indexed by frame id (`block + 0x728 + frame_id*8 + 4`).
+    pub(super) fn decode_monster_sprite(&self, object_id: usize, pid: usize, frame_id: usize) -> Img {
+        let blk = self.object_block(object_id);
+        if blk.len() < 0x3228 + 8 {
+            return Rc::new(Image::new(1, 1, [0, 0, 0, 0]));
+        }
+        let sprite_off = if 0x728 + frame_id * 8 + 8 <= blk.len() {
+            u32(blk, 0x728 + frame_id * 8 + 4) as usize
+        } else {
+            0
         };
-        value
+        let payload = &blk[0x3228..];
+        let (idx, alpha, w, h) = decode_indexed_rle(payload, sprite_off);
+        let pal = &self.palettes[pid.min(255)];
+        Rc::new(indexed_to_rgba(&idx, &alpha, w, h, pal))
     }
 
     // --- humans ---

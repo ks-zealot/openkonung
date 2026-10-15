@@ -74,6 +74,9 @@ pub struct Res {
     /// [`Res::load_intr`]); `None` until/unless loaded. Not yet consumed by the
     /// renderer.
     pub intr: Option<crate::intr::IntrArchive>,
+    /// Decoded `QUEST_R.RES` dialogue/quest database (attached at game start via
+    /// [`Res::load_quest`]); `None` until/unless loaded.
+    pub quest: Option<crate::quest::QuestData>,
     /// Item template database parsed from `konung.res` (icons + CP866 names).
     pub item_db: Option<crate::item::ItemDb>,
     /// Original bitmap fonts parsed from `konung.res` (used for item labels).
@@ -83,7 +86,11 @@ pub struct Res {
 
     terrain_tile_cache: HashMap<usize, Option<Img>>,
     prop_sprite_cache: HashMap<(usize, u32), (Img, i32, i32)>,
-    monster_frame_cache: HashMap<(usize, u32, usize), (Img, i32, i32, usize)>,
+    /// Decoded monster/object sprite image keyed by `(object_id, palette_id,
+    /// frame_id)`. The per-frame screen anchor (gx/gy) is **not** cached here:
+    /// it depends on `(row, direction, frame_index)` and is resolved separately
+    /// in `objects.rs::monster_anchor`.
+    monster_frame_cache: HashMap<(usize, u32, usize), Img>,
     npc_frame_cache: HashMap<(i32, i32, i32, i32, i32, [u16; 6]), (Img, i32, i32, i32)>,
 }
 
@@ -121,6 +128,7 @@ impl Res {
             object_entries,
             overlay_palette_offsets,
             intr: None,
+            quest: None,
             item_db: None,
             fonts: crate::font::Fonts::empty(),
             konung: Vec::new(),
@@ -166,6 +174,16 @@ impl Res {
     /// when no archive is attached or the slot is unused.
     pub fn intr_sprite(&mut self, id: usize) -> Option<Img> {
         self.intr.as_mut().and_then(|a| a.get(id))
+    }
+
+    // --- dialogue / quest database (`QUEST_R.RES`) ---
+
+
+    /// Parse and attach the `QUEST_R.RES` dialogue/quest database. Rejects a
+    /// truncated image (never a partially valid database).
+    pub fn load_quest(&mut self, quest_data: &[u8]) -> Result<(), crate::quest::QuestError> {
+        self.quest = Some(crate::quest::QuestData::parse(quest_data)?);
+        Ok(())
     }
 
     // --- items (loaded Game.N instances + konung.res templates) ---

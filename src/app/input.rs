@@ -16,6 +16,16 @@ impl PlayableApp {
 
 
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
+        // While a dialogue is open it consumes every click: option selection
+        // only (left button). It is closed with Escape or by an end option.
+        if self.dialog.is_some() {
+            if button == 1 {
+                if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                    self.dialog_option_click(vx.round() as i32, vy.round() as i32);
+                }
+            }
+            return;
+        }
         // While the character screen is open it consumes every click: no world
         // targeting and no click-through. It is closed with Escape only.
         if self.character_screen {
@@ -55,7 +65,7 @@ impl PlayableApp {
                     }
                 }
             } else {
-                self.set_target_from_mouse(x, y);
+                self.world_click(x, y);
             }
             self.drag = false;
             self.last_mouse = (x, y);
@@ -63,6 +73,61 @@ impl PlayableApp {
             self.camera_follow = false;
             self.drag = true;
             self.last_mouse = (x, y);
+        }
+    }
+
+
+    /// A left-click in the world: open a dialogue for a human NPC that has a
+    /// `dialogue_id`, otherwise move to the clicked cell. A click on any other
+    /// actor (monsters, objects, non-talkable humans) is ignored — it neither
+    /// opens a dialogue nor issues movement, matching the requested gate.
+    fn world_click(&mut self, x: f64, y: f64) {
+        let Some((vx, vy)) = self.window_to_virtual(x, y) else {
+            return;
+        };
+        let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+        if let Some((entity, archetype, dialogue_id)) = self.actor_at(vx, vy) {
+            // Human visual family (`archetype & 0x40 == 0`) with a dialogue id.
+            if archetype & 0x40 == 0 && dialogue_id != 0xFF {
+                let fw = VIRTUAL_W;
+                let started = {
+                    let world = &self.world;
+                    world.res.quest.as_ref().and_then(|q| {
+                        crate::dialog::DialogState::start(
+                            q,
+                            &world.res.fonts,
+                            entity,
+                            dialogue_id,
+                            fw,
+                        )
+                    })
+                };
+                if let Some(state) = started {
+                    self.dialog = Some(state);
+                    // NPC voice line: `FUN_00435290` picks 0x0C..0x0F for a
+                    // humanoid (`rng()%4 + 0x0C`); deterministic pick here.
+                    self.sounds.push(0x0C + (entity as u16 & 3));
+                }
+            }
+            return;
+        }
+        self.set_target_from_mouse(x, y);
+    }
+
+
+    /// Select the option under the cursor (if any) and advance the dialogue.
+    fn dialog_option_click(&mut self, vx: i32, vy: i32) {
+        let Some(index) = self.dialog.as_ref().and_then(|d| d.option_at(vx, vy)) else {
+            return;
+        };
+        let fw = VIRTUAL_W;
+        let PlayableApp { dialog, world, .. } = self;
+        let (Some(quest), Some(state)) = (world.res.quest.as_ref(), dialog.as_mut()) else {
+            *dialog = None;
+            return;
+        };
+        if !state.select(quest, &world.res.fonts, index, fw) {
+            *dialog = None;
         }
     }
 
@@ -75,6 +140,16 @@ impl PlayableApp {
 
 
     pub fn pointer_move(&mut self, x: f64, y: f64) {
+        // Dialogue hover: highlight the option under the cursor.
+        if self.dialog.is_some() {
+            if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                if let Some(d) = self.dialog.as_mut() {
+                    d.selected = d.option_at(vx, vy);
+                }
+            }
+            return;
+        }
         if self.drag {
             let dx = x - self.last_mouse.0;
             let dy = y - self.last_mouse.1;
@@ -124,6 +199,14 @@ impl PlayableApp {
 
 
     pub fn key_down(&mut self, code: u32) {
+        // Dialogue captures the keyboard: only Escape closes it.
+        if self.dialog.is_some() {
+            if code == KEY_ESCAPE {
+                self.dialog = None;
+                self.hovered_slot = None;
+            }
+            return;
+        }
         match code {
             // Escape closes the character screen when open; otherwise it opens
             // the frontend/menu (the live game is preserved by the host runtime).

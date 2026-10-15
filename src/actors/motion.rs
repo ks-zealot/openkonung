@@ -18,7 +18,9 @@ pub struct ActorMotion {
     /// equals the original `Entity+0xD7`). `0` = unresolved -> [`FALLBACK_WALK_FRAMES`].
     pub walk_frames: u8,
     /// Idle-action cycle length in frames for the current stance
-    /// (`Res::action_cycle_frames` at [`crate::anim::idle_action`]).
+    /// (`Res::action_cycle_frames` at [`crate::anim::idle_action`]). Retained for
+    /// the eventual `flags_a & 0x40 == 0` idle loop; the shipped active
+    /// population holds the idle frame instead (see [`update_population`]).
     pub idle_frames: u8,
     /// Walk-animation frame counter; steps a cell every `walk_frames` ticks.
     pub frame: u8,
@@ -29,6 +31,13 @@ pub struct ActorMotion {
     pub wait: u16,
     /// Enumerating group's spawn rectangle A (wander bounds).
     pub rect_a: Rect,
+    /// Whether this actor belongs to a **citizen** group. The original
+    /// per-frame dispatcher `FUN_00421B50` selects the AI by group class
+    /// (`Group+0x1E`): `class & 0x80 != 0` (and `& 0x40 == 0`) uses the
+    /// waypoint/wander AI `FUN_004168A4`, while `class & 0x40` (object/enemy
+    /// groups) uses `FUN_00412E00`, which **idles in place** while the group
+    /// activity byte `Group+0x1D == 0`. Non-citizens therefore never wander.
+    pub citizen: bool,
 }
 
 
@@ -118,7 +127,7 @@ pub fn update_population(
         .unwrap_or_default();
 
     // Snapshot static per-actor metadata (stable iteration order).
-    let meta: Vec<(usize, u8, u8, u8, u8)> = build
+    let meta: Vec<(usize, u8, u8, u8, u8, bool)> = build
         .actors
         .iter()
         .map(|a| {
@@ -128,6 +137,7 @@ pub fn update_population(
                 a.entity.flags_a,
                 a.entity.kind,
                 a.entity.flags_b,
+                build.motion.get(&a.source_entity_id()).is_some_and(|m| m.citizen),
             )
         })
         .collect();
@@ -135,8 +145,15 @@ pub fn update_population(
     let mut occupied: HashSet<(i32, i32)> = build.motion.values().map(|m| m.cell).collect();
 
     for _ in 0..ticks {
-        for &(eid, arch, flags, kind, flags_b) in &meta {
-            if flags & FLAG_WANDER == 0 || arch & 0x80 != 0 || matches!(kind, 3 | 9) {
+        for &(eid, arch, flags, kind, flags_b, citizen) in &meta {
+            // Only citizen groups (group class `& 0x80`, `& 0x40 == 0`) run the
+            // waypoint/wander AI. Object/enemy groups (`class & 0x40`) idle in
+            // place (`FUN_00412E00`, `+0x1D == 0`) and must not wander.
+            if !citizen
+                || flags & FLAG_WANDER == 0
+                || arch & 0x80 != 0
+                || matches!(kind, 3 | 9)
+            {
                 continue;
             }
             let battle = crate::anim::battle_from_flags(flags_b);
@@ -211,7 +228,13 @@ pub fn update_population(
             // Animate the current stance action (`FUN_00414A34` idle 0/6,
             // `FUN_004142D4` walk 1/7). Walking faces the pending direction and
             // steps one cell per completed walk cycle (`FUN_004123BC` gate:
-            // facing == path[0]); idle loops its own cycle length.
+            // facing == path[0]). The idle frame is **held**, not looped: the
+            // original's per-entity machine (`FUN_004123BC`) only reaches its
+            // idle cases `0`/`6` for `flags_a & 0x40 == 0` entities, or for a
+            // `flags_a & 0x40` entity when its AI (`FUN_00412E00`) reports an
+            // active move. Every actor in the shipped active population is
+            // `flags_a = 0x40` and idles with `FUN_00412E00 == 0`, so it holds
+            // the frame the idle action was issued with (`0`).
             let next_action = if m.path.is_empty() {
                 crate::anim::idle_action(battle) as u8
             } else {
@@ -244,12 +267,7 @@ pub fn update_population(
                     }
                 }
             } else {
-                let idle_frames = if m.idle_frames == 0 {
-                    FALLBACK_WALK_FRAMES
-                } else {
-                    m.idle_frames
-                };
-                m.frame = (m.frame + 1) % idle_frames.max(1);
+                m.frame = 0;
             }
         }
     }

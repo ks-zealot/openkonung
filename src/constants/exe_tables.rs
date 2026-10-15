@@ -25,6 +25,9 @@ pub const ARMOR_TABLE_VA: u32 = 0x459B7C;
 pub const ARMOR_STRIDE: usize = 64;
 pub const SMALL_FONT_OFF: usize = 0x171E34;
 pub const LARGE_FONT_OFF: usize = 0x16193C;
+/// Highlight/selected variant of the small font (VA `0x58B8F0`), used by the
+/// dialog renderer (`FUN_0042CBD0` case 1) for the selected option.
+pub const HIGHLIGHT_FONT_OFF: usize = 0x171AF0;
 /// `konung.res` DGROUP mapping: VA 0x450000 == file offset 0x36200.
 /// Glyph pointers in the font tables are VAs into this segment.
 pub const FONT_DGROUP_VA: u32 = 0x450000;

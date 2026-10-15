@@ -16,7 +16,12 @@ pub fn is_free(collision: &[u16], x: i32, y: i32) -> bool {
 /// dispatch: `flags_a(+0x02) & 0x40` set, `archetype & 0x80 == 0`, kind not
 /// `3`/`9` (`FUN_00415fc8` -> `FUN_004168a4`).
 ///
-/// Movement additionally honors settlement ownership: an entity that owns a
+/// This is the per-entity flag gate only. Movement additionally requires the
+/// actor to belong to a **citizen** group (`Group+0x1E & 0x80 != 0` and
+/// `& 0x40 == 0`, `FUN_00421b50`); object/enemy groups (`& 0x40`) idle in place
+/// (`FUN_00412e00`) and are excluded in [`update_population`].
+///
+/// Movement also honors settlement ownership: an entity that owns a
 /// home waypoint (`FUN_0041182C`, `waypoint.owner == Entity index`) walks to
 /// that waypoint and then stays put, so it is wander-eligible by flag but
 /// anchored in practice ([`update_population`]).

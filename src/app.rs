@@ -161,10 +161,15 @@ pub struct PlayableApp {
     // presentation
     pub frame: Vec<u8>,
     pub texts: Vec<TextItem>,
+    /// Sound ids requested this frame (drained by the browser shell). Mirrors
+    /// the original `FUN_0042A13C(id, ...)` playback calls.
+    pub sounds: Vec<u16>,
     /// Visible inventory slot under the mouse (HUD hover; read-only).
     hovered_slot: Option<usize>,
     /// Character screen (`INTR[2]`) open. Escape closes it.
     pub character_screen: bool,
+    /// Active NPC dialogue (original `FUN_0042CBD0` mode 1). Escape closes it.
+    pub dialog: Option<crate::dialog::DialogState>,
     pub host_w: i32,
     pub host_h: i32,
     drag: bool,
@@ -237,8 +242,10 @@ impl PlayableApp {
             node_rects: HashMap::new(),
             frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H * 4) as usize],
             texts: Vec::new(),
+            sounds: Vec::new(),
             hovered_slot: None,
             character_screen: false,
+            dialog: None,
             host_w: VIRTUAL_W,
             host_h: VIRTUAL_H,
             drag: false,

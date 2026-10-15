@@ -5,6 +5,7 @@ use super::*;
 impl PlayableApp {
     pub(super) fn draw_detail(&mut self) {
         self.texts.clear();
+        self.sounds.clear();
         let fw = VIRTUAL_W as usize;
         let fh = VIRTUAL_H as usize;
         for px in self.frame.iter_mut() {
@@ -134,6 +135,20 @@ impl PlayableApp {
                 ..
             } = self;
             crate::character_screen::draw(frame, fw, fh, &mut world.res, player);
+        }
+
+        // NPC dialogue (original `FUN_0042CBD0` mode 1): INTR[1] window + INTR[0]
+        // band, NPC statement and selectable options.
+        {
+            let PlayableApp {
+                frame,
+                world,
+                dialog,
+                ..
+            } = self;
+            if let Some(state) = dialog.as_ref() {
+                crate::dialog::draw(frame, fw, fh, &mut world.res, state);
+            }
         }
 
         let portals = self.outgoing(self.current_map).len();

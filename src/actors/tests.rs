@@ -274,11 +274,13 @@ fn wanders_classification_matches_dispatch_gate() {
 
 #[test]
 fn wander_target_stays_strictly_inside_rect_and_free() {
-    let rect = Rect { x1: 10, x2: 60, y1: 5, y2: 25 };
+    // Rect large enough for the original 800x600 radii (x=20, y=9 => offsets up
+    // to 2*radius-1), so a candidate is always found.
+    let rect = Rect { x1: 0, x2: 120, y1: 0, y2: 60 };
     let free = free_collision();
     let mut rng = location_rng(1);
     for _ in 0..500 {
-        let t = wander_target(&rect, (30, 15), &mut rng, &free).expect("candidate");
+        let t = wander_target(&rect, (60, 30), &mut rng, &free).expect("candidate");
         assert!(t.0 > rect.x1 as i32 && t.0 < rect.x2 as i32, "x {t:?}");
         assert!(t.1 > rect.y1 as i32 && t.1 < rect.y2 as i32, "y {t:?}");
         assert!(is_free(&free, t.0, t.1));
@@ -363,6 +365,79 @@ fn update_population_moves_only_wanderers() {
     assert_ne!(b.motion[&0].cell, start_c, "citizen must wander");
     assert_eq!(b.motion[&1].cell, start_m, "mob must stay at spawn");
     assert!(rect_contains(&rect, b.motion[&0].cell));
+}
+
+#[test]
+fn object_group_mobs_hold_position() {
+    // Group class `0x41` (bit 0x40) selects the object/enemy AI `FUN_00412e00`,
+    // which idles in place while `Group+0x1D == 0`. Such actors must not wander
+    // even though every active-population entity carries `flags_a = 0x40`.
+    let rect = Rect { x1: 30, x2: 70, y1: 8, y2: 24 };
+    let groups = vec![group(1, 0, 1, 1, 0x41, rect)];
+    let mut mob = entity(0, 6, 0x41, 50, 16);
+    mob.flags_a = FLAG_WANDER;
+    let t = tables(groups, vec![mob]);
+    let collision = free_collision();
+    let mut b = build_population(&t, 1, &collision);
+    assert!(!b.motion[&0].citizen, "class 0x41 is not a citizen group");
+
+    let start = b.motion[&0].cell;
+    for _ in 0..900 {
+        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+    }
+    assert_eq!(b.motion[&0].cell, start, "object-group mob must stay put");
+    assert_eq!(b.motion[&0].frame, 0, "idle frame must be held");
+}
+
+#[test]
+fn citizen_group_wanders() {
+    // Group class `0x81` (bit 0x80, no 0x40) selects `FUN_004168a4`.
+    let rect = Rect { x1: 30, x2: 70, y1: 8, y2: 24 };
+    let groups = vec![group(1, 0, 1, 1, 0x81, rect)];
+    let mut c = entity(0, 6, 0x05, 50, 16);
+    c.flags_a = FLAG_WANDER;
+    let t = tables(groups, vec![c]);
+    let collision = free_collision();
+    let mut b = build_population(&t, 1, &collision);
+    assert!(b.motion[&0].citizen);
+
+    let start = b.motion[&0].cell;
+    for _ in 0..900 {
+        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+    }
+    assert_ne!(b.motion[&0].cell, start, "citizen group member must wander");
+    assert!(rect_contains(&rect, b.motion[&0].cell));
+}
+
+#[test]
+fn idle_wanderer_holds_its_frame_not_loops() {
+    use crate::population::{Settlement, Waypoint};
+    let rect = Rect { x1: 40, x2: 60, y1: 10, y2: 30 };
+    // Entity index 1 owns the home waypoint (owner 0 means "unassigned").
+    let groups = vec![group(1, 1, 1, 1, 0x81, rect)];
+    let mut mob = entity(1, 6, 0x45, 50, 20);
+    mob.flags_a = FLAG_WANDER;
+    let t = tables(groups, vec![entity(0, 6, 0x45, 0, 0), mob]);
+    let collision = free_collision();
+    let mut b = build_population(&t, 1, &collision);
+    // Home waypoint owned by entity 1 at its own cell -> the actor idles there.
+    let settlement = Settlement {
+        index: 0,
+        loc_id: 1,
+        waypoints: vec![Waypoint {
+            facing: 3,
+            owner: 1,
+            x: 50,
+            y: 20,
+        }],
+    };
+    for _ in 0..120 {
+        update_population(&mut b, &collision, Some(&settlement), 1.0 / LOGIC_TICK_HZ);
+    }
+    let m = &b.motion[&1];
+    assert_eq!(m.cell, (50, 20), "home owner must stay at its waypoint");
+    assert_eq!(m.frame, 0, "idle frame must be held, not looped");
+    assert_eq!(m.action, crate::anim::idle_action(false) as u8);
 }
 
 #[test]

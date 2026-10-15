@@ -117,6 +117,15 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
     // Item templates + original fonts from konung.res (used by the HUD labels).
     res.load_items_and_fonts(&l.names);
 
+    // Dialogue/quest database (QUEST_R.RES). Absence or a bad image is
+    // non-fatal: NPCs simply do not open a dialogue.
+    if !l.quest.is_empty() {
+        match res.load_quest(&l.quest) {
+            Ok(()) => eprintln!("QUEST: dialogue database loaded"),
+            Err(e) => eprintln!("QUEST: {e}"),
+        }
+    }
+
     let mut konungs = std::mem::take(&mut l.konungs);
     konungs.sort_by_key(|(id, _)| *id);
     let mut locs: Vec<Location> = Vec::with_capacity(konungs.len());

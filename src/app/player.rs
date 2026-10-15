@@ -168,6 +168,7 @@ impl PlayableApp {
                     self.player_y = ay as f64;
                     self.target = None;
                     self.player_path.clear();
+                    self.dialog = None;
                     self.teleport_cooldown = 0.9;
                     self.last_teleport = Some((e.from, dst, e.rec));
                     self.teleport_error = None;

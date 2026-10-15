@@ -37,6 +37,7 @@ use crate::res::u16 as rd_u16;
 
 pub use crate::constants::exe_tables::SMALL_FONT_OFF;
 pub use crate::constants::exe_tables::LARGE_FONT_OFF;
+pub use crate::constants::exe_tables::HIGHLIGHT_FONT_OFF;
 
 use crate::constants::exe_tables::FONT_DGROUP_VA;
 use crate::constants::exe_tables::FONT_DGROUP_FILE;
@@ -45,6 +46,9 @@ use crate::constants::exe_tables::FONT_DGROUP_FILE;
 pub enum OriginalFont {
     Small,
     Large,
+    /// Small-font highlight/selected variant (`0x58B8F0`), used by the dialog
+    /// renderer for the currently selected option.
+    Highlighted,
 }
 
 /// A decoded glyph: `width * height * 4` RGBA, transparent (alpha 0) where the
@@ -256,6 +260,8 @@ fn blit_glyph(
 pub struct Fonts {
     pub small: Option<FontTable>,
     pub large: Option<FontTable>,
+    /// Highlight/selected small-font variant (`0x58B8F0`).
+    pub highlighted: Option<FontTable>,
 }
 
 impl Fonts {
@@ -264,6 +270,7 @@ impl Fonts {
         Fonts {
             small: None,
             large: None,
+            highlighted: None,
         }
     }
 
@@ -271,6 +278,7 @@ impl Fonts {
         Fonts {
             small: FontTable::parse(konung, SMALL_FONT_OFF),
             large: FontTable::parse(konung, LARGE_FONT_OFF),
+            highlighted: FontTable::parse(konung, HIGHLIGHT_FONT_OFF),
         }
     }
 
@@ -278,6 +286,7 @@ impl Fonts {
         match font {
             OriginalFont::Small => self.small.as_ref(),
             OriginalFont::Large => self.large.as_ref(),
+            OriginalFont::Highlighted => self.highlighted.as_ref(),
         }
     }
 

@@ -30,6 +30,12 @@ pub const KIND_INTR640: u32 = 11;
 
 pub const KIND_INTR800: u32 = 12;
 
+/// `QUEST_R.RES` dialogue/quest data (see `quest.rs`).
+pub const KIND_QUEST: u32 = 13;
+
+/// `SOUNDS.RES` sound archive (see `sound.rs`).
+pub const KIND_SOUNDS: u32 = 14;
+
 
 #[derive(Default)]
 pub struct Loader {
@@ -46,6 +52,8 @@ pub struct Loader {
     pub(super) save800: Vec<u8>,
     pub(super) intr640: Vec<u8>,
     pub(super) intr800: Vec<u8>,
+    pub(super) quest: Vec<u8>,
+    pub(super) sounds: Vec<u8>,
     pub(super) profiles: HashMap<u32, Vec<u8>>,
     pub(super) konungs: Vec<(u32, Vec<u8>)>,
 }
@@ -77,6 +85,8 @@ pub extern "C" fn load_resource(kind: u32, ptr: *mut u8, len: u32) {
         KIND_SAVE800 => l.save800 = data,
         KIND_INTR640 => l.intr640 = data,
         KIND_INTR800 => l.intr800 = data,
+        KIND_QUEST => l.quest = data,
+        KIND_SOUNDS => l.sounds = data,
         _ => {}
     }
     dealloc(ptr, len);

@@ -204,6 +204,11 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                 continue;
             }
         };
+        // Original AI selection is by **group class** (`FUN_00421B50`):
+        // `class & 0x80 != 0` (with `& 0x40 == 0`) runs the waypoint/wander AI
+        // (`FUN_004168A4`); `class & 0x40` (object/enemy groups) runs
+        // `FUN_00412E00`, which idles in place while `Group+0x1D == 0`.
+        let citizen = g.class_1e & 0x80 != 0 && g.class_1e & 0x40 == 0;
         for e in &tables.entities[range] {
             out.enumerated_entities += 1;
             let persisted = e.x != 0 || e.y != 0;
@@ -219,6 +224,7 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                         cell: (e.x as i32, e.y as i32),
                         facing: e.facing,
                         rect_a: g.rect_a,
+                        citizen,
                         ..Default::default()
                     },
                 );
@@ -243,6 +249,7 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                                 cell: (raw.x, raw.y),
                                 facing: e.facing,
                                 rect_a: g.rect_a,
+                                citizen,
                                 ..Default::default()
                             },
                         );

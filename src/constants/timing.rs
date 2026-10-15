@@ -20,11 +20,12 @@ pub const LOGIC_TICK_HZ: f64 = 1000.0 / ORIGINAL_FRAME_MS;
 /// ~= 2.1 cells/s.
 pub const FALLBACK_WALK_FRAMES: u8 = 8;
 /// Wander search radius used by `FUN_00413a84` (`_DAT_0081d6e0`/`_DAT_0081d6a4`).
-/// Those are runtime `.bss` values, not statically resolvable here; the accepted
-/// candidate must also lie strictly inside the group rectangle, so these only
-/// bound the random offset.
-pub const WANDER_RADIUS_X: i32 = 8;
-pub const WANDER_RADIUS_Y: i32 = 4;
+/// Set statically by `FUN_0042781c` (0x42781C): the 800x600 profile uses
+/// `x = 20`, `y = 9` (the 640x480 profile uses `17`/`7`). `FUN_00413a84` samples
+/// `rng() % (2*radius)`, and the accepted candidate must also lie strictly
+/// inside the group rectangle, so these bound the random offset.
+pub const WANDER_RADIUS_X: i32 = 20;
+pub const WANDER_RADIUS_Y: i32 = 9;
 /// `FUN_00413a84` retry count.
 pub const WANDER_MAX_ATTEMPTS: u8 = 10;
 /// `Entity+0x02` bit set on wandering citizens (`FUN_004168a4` dispatch gate).

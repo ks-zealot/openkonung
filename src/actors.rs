@@ -2,8 +2,9 @@
 //!
 //! Builds renderable actors from the Phase B [`crate::population`] Group/Entity
 //! tables. It performs **no** population growth, combat or dialogue. Movement
-//! and animation **state** (action/frame) advance for wander-eligible actors via
-//! [`update_population`]; sprite decoding is done by the render layer.
+//! advances for **citizen-group** wander-eligible actors via
+//! [`update_population`]; object/enemy-group actors idle in place; sprite
+//! decoding is done by the render layer.
 //!
 //! Source selection (`KONUNG_SOURCE_OF_TRUTH.md` §4.1/§4.2):
 //! - group `location_id (+0x1B) == current_location_id`;

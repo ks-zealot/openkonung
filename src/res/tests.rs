@@ -60,6 +60,23 @@ fn object_actions_six_to_eleven_alias_zero_to_five() {
     }
 }
 
+#[test]
+fn object_anchor_is_indexed_by_row_dir_frame_not_frame_id() {
+    use super::objects::monster_anchor_offset;
+
+    // Original object anchor table: `0x1728 + row*0x480 + dir*0x90 + fi*8`
+    // (18 slots per direction, 144 per row). `FUN_00414078` 0x41410a-0x414143.
+    assert_eq!(monster_anchor_offset(0, 0, 0), 0x1728);
+    assert_eq!(monster_anchor_offset(1, 0, 0), 0x1728 + 0x480);
+    assert_eq!(monster_anchor_offset(0, 1, 0), 0x1728 + 0x90);
+    assert_eq!(monster_anchor_offset(0, 0, 1), 0x1728 + 8);
+    assert_eq!(monster_anchor_offset(5, 7, 17), 0x1728 + 5 * 0x480 + 7 * 0x90 + 17 * 8);
+
+    // Regression: a walk frame id (e.g. 132 for row 1 / dir 0) must NOT be used
+    // as the table index; that was the "jumping" object-anchor bug.
+    assert_ne!(monster_anchor_offset(1, 0, 0), 0x1728 + 132 * 8);
+}
+
 /// End-to-end: equipped items composite their GRAPH overlays onto a Game.N
 /// humanoid, and the frame cache distinguishes different loadouts. Gated on
 /// the original files being present.
@@ -90,4 +107,42 @@ fn human_frame_from_base_applies_equipment_overlays() {
         bare.0.data, dressed.0.data,
         "equipment must change the composited frame"
     );
+}
+
+/// Real-object check for the per-frame anchor table: the walk row must be a
+/// monotonic sweep and must NOT alias the `flags` idle region or the animation
+/// frame id. Gated on the original files being present.
+#[test]
+fn monster_anchor_uses_row_dir_frame_index() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |n: &str| std::fs::read(dir.join(n)).ok();
+    let (Some(game), Some(graph), Some(objects), Some(exe)) = (
+        read("Game.res"),
+        read("GRAPH.RES"),
+        read("Objects.res"),
+        read("CLIENT.EXE"),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let res = Res::new(game, graph, objects, exe);
+
+    // Object 0's walk row (row 1, dir 0) sweeps its gx monotonically in the
+    // original table; the buggy frame-id indexing produced (0,0) mid-cycle.
+    let walk: Vec<i32> = (0..12)
+        .map(|fi| res.monster_anchor(0, 1, 0, fi).0)
+        .collect();
+    assert!(
+        walk.windows(2).all(|w| w[1] < w[0]),
+        "walk anchors must be a strict sweep: {walk:?}"
+    );
+
+    // Idle (row 0) and walk (row 1) are distinct table regions.
+    assert_ne!(res.monster_anchor(0, 0, 0, 0), res.monster_anchor(0, 1, 0, 0));
+
+    // The anchor must be the bytes at `0x1728 + row*0x480 + dir*0x90 + fi*8`.
+    let blk = res.object_block(0);
+    let off = 0x1728 + 0x480; // row 1, dir 0, fi 0
+    let expected = (super::i16(blk, off + 4), super::i16(blk, off + 6));
+    assert_eq!(res.monster_anchor(0, 1, 0, 0), expected);
 }
