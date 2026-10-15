@@ -1,0 +1,109 @@
+//! `input` subsystem of [`crate::lib`] (split from `lib.rs`).
+
+use super::*;
+
+#[no_mangle]
+pub extern "C" fn pointer_down(button: u32, x: f32, y: f32) {
+    let action = {
+        let rt = runtime_mut();
+        match rt.active {
+            ActiveMode::Frontend => match rt.frontend.as_mut() {
+                Some(f) => f
+                    .pointer_down(button, x as f64, y as f64)
+                    .map(InputAction::Command)
+                    .unwrap_or(InputAction::None),
+                None => InputAction::None,
+            },
+            ActiveMode::Game => {
+                if let Some(g) = rt.game.as_deref_mut() {
+                    g.pointer_down(button, x as f64, y as f64);
+                }
+                InputAction::None
+            }
+        }
+    };
+    resolve_input(action);
+}
+
+
+#[no_mangle]
+pub extern "C" fn pointer_up(button: u32, x: f32, y: f32) {
+    let _ = (x, y);
+    let rt = runtime_mut();
+    match rt.active {
+        ActiveMode::Frontend => {
+            if let Some(f) = rt.frontend.as_mut() {
+                f.pointer_up(button);
+            }
+        }
+        ActiveMode::Game => {
+            if let Some(g) = rt.game.as_deref_mut() {
+                g.pointer_up(button);
+            }
+        }
+    }
+}
+
+
+#[no_mangle]
+pub extern "C" fn pointer_move(x: f32, y: f32) {
+    let rt = runtime_mut();
+    match rt.active {
+        ActiveMode::Frontend => {
+            if let Some(f) = rt.frontend.as_mut() {
+                f.pointer_move(x as f64, y as f64);
+            }
+        }
+        ActiveMode::Game => {
+            if let Some(g) = rt.game.as_deref_mut() {
+                g.pointer_move(x as f64, y as f64);
+            }
+        }
+    }
+}
+
+
+#[no_mangle]
+pub extern "C" fn wheel(delta: f32) {
+    let rt = runtime_mut();
+    if rt.active == ActiveMode::Game {
+        if let Some(g) = rt.game.as_deref_mut() {
+            g.wheel(delta as f64);
+        }
+    }
+}
+
+
+#[no_mangle]
+pub extern "C" fn key_down(code: u32) {
+    let action = {
+        let rt = runtime_mut();
+        match rt.active {
+            ActiveMode::Frontend => match rt.frontend.as_mut() {
+                Some(f) => f
+                    .key_down(code)
+                    .map(InputAction::Command)
+                    .unwrap_or(InputAction::None),
+                None => InputAction::None,
+            },
+            ActiveMode::Game => {
+                let mut open = false;
+                if let Some(g) = rt.game.as_deref_mut() {
+                    g.key_down(code);
+                    if g.request_menu {
+                        g.request_menu = false;
+                        open = true;
+                    }
+                }
+                if open {
+                    InputAction::OpenMenu
+                } else {
+                    InputAction::None
+                }
+            }
+        }
+    };
+    resolve_input(action);
+}
+
+

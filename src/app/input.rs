@@ -1,0 +1,207 @@
+//! `input` subsystem of [`crate::app`] (split from `app.rs`).
+
+use super::*;
+
+impl PlayableApp {
+    /// Index of the party-portrait cell under the pointer (2x5 grid), if any.
+    /// Read-only hit test; the original *selects* the member here (region
+    /// `0x1e..0x27`) and never opens the character screen from it.
+    pub(super) fn party_cell_at(&self, x: f64, y: f64) -> Option<usize> {
+        let (mx, my) = self.window_to_virtual(x, y)?;
+        let (mx, my) = (mx.round() as i32, my.round() as i32);
+        let l = crate::hud::layout(VIRTUAL_W);
+        (0..crate::hud::PARTY_CELLS)
+            .find(|&i| l.party_cell(i).map(|r| r.contains(mx, my)).unwrap_or(false))
+    }
+
+
+    pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
+        // While the character screen is open it consumes every click: no world
+        // targeting and no click-through. It is closed with Escape only.
+        if self.character_screen {
+            return;
+        }
+        // A left-click on a party-portrait cell is consumed (the original
+        // selects that member; with a one-member party it is a no-op). It must
+        // not issue a world movement command. The character screen is not opened
+        // by this click (original: opened by a command) — use `C` instead.
+        if button == 1 && !self.mode_graph && self.party_cell_at(x, y).is_some() {
+            return;
+        }
+        if button == 3 && !self.mode_graph {
+            self.mode_graph = true;
+            self.selected = None;
+            self.drag = false;
+        } else if button == 1 {
+            if self.mode_graph {
+                let v = self.window_to_virtual(x, y);
+                if let Some((vx, vy)) = v {
+                    let hit = self
+                        .node_rects
+                        .iter()
+                        .find(|(_, r)| {
+                            vx >= r.0 as f64
+                                && vx < (r.0 + r.2) as f64
+                                && vy >= r.1 as f64
+                                && vy < (r.1 + r.3) as f64
+                        })
+                        .map(|(k, _)| *k);
+                    if let Some(lid) = hit {
+                        self.current_map = lid;
+                        self.selected = Some(lid);
+                        self.mode_graph = false;
+                        self.target = None;
+                        self.fit_detail();
+                    }
+                }
+            } else {
+                self.set_target_from_mouse(x, y);
+            }
+            self.drag = false;
+            self.last_mouse = (x, y);
+        } else if button == 2 {
+            self.camera_follow = false;
+            self.drag = true;
+            self.last_mouse = (x, y);
+        }
+    }
+
+
+    pub fn pointer_up(&mut self, button: u32) {
+        if button == 2 {
+            self.drag = false;
+        }
+    }
+
+
+    pub fn pointer_move(&mut self, x: f64, y: f64) {
+        if self.drag {
+            let dx = x - self.last_mouse.0;
+            let dy = y - self.last_mouse.1;
+            self.last_mouse = (x, y);
+            self.hovered_slot = None;
+            if self.mode_graph {
+                self.graph_pan[0] += dx;
+                self.graph_pan[1] += dy;
+            } else {
+                let (_, _, _, _, sc) = self.window_game_rect();
+                self.detail_pan[0] += dx / sc.max(1e-6);
+                self.detail_pan[1] += dy / sc.max(1e-6);
+            }
+            return;
+        }
+        if self.mode_graph {
+            self.hovered_slot = None;
+        } else {
+            self.update_hover(x, y);
+        }
+    }
+
+
+    /// Read-only HUD hover: which visible inventory cell is under the cursor.
+    /// Does not touch world targeting, movement or portals.
+    pub(super) fn update_hover(&mut self, x: f64, y: f64) {
+        let Some((mx, my)) = self.window_to_virtual(x, y) else {
+            self.hovered_slot = None;
+            return;
+        };
+        let l = crate::hud::layout(VIRTUAL_W);
+        let (mx, my) = (mx.round() as i32, my.round() as i32);
+        self.hovered_slot = (0..l.visible_slots).find(|&slot| {
+            l.inventory_slot_rect(slot, 70)
+                .map(|r| r.contains(mx, my))
+                .unwrap_or(false)
+        });
+    }
+
+
+    pub fn wheel(&mut self, delta: f64) {
+        if self.mode_graph {
+            let factor = 1.2f64.powf(delta);
+            self.graph_zoom = (self.graph_zoom * factor).clamp(0.04, 3.0);
+        }
+    }
+
+
+    pub fn key_down(&mut self, code: u32) {
+        match code {
+            // Escape closes the character screen when open; otherwise it opens
+            // the frontend/menu (the live game is preserved by the host runtime).
+            KEY_ESCAPE => {
+                if self.character_screen {
+                    self.character_screen = false;
+                    self.hovered_slot = None;
+                } else {
+                    self.request_menu = true;
+                }
+            }
+            KEY_H => {
+                if !self.mode_graph {
+                    self.mode_graph = true;
+                    self.selected = None;
+                } else {
+                    self.mode_graph = false;
+                    self.selected = Some(self.current_map);
+                    self.fit_detail();
+                }
+            }
+            KEY_BACKSPACE => {
+                if !self.mode_graph {
+                    self.mode_graph = true;
+                    self.selected = None;
+                }
+            }
+            // Tab toggles the protagonist's battle stance (`Entity+0x03` bit
+            // `0x04`): peaceful idle/walk (6/7) <-> battle idle/walk (0/1).
+            KEY_TAB => {
+                if !self.mode_graph {
+                    self.player.flags_b ^= crate::anim::FLAG_BATTLE;
+                    self.anim_time = 0.0;
+                }
+            }
+            KEY_D => {
+                self.debug_ids = !self.debug_ids;
+            }
+            KEY_P => {
+                self.population_debug = !self.population_debug;
+            }
+            KEY_L => {
+                self.layer_debug = !self.layer_debug;
+            }
+            KEY_T => {
+                self.teleport_debug = !self.teleport_debug;
+            }
+            KEY_F => {
+                if !self.mode_graph {
+                    self.fit_detail();
+                    if self.camera_follow {
+                        self.center_camera_on_player(true, 0.0);
+                    }
+                }
+            }
+            // `C` toggles the character screen (the original opens it via a UI
+            // command/action, not a mouse portrait click; this is the remake's
+            // explicit binding). Escape also closes it.
+            KEY_C => {
+                if !self.mode_graph {
+                    self.character_screen = !self.character_screen;
+                    self.hovered_slot = None;
+                }
+            }
+            // `V` toggles camera follow (moved off `C`).
+            KEY_V => {
+                if !self.mode_graph {
+                    self.camera_follow = !self.camera_follow;
+                    if self.camera_follow {
+                        self.center_camera_on_player(true, 0.0);
+                    }
+                }
+            }
+            KEY_R => {
+                self.world.clear_caches();
+            }
+            _ => {}
+        }
+    }
+
+}
