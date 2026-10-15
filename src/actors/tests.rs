@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::actors`] module.
+
 use super::*;
 use crate::population::{Entity, EntityStats, Group};
 

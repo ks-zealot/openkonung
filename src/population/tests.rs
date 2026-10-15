@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::population`] module.
+
 use super::*;
 
 fn empty_game() -> Vec<u8> {

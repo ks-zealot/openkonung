@@ -1,3 +1,5 @@
+//! OpenKonung live-game state machine: [`PlayableApp`] and its subsystem modules.
+
 use std::collections::{HashMap, HashSet};
 
 use crate::actors::{build_population, find_path, sort_actors, update_population, PopulationBuild, LOGIC_TICK_HZ};

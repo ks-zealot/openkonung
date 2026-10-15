@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::character`] module.
+
 use super::*;
 use crate::hero::hero;
 

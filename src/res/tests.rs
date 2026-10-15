@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::res`] module.
+
 use super::{human_frame_count, human_mapped_frame, Res};
 
 #[test]

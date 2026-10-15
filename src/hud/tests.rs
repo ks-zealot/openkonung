@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::hud`] module.
+
 use super::*;
 use crate::res::Image;
 use std::rc::Rc;

@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::item`] module.
+
 use super::*;
 
 fn install_dir() -> std::path::PathBuf {

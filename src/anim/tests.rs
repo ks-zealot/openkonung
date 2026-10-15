@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::anim`] module.
+
 use super::*;
 
 #[test]

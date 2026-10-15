@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::loc`] module.
+
 use super::*;
 
 fn collision_buffer() -> Vec<u8> {

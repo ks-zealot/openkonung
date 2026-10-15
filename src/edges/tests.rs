@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::edges`] module.
+
 use super::*;
 
 fn edge(src: [i32; 2], dst: [i32; 2], dst2: [i32; 2]) -> Edge {

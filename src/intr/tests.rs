@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::intr`] module.
+
 use super::*;
 
 fn put_u16(v: &mut Vec<u8>, x: u16) {

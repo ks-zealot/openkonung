@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::coords`] module.
+
 use super::*;
 
 #[test]

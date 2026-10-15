@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::font`] module.
+
 use super::*;
 
 fn konung() -> Option<Vec<u8>> {

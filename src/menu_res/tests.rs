@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::menu_res`] module.
+
 use super::*;
 
 /// Build a single record. `rows` is a list of already-encoded row bytes

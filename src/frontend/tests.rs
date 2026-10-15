@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::frontend`] module.
+
 use super::*;
 use layout::{NEWH_HIT_640, MENU_IMAGE_A};
 

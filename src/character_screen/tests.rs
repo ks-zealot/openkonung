@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::character_screen`] module.
+
 use super::*;
 use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter, PrimaryStat};
 use crate::hero::hero;

@@ -1,3 +1,5 @@
+//! Original resource decoding: GRAPH/OBJECTS archives, indexed RLE, palettes and sprite composition.
+
 use std::collections::HashMap;
 use std::rc::Rc;
 

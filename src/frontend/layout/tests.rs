@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::frontend::layout`] module.
+
 use super::*;
 
 #[test]

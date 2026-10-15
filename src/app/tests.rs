@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::app`] module.
+
 use super::*;
 
 // Konung.4, Game.1: gates at raw averaged 244/245 grid centers, in gate-index order.

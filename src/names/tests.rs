@@ -1,3 +1,5 @@
+//! Unit tests for the [`crate::names`] module.
+
 use super::*;
 
 fn konung() -> Option<Vec<u8>> {
