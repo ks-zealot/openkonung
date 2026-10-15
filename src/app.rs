@@ -2,24 +2,23 @@
 //!
 //! Faithful port of `konung_playable_prototype.py`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::actors::{build_population, sort_actors, PopulationBuild};
-use crate::coords::{entity_to_local_px_f, local_px_to_entity, local_px_to_entity_f};
+use crate::actors::{build_population, find_path, sort_actors, update_population, PopulationBuild, LOGIC_TICK_HZ};
+use crate::coords::{entity_to_local_px_f, local_px_to_entity, step_by_direction};
 use crate::edges::{Edge, Pair};
 use crate::character::PlayerCharacter;
-use crate::loc::{prop_to_local_px, LOCAL_ORIGIN_X};
-use crate::population::GameTables;
+use crate::loc::prop_to_local_px;
+use crate::population::{GameTables, Settlement};
 use crate::render::{scale_image, LayerCounts, World, WorldSprite};
-use crate::res::{
-    blit, fill_ellipse, fill_rect, line, Img, GRID_ODD_SHIFT, GRID_Y_STEP,
-};
+use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
 
 pub const VIRTUAL_W: i32 = 800;
 pub const VIRTUAL_H: i32 = 600;
 
 pub const KEY_ESCAPE: u32 = 27;
 pub const KEY_BACKSPACE: u32 = 8;
+pub const KEY_TAB: u32 = 9;
 pub const KEY_C: u32 = 67;
 pub const KEY_D: u32 = 68;
 pub const KEY_F: u32 = 70;
@@ -28,6 +27,7 @@ pub const KEY_L: u32 = 76;
 pub const KEY_P: u32 = 80;
 pub const KEY_R: u32 = 82;
 pub const KEY_T: u32 = 84;
+pub const KEY_V: u32 = 86;
 
 /// Cosmetic binding between one outgoing transition edge and its nearest visual
 /// 244/245 gate. The canonical gameplay trigger is the source of truth: the
@@ -59,31 +59,6 @@ pub struct TextItem {
     pub rgb: u32,
     pub scale: f32,
     pub s: String,
-}
-
-/// Transition-coordinate → local-pixel mapping used for rendering the player,
-/// targets and transitions.
-///
-/// `local_x = LOCAL_ORIGIN_X + transition_x * 29`, `local_y = transition_y * 16`.
-/// This aligns transition coordinates with the existing staggered terrain
-/// representation (`terrain_y = transition_y`,
-/// `terrain_x = (transition_x + (transition_y & 1)) / 2`), e.g. transition
-/// `(100, 60)` → local pixel `(2929, 960)`.
-pub fn transition_xy_to_screen(x: f64, y: f64) -> (f64, f64) {
-    (
-        LOCAL_ORIGIN_X as f64 + x * GRID_ODD_SHIFT as f64,
-        y * GRID_Y_STEP as f64,
-    )
-}
-
-pub fn vec_to_direction(dx: f64, dy: f64, fallback: i32) -> i32 {
-    if dx.abs() < 1e-6 && dy.abs() < 1e-6 {
-        return fallback;
-    }
-    let a = dy.atan2(dx);
-    let sector = (a / (std::f64::consts::PI / 4.0)).round() as i64;
-    let sector = sector.rem_euclid(8) as usize;
-    [4, 5, 6, 7, 0, 1, 2, 3][sector]
 }
 
 /// Center of a trigger rectangle given its raw (possibly unnormalized) corners.
@@ -318,7 +293,12 @@ pub struct PlayableApp {
     pub player_y: f64,
     pub player_dir: i32,
     target: Option<(f64, f64)>,
-    player_speed_px: f64,
+    /// Remaining movement-direction codes (0..=7) to `target`. Each completed
+    /// walk-animation cycle consumes one code and steps one cell
+    /// (`FUN_0043DA1F` queue + `FUN_0041435C`), like the original.
+    player_path: Vec<u8>,
+    /// Seconds accumulated toward the next player cell step.
+    player_step_t: f64,
     anim_time: f64,
     teleport_cooldown: f64,
     last_teleport: Option<(u32, u32, usize)>,
@@ -331,6 +311,8 @@ pub struct PlayableApp {
     // Phase C1 population (Game.N Group/Entity tables). Pending `(0,0)`
     // entities are deferred to C2; no runtime placement/AI is implemented.
     tables: Option<GameTables>,
+    /// Parsed `Game.N` settlements (citizen home/role waypoints, `+0x3D0`).
+    settlements: Vec<Settlement>,
     population_cache: HashMap<u32, PopulationBuild>,
     population_debug: bool,
     population_rejected: Vec<String>,
@@ -355,6 +337,10 @@ pub struct PlayableApp {
     // presentation
     pub frame: Vec<u8>,
     pub texts: Vec<TextItem>,
+    /// Visible inventory slot under the mouse (HUD hover; read-only).
+    hovered_slot: Option<usize>,
+    /// Character screen (`INTR[2]`) open. Escape closes it.
+    pub character_screen: bool,
     pub host_w: i32,
     pub host_h: i32,
     drag: bool,
@@ -382,6 +368,7 @@ impl PlayableApp {
         start_y: f64,
         start_dir: i32,
         tables: Option<GameTables>,
+        settlements: Vec<Settlement>,
     ) -> PlayableApp {
         let mut app = PlayableApp {
             world,
@@ -401,13 +388,15 @@ impl PlayableApp {
             player_y: start_y,
             player_dir: start_dir & 7,
             target: None,
-            player_speed_px: 215.0,
+            player_path: Vec::new(),
+            player_step_t: 0.0,
             anim_time: 0.0,
             teleport_cooldown: 0.0,
             last_teleport: None,
             teleport_error: None,
             teleport_debug: false,
             tables,
+            settlements,
             population_cache: HashMap::new(),
             population_debug: false,
             population_rejected: Vec::new(),
@@ -424,6 +413,8 @@ impl PlayableApp {
             node_rects: HashMap::new(),
             frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H * 4) as usize],
             texts: Vec::new(),
+            hovered_slot: None,
+            character_screen: false,
             host_w: VIRTUAL_W,
             host_h: VIRTUAL_H,
             drag: false,
@@ -550,6 +541,35 @@ impl PlayableApp {
                 _ => PopulationBuild::default(),
             }
         };
+        // Per-actor cycle lengths (original `Entity+0xD7`): one collision cell
+        // is stepped per this many walk frames. Resolved once, from the spawn
+        // facing and the actor's authored stance (`Entity+0x03 & 0x04`).
+        for a in &build.actors {
+            let facing = (a.entity.facing & 7) as usize;
+            let battle = crate::anim::battle_from_flags(a.entity.flags_b);
+            let wf = self
+                .world
+                .res
+                .walk_cycle_frames(a.entity.archetype, a.entity.visual_index, facing, battle)
+                .unwrap_or(0)
+                .min(u8::MAX as usize) as u8;
+            let idle = self
+                .world
+                .res
+                .action_cycle_frames(
+                    a.entity.archetype,
+                    a.entity.visual_index,
+                    facing,
+                    crate::anim::idle_action(battle),
+                )
+                .unwrap_or(0)
+                .min(u8::MAX as usize) as u8;
+            if let Some(m) = build.motion.get_mut(&a.source_entity_id()) {
+                m.walk_frames = wf;
+                m.idle_frames = idle;
+                m.action = crate::anim::idle_action(battle) as u8;
+            }
+        }
         sort_actors(&mut build.actors);
         self.population_cache.insert(loc_id, build);
     }
@@ -560,17 +580,35 @@ impl PlayableApp {
     /// is silently skipped.
     fn collect_actor_sprites(&mut self, out: &mut Vec<WorldSprite>) -> Vec<String> {
         let mut rejected: Vec<String> = Vec::new();
-        if let Some(pop) = self.population_cache.get(&self.current_map) {
+        let loc_id = self.current_map;
+        if let Some(pop) = self.population_cache.get(&loc_id) {
             for a in &pop.actors {
-                match self.world.res.actor_frame(
+                // Live motion (cell + facing + action) when present, else the
+                // placement with the authored stance's idle action at frame 0.
+                let (facing, cell, action, frame) = pop
+                    .motion
+                    .get(&a.source_entity_id())
+                    .map(|m| (m.facing, m.cell, m.action as usize, m.frame as usize))
+                    .unwrap_or_else(|| {
+                        let battle = crate::anim::battle_from_flags(a.entity.flags_b);
+                        (
+                            a.entity.facing,
+                            (a.entity.x as i32, a.entity.y as i32),
+                            crate::anim::idle_action(battle),
+                            0,
+                        )
+                    });
+                match self.world.res.actor_frame_state(
+                    &a.entity.equipment,
                     a.entity.archetype,
                     a.entity.visual_index,
                     a.entity.palette_offset,
-                    a.entity.facing,
+                    facing,
+                    action,
+                    frame,
                 ) {
                     Ok((im, gx, gy)) => {
-                        let (rx, ry) = a.display_raw();
-                        let (lx, ly) = entity_to_local_px_f(rx, ry);
+                        let (lx, ly) = entity_to_local_px_f(cell.0 as f64, cell.1 as f64);
                         out.push(WorldSprite { img: im, gx, gy, lx, ly });
                     }
                     Err(reason) => rejected.push(format!(
@@ -619,6 +657,20 @@ impl PlayableApp {
         Some(((x - rx as f64) / scale, (y - ry as f64) / scale))
     }
 
+    /// Route to an acceptable (passable) point using the original pathfinder
+    /// (`FUN_0043DA1F`). Returns `None` when the goal is blocked, out of bounds
+    /// or unreachable — the original issues no movement command then.
+    fn compute_player_path(&self, start: (i32, i32), goal: (i32, i32)) -> Option<Vec<u8>> {
+        let l = self.world.loc(self.current_map)?;
+        find_path(
+            &l.collision,
+            &HashSet::new(),
+            start,
+            goal,
+            (0, 0, crate::coords::RUNTIME_W - 1, crate::coords::RUNTIME_H - 1),
+        )
+    }
+
     fn set_target_from_mouse(&mut self, x: f64, y: f64) {
         let (mx, my) = match self.window_to_virtual(x, y) {
             Some(v) => v,
@@ -629,13 +681,26 @@ impl PlayableApp {
         // Nearest runtime/entity cell, clamped only to the proven runtime
         // bounds (x 0..319, y 0..159) — not to the terrain surface.
         let (tx, ty) = local_px_to_entity(lx.round() as i32, ly.round() as i32);
+        let start = (self.player_x.round() as i32, self.player_y.round() as i32);
+        let path = self.compute_player_path(start, (tx, ty));
+        self.player_step_t = 0.0;
+        // The original `FUN_004142D4` stores the target fields *before* running
+        // the pathfinder, so the destination is recorded even when the route
+        // fails; only a successful route starts the walk. A blocked/unreachable
+        // point therefore never moves the hero.
         self.target = Some((tx as f64, ty as f64));
+        match path {
+            Some(p) if !p.is_empty() => self.player_path = p,
+            _ => self.player_path.clear(),
+        }
     }
 
     // --- update ---
 
     pub fn step(&mut self, dt: f64) {
         if !self.mode_graph {
+            self.ensure_population(self.current_map);
+            self.update_actors(dt);
             self.update_player(dt);
             if self.camera_follow {
                 self.center_camera_on_player(false, dt);
@@ -646,28 +711,91 @@ impl PlayableApp {
         }
     }
 
+    /// Advance the current location's non-player actors (citizen wander) at the
+    /// fixed logic rate. Uses split borrows so the world collision table and the
+    /// mutable population cache are accessed simultaneously.
+    fn update_actors(&mut self, dt: f64) {
+        let loc = self.current_map;
+        let PlayableApp {
+            world,
+            settlements,
+            population_cache,
+            ..
+        } = self;
+        let Some(pop) = population_cache.get_mut(&loc) else {
+            return;
+        };
+        let collision = world.loc(loc).map(|l| l.collision.as_slice()).unwrap_or(&[]);
+        let settlement = settlements.iter().find(|s| s.loc_id as u32 == loc);
+        update_population(pop, collision, settlement, dt);
+    }
+
+    /// Seconds per player cell step: one collision cell per completed
+    /// walk-animation cycle (`FUN_0041435c` state 1/7 + `FUN_00413de4`). Cycle
+    /// length is the hero's walk-animation frame count from the GRAPH tables.
+    fn player_cell_period(&self) -> f64 {
+        (self.player_walk_frames() / LOGIC_TICK_HZ).max(1.0 / LOGIC_TICK_HZ)
+    }
+
+    fn player_walk_frames(&self) -> f64 {
+        let battle = crate::anim::battle_from_flags(self.player.flags_b);
+        let vi = self.player.hero.visual_index as usize;
+        match self.world.res.human_base_positions.get(vi).copied() {
+            Some(bp) => {
+                let n = crate::res::human_frame_count(
+                    &self.world.res.graph,
+                    bp,
+                    crate::anim::walk_action(battle),
+                    (self.player_dir.max(0) as usize) & 7,
+                );
+                if n == 0 {
+                    8.0
+                } else {
+                    n as f64
+                }
+            }
+            None => 8.0,
+        }
+    }
+
     fn update_player(&mut self, dt: f64) {
         self.anim_time += dt;
         self.teleport_cooldown = (self.teleport_cooldown - dt).max(0.0);
 
-        if let Some((tx, ty)) = self.target {
-            let (sx, sy) = entity_to_local_px_f(self.player_x, self.player_y);
-            let (tsx, tsy) = entity_to_local_px_f(tx, ty);
-            let dx = tsx - sx;
-            let dy = tsy - sy;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist <= 2.0 {
-                self.player_x = tx;
-                self.player_y = ty;
-                self.target = None;
-            } else {
-                self.player_dir = vec_to_direction(dx, dy, self.player_dir);
-                let step = dist.min(self.player_speed_px * dt);
-                let nsx = sx + dx / dist * step;
-                let nsy = sy + dy / dist * step;
-                let (nx, ny) = local_px_to_entity_f(nsx, nsy);
-                self.player_x = nx;
-                self.player_y = ny;
+        // Movement is driven by the direction queue (`FUN_0043DA1F` →
+        // `Entity+0x13`), not by the raw target. Each completed walk-animation
+        // cycle consumes one direction code and steps exactly one cell
+        // (`FUN_0041435C`); facing is the pending direction (`FUN_004123BC` gate
+        // `facing == path[0]`), so a straight walk never zigzags.
+        if !self.player_path.is_empty() {
+            let dir = self.player_path[0];
+            self.player_dir = dir as i32;
+            self.player_step_t += dt;
+            let period = self.player_cell_period();
+            if self.player_step_t >= period {
+                // Reset (never carry a backlog) so a frame-rate hitch can never
+                // consume several cells at once (no teleport).
+                self.player_step_t = 0.0;
+                let cur = (self.player_x.round() as i32, self.player_y.round() as i32);
+                let (nx, ny) = step_by_direction(cur.0, cur.1, dir);
+                self.player_x = nx as f64;
+                self.player_y = ny as f64;
+                self.player_path.remove(0);
+                if self.player_path.is_empty() {
+                    // Arrived, or a >MAX_PATH_STEPS route prefix was consumed:
+                    // re-route while the stored goal is still ahead.
+                    if let Some((tx, ty)) = self.target {
+                        let goal = (tx.round() as i32, ty.round() as i32);
+                        if (nx, ny) == goal {
+                            self.target = None;
+                        } else {
+                            match self.compute_player_path((nx, ny), goal) {
+                                Some(p) if !p.is_empty() => self.player_path = p,
+                                _ => self.target = None,
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -702,6 +830,7 @@ impl PlayableApp {
                     self.player_x = ax as f64;
                     self.player_y = ay as f64;
                     self.target = None;
+                    self.player_path.clear();
                     self.teleport_cooldown = 0.9;
                     self.last_teleport = Some((e.from, dst, e.rec));
                     self.teleport_error = None;
@@ -725,15 +854,23 @@ impl PlayableApp {
     }
 
     /// Resolve the protagonist through the canonical Entity visual path with
-    /// movement animation (`action = 1` while moving, `0` idle). The renderer
-    /// family/class comes from `PlayerCharacter.class` (`Entity+0x04`); the
-    /// visual index and palette come from the hero identity. No Game.res variant
-    /// fallback and no equipment overlays. Frame selection wraps via the GRAPH
-    /// sequence count.
+    /// movement animation. The active action is the original stance pair
+    /// (`FUN_004142D4`/`FUN_00414A34`): walk `1`/`7` while moving, idle `0`/`6`
+    /// otherwise, chosen by `Entity+0x03 & 0x04` (see [`crate::anim`]). The
+    /// renderer family/class comes from `PlayerCharacter.class` (`Entity+0x04`);
+    /// the visual index and palette come from the hero identity. No Game.res
+    /// variant fallback and no equipment overlays. One walk cycle == one cell
+    /// step (`FUN_00413de4`).
     fn player_frame(&mut self, moving: bool) -> Result<(Img, i32, i32), String> {
-        let action = if moving { 1 } else { 0 };
-        let fi = (self.anim_time / 0.12) as usize;
+        let battle = crate::anim::battle_from_flags(self.player.flags_b);
+        let action = if moving {
+            crate::anim::walk_action(battle)
+        } else {
+            crate::anim::idle_action(battle)
+        };
+        let fi = self.player_frame_index(moving, action);
         self.world.res.actor_frame_state(
+            &self.player.equipment,
             self.player.entity_class(),
             self.player.hero.visual_index,
             self.player.hero.palette_offset,
@@ -741,6 +878,33 @@ impl PlayableApp {
             action,
             fi,
         )
+    }
+
+    /// Protagonist sprite frame for `action`, driven by the original 60 ms
+    /// fixed step (`actors::LOGIC_TICK_HZ`): the walk cycle is the cell-step
+    /// progress (one full cycle per cell); idle free-runs one frame per logic
+    /// tick. Mirrors `FUN_00413de4` advancing `Entity+0x10` once per frame.
+    fn player_frame_index(&self, moving: bool, action: usize) -> usize {
+        let dir = (self.player_dir.max(0) as usize) & 7;
+        let vi = self.player.hero.visual_index as usize;
+        let count = match self.world.res.human_base_positions.get(vi).copied() {
+            Some(bp) => {
+                let n = crate::res::human_frame_count(&self.world.res.graph, bp, action, dir);
+                if n == 0 {
+                    1
+                } else {
+                    n
+                }
+            }
+            None => 1,
+        };
+        if moving {
+            let period = self.player_cell_period().max(1e-9);
+            let progress = (self.player_step_t / period).clamp(0.0, 1.0);
+            ((progress * count as f64) as usize).min(count - 1)
+        } else {
+            ((self.anim_time * LOGIC_TICK_HZ) as usize) % count
+        }
     }
 
     // --- labels ---
@@ -823,7 +987,7 @@ impl PlayableApp {
         let mut rejected = self.collect_actor_sprites(&mut sprites);
 
         // Protagonist through the canonical Entity visual path (animated).
-        let moving = self.target.is_some();
+        let moving = !self.player_path.is_empty();
         let (plx, ply) = entity_to_local_px_f(self.player_x, self.player_y);
         match self.player_frame(moving) {
             Ok((im, gx, gy)) => sprites.push(WorldSprite { img: im, gx, gy, lx: plx, ly: ply }),
@@ -880,10 +1044,57 @@ impl PlayableApp {
         let pay = ioy + ply.round() as i32;
         ellipse_outline(&mut self.frame, fw, fh, pax as f32, pay as f32, 3.0, 3.0, 1, [255, 245, 120, 255]);
 
+        // Original INTR HUD: whole-screen overlay, empty inventory slot strip and
+        // (once bound) party portraits. Composited after the world and its
+        // overlays; transparent regions keep the world visible. Debug overlays
+        // below draw on top. Split borrows keep `frame` and `world.res` disjoint.
+        {
+            let PlayableApp {
+                frame,
+                world,
+                player,
+                hovered_slot,
+                ..
+            } = self;
+            // Protagonist portrait uses the original selector with the actual
+            // character fields (never a fixed INTR id).
+            let portrait = crate::hud::portrait_id(
+                true,
+                player.portrait_group(),
+                player.portrait_status(),
+                player.hp_internal,
+            );
+            // Fixed scroll offset for this task; the protagonist's own
+            // inventory is read directly (never re-initialized per frame).
+            crate::hud::draw_game_hud(
+                frame,
+                fw,
+                fh,
+                &mut world.res,
+                &player.inventory,
+                0,
+                *hovered_slot,
+                Some(portrait),
+                player.auto_enabled(),
+            );
+        }
+
+        // Original character screen (INTR[2]) over the world area; its window
+        // geometry keeps the party panel and bottom inventory strip visible.
+        if self.character_screen {
+            let PlayableApp {
+                frame,
+                world,
+                player,
+                ..
+            } = self;
+            crate::character_screen::draw(frame, fw, fh, &mut world.res, player);
+        }
+
         let portals = self.outgoing(self.current_map).len();
         let cur = self.label(self.current_map);
         let hdr = format!(
-            "OpenKonung v15 | {} | hero:{} Game.{} | 800x600 native camera | pal:{} | portals:{} | C follow | H graph | D ids | P pop | L layers | T portals",
+            "OpenKonung v15 | {} | hero:{} Game.{} | 800x600 native camera | pal:{} | portals:{} | V follow | C char | H graph | D ids | P pop | L layers | T portals",
             cur, self.player.hero.name, self.profile, self.player.palette_id(), portals
         );
         let hdr = if self.teleport_debug {
@@ -1423,7 +1634,30 @@ impl PlayableApp {
         }
     }
 
+    /// Index of the party-portrait cell under the pointer (2x5 grid), if any.
+    /// Read-only hit test; the original *selects* the member here (region
+    /// `0x1e..0x27`) and never opens the character screen from it.
+    fn party_cell_at(&self, x: f64, y: f64) -> Option<usize> {
+        let (mx, my) = self.window_to_virtual(x, y)?;
+        let (mx, my) = (mx.round() as i32, my.round() as i32);
+        let l = crate::hud::layout(VIRTUAL_W);
+        (0..crate::hud::PARTY_CELLS)
+            .find(|&i| l.party_cell(i).map(|r| r.contains(mx, my)).unwrap_or(false))
+    }
+
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
+        // While the character screen is open it consumes every click: no world
+        // targeting and no click-through. It is closed with Escape only.
+        if self.character_screen {
+            return;
+        }
+        // A left-click on a party-portrait cell is consumed (the original
+        // selects that member; with a one-member party it is a no-op). It must
+        // not issue a world movement command. The character screen is not opened
+        // by this click (original: opened by a command) — use `C` instead.
+        if button == 1 && !self.mode_graph && self.party_cell_at(x, y).is_some() {
+            return;
+        }
         if button == 3 && !self.mode_graph {
             self.mode_graph = true;
             self.selected = None;
@@ -1473,6 +1707,7 @@ impl PlayableApp {
             let dx = x - self.last_mouse.0;
             let dy = y - self.last_mouse.1;
             self.last_mouse = (x, y);
+            self.hovered_slot = None;
             if self.mode_graph {
                 self.graph_pan[0] += dx;
                 self.graph_pan[1] += dy;
@@ -1481,7 +1716,29 @@ impl PlayableApp {
                 self.detail_pan[0] += dx / sc.max(1e-6);
                 self.detail_pan[1] += dy / sc.max(1e-6);
             }
+            return;
         }
+        if self.mode_graph {
+            self.hovered_slot = None;
+        } else {
+            self.update_hover(x, y);
+        }
+    }
+
+    /// Read-only HUD hover: which visible inventory cell is under the cursor.
+    /// Does not touch world targeting, movement or portals.
+    fn update_hover(&mut self, x: f64, y: f64) {
+        let Some((mx, my)) = self.window_to_virtual(x, y) else {
+            self.hovered_slot = None;
+            return;
+        };
+        let l = crate::hud::layout(VIRTUAL_W);
+        let (mx, my) = (mx.round() as i32, my.round() as i32);
+        self.hovered_slot = (0..l.visible_slots).find(|&slot| {
+            l.inventory_slot_rect(slot, 70)
+                .map(|r| r.contains(mx, my))
+                .unwrap_or(false)
+        });
     }
 
     pub fn wheel(&mut self, delta: f64) {
@@ -1493,9 +1750,16 @@ impl PlayableApp {
 
     pub fn key_down(&mut self, code: u32) {
         match code {
-            // Escape opens the frontend/menu; the live game is preserved by the
-            // host runtime (no quit, no rebuild).
-            KEY_ESCAPE => self.request_menu = true,
+            // Escape closes the character screen when open; otherwise it opens
+            // the frontend/menu (the live game is preserved by the host runtime).
+            KEY_ESCAPE => {
+                if self.character_screen {
+                    self.character_screen = false;
+                    self.hovered_slot = None;
+                } else {
+                    self.request_menu = true;
+                }
+            }
             KEY_H => {
                 if !self.mode_graph {
                     self.mode_graph = true;
@@ -1510,6 +1774,14 @@ impl PlayableApp {
                 if !self.mode_graph {
                     self.mode_graph = true;
                     self.selected = None;
+                }
+            }
+            // Tab toggles the protagonist's battle stance (`Entity+0x03` bit
+            // `0x04`): peaceful idle/walk (6/7) <-> battle idle/walk (0/1).
+            KEY_TAB => {
+                if !self.mode_graph {
+                    self.player.flags_b ^= crate::anim::FLAG_BATTLE;
+                    self.anim_time = 0.0;
                 }
             }
             KEY_D => {
@@ -1532,7 +1804,17 @@ impl PlayableApp {
                     }
                 }
             }
+            // `C` toggles the character screen (the original opens it via a UI
+            // command/action, not a mouse portrait click; this is the remake's
+            // explicit binding). Escape also closes it.
             KEY_C => {
+                if !self.mode_graph {
+                    self.character_screen = !self.character_screen;
+                    self.hovered_slot = None;
+                }
+            }
+            // `V` toggles camera follow (moved off `C`).
+            KEY_V => {
                 if !self.mode_graph {
                     self.camera_follow = !self.camera_follow;
                     if self.camera_follow {
@@ -1603,6 +1885,124 @@ mod tests {
     const K4_TRIGGERS: [(i32, i32, i32, i32); 4] =
         [(63, 64, 63, 64), (119, 61, 119, 61), (112, 4, 112, 4), (12, 5, 12, 5)];
     const K4_RECS: [usize; 4] = [10, 11, 12, 13];
+
+    fn install_dir() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+    }
+
+    /// A minimal playable app (real `Game.res` + `CLIENT.EXE`; synthetic
+    /// GRAPH/Objects) for input-routing tests. Gated on files being present.
+    fn build_test_app() -> Option<PlayableApp> {
+        use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
+        use crate::hero::hero;
+        use crate::render::World;
+        use crate::res::Res;
+        let dir = install_dir();
+        let game = std::fs::read(dir.join("Game.res")).ok()?;
+        let exe = std::fs::read(dir.join("CLIENT.EXE")).ok()?;
+        let graph = vec![0u8; 0x30000]; // palettes/terrain unused in this test
+        let objects = vec![0u8; 8 + 512 * 8];
+        let res = Res::new(game, graph, objects, exe);
+        let world = World::new(res, Vec::new());
+        let h = *hero(0).unwrap();
+        let mut player = PlayerCharacter::from_build(
+            h,
+            CharacterBuild::from_class(CharacterClass::Warrior),
+        );
+        player.hp_internal = 1600;
+        player.equipment = [0, 0, 1, 0, 0, 0];
+        Some(PlayableApp::new(
+            world,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            HashMap::new(),
+            1,
+            Vec::new(),
+            player,
+            1,
+            0.0,
+            0.0,
+            5,
+            None,
+            Vec::new(),
+        ))
+    }
+
+    #[test]
+    fn character_screen_open_close_and_no_world_clickthrough() {
+        let Some(mut app) = build_test_app() else {
+            eprintln!("skipping: original resources not present");
+            return;
+        };
+        let inv0 = app.player.inventory;
+        let eq0 = app.player.equipment;
+        let hp0 = app.player.hp_internal;
+
+        // A party-portrait click selects/consumes only: it never opens the
+        // screen (original semantics) and never issues a world move.
+        assert!(!app.character_screen);
+        app.pointer_down(1, 36.0, 36.0);
+        assert!(!app.character_screen, "portrait click must not open the screen");
+        assert!(app.target.is_none(), "portrait click must not move the world");
+
+        // `C` opens the character screen.
+        app.key_down(KEY_C);
+        assert!(app.character_screen);
+        assert!(app.target.is_none(), "opening must not issue a world move");
+
+        // While open, a world click and an equipment click are consumed.
+        app.pointer_down(1, 500.0, 300.0);
+        assert!(app.character_screen);
+        assert!(app.target.is_none(), "no click-through to the world");
+        app.pointer_down(1, 183.0, 103.0);
+        assert!(app.character_screen);
+        assert!(app.target.is_none());
+
+        // `C` toggles closed; Escape also closes.
+        app.key_down(KEY_C);
+        assert!(!app.character_screen);
+        app.key_down(KEY_C);
+        assert!(app.character_screen);
+        app.key_down(KEY_ESCAPE);
+        assert!(!app.character_screen);
+
+        // World clicks work again after closing.
+        app.pointer_down(1, 500.0, 300.0);
+        assert!(app.target.is_some(), "world targeting restored after close");
+
+        // `V` toggles camera follow (moved off `C`).
+        let cf = app.camera_follow;
+        app.key_down(KEY_V);
+        assert_eq!(app.camera_follow, !cf);
+
+        // Open/close cycles do not mutate gameplay data.
+        assert_eq!(app.player.inventory, inv0);
+        assert_eq!(app.player.equipment, eq0);
+        assert_eq!(app.player.hp_internal, hp0);
+    }
+
+    #[test]
+    fn tab_toggles_protagonist_battle_stance() {
+        let Some(mut app) = build_test_app() else {
+            eprintln!("skipping: original resources not present");
+            return;
+        };
+        let before = app.player.flags_b & crate::anim::FLAG_BATTLE;
+        app.key_down(KEY_TAB);
+        assert_ne!(
+            app.player.flags_b & crate::anim::FLAG_BATTLE,
+            before,
+            "Tab must flip the battle stance bit"
+        );
+        app.key_down(KEY_TAB);
+        assert_eq!(
+            app.player.flags_b & crate::anim::FLAG_BATTLE,
+            before,
+            "Tab must be a toggle"
+        );
+    }
 
     #[test]
     fn konung4_maps_each_trigger_to_its_gate() {

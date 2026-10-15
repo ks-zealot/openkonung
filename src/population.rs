@@ -12,9 +12,11 @@
 //! entity_count` (§4.1). This module only parses and enumerates; it performs no
 //! coordinate conversion, no collision queries and no rendering (Phase B).
 //!
-//! Coordinate-domain note (§1): `Entity.x/+0x08` and `Entity.y/+0x0A` are
-//! persisted Entity/transition coordinates, **not** 320x160 collision-grid
-//! indices. They are stored here exactly as persisted and never rescaled.
+//! Coordinate-domain note (§3): `Entity.x/+0x08` and `Entity.y/+0x0A` **are**
+//! the 320x160 runtime/Entity/collision grid (`index = x*160 + y`) — the same
+//! domain written by Group spawn placement (`FUN_00411de4`) and marked by
+//! Transition trigger rectangles (`FUN_0043adf0`). They are stored here exactly
+//! as persisted and never rescaled; the grid→pixel projection is draw-time only.
 //!
 //! # Population growth (documented, **not implemented**)
 //!
@@ -53,6 +55,18 @@ pub const ENTITY_COUNT: usize = 2000;
 
 /// One past the last byte of the Entity table.
 pub const ENTITY_END: usize = ENTITY_OFF + ENTITY_COUNT * ENTITY_STRIDE;
+
+// --- Settlement / citizen waypoint table (`KONUNG_SOURCE_OF_TRUTH.md` §14) ---
+
+/// Settlement table offset in `Game.N` (`Settlement[20]`, stride `0x4B5`).
+pub const SETTLEMENT_OFF: usize = 0xA769A;
+pub const SETTLEMENT_STRIDE: usize = 0x4B5;
+pub const SETTLEMENT_COUNT: usize = 20;
+/// Per-settlement waypoint list, at runtime `_DAT_0081d580 + 0x3D0`
+/// (`FUN_004168a4` / `FUN_0041182c`).
+pub const WAYPOINT_OFF: usize = 0x3D0;
+pub const WAYPOINT_STRIDE: usize = 8;
+pub const WAYPOINT_MAX: usize = 8;
 
 /// A single group spawn rectangle (§4.3). Offsets differ between rectangles:
 /// rectangle A reads `+08/+0C/+10/+14`, rectangle B `+0A/+0E/+12/+16`.
@@ -200,6 +214,10 @@ pub struct Entity {
     pub archetype: u8,
     /// `+0x05` u8 — owning group id.
     pub group_id: u8,
+    /// `+0x12` u8 — raw field used by the character screen's overlapping
+    /// equipment-slot (storage 0/2) branch (set by character creation; `2` in
+    /// the shipped new-game records).
+    pub raw_0x12: u8,
     /// `+0x08` u16 — persisted x (NOT a collision-grid index, §1).
     pub x: u16,
     /// `+0x0A` u16 — persisted y (NOT a collision-grid index, §1).
@@ -210,6 +228,10 @@ pub struct Entity {
     pub equipment: [u16; 6],
     /// `+0x72..+0xB1` — 32 inventory item ids (`u16`); not interpreted yet.
     pub inventory: [u16; 32],
+    /// `+0xB2..+0xBB` — 5 additional equipment item ids (`u16`).
+    pub additional_equipment: [u16; 5],
+    /// `+0xCC` — special equipment item id (`u16`).
+    pub special_equipment: u16,
     /// `+0xD0` u8 — dialogue id; 0xFF = none in known path.
     pub dialogue_id: u8,
     /// `+0xD4` u8 — name id.
@@ -390,6 +412,10 @@ pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
         for (i, slot) in inventory.iter_mut().enumerate() {
             *slot = u16(b, 0x72 + i * 2) as u16;
         }
+        let mut additional_equipment = [0u16; 5];
+        for (i, slot) in additional_equipment.iter_mut().enumerate() {
+            *slot = u16(b, 0xB2 + i * 2) as u16;
+        }
         entities.push(Entity {
             index,
             kind: b[0x00],
@@ -398,6 +424,7 @@ pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
             flags_b: b[0x03],
             archetype: b[0x04],
             group_id: b[0x05],
+            raw_0x12: b[0x12],
             x: u16(b, 0x08) as u16,
             y: u16(b, 0x0A) as u16,
             stats,
@@ -408,6 +435,8 @@ pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
             nickname_id: b[0xD5],
             visual_index: b[0xD6],
             palette_offset: u32(b, 0xD8),
+            additional_equipment,
+            special_equipment: u16(b, 0xCC) as u16,
         });
     }
     Ok(entities)
@@ -472,6 +501,65 @@ pub fn active_entities(tables: &GameTables, loc_id: u8) -> Vec<Entity> {
         }
     }
     out
+}
+
+// --- Settlement / citizen waypoint table (`KONUNG_SOURCE_OF_TRUTH.md` §14) ---
+
+/// One settlement waypoint (`FUN_004168a4` / `FUN_0041182c`).
+///
+/// 8-byte record: `+0` facing, `+1` unknown, `+2` owning Entity index
+/// (`0` = unassigned), `+4` target x, `+6` target y (runtime/Entity grid).
+/// Field use is ORIGINAL-CODE VERIFIED; the `+1` byte is UNKNOWN.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Waypoint {
+    pub facing: u8,
+    pub owner: u16,
+    pub x: u16,
+    pub y: u16,
+}
+
+/// One `Settlement` record (`Game.N`, stride `0x4B5`); `loc_id` is byte `+3`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Settlement {
+    pub index: usize,
+    pub loc_id: u8,
+    pub waypoints: Vec<Waypoint>,
+}
+
+/// Parse the `Settlement[20]` table and its per-record waypoint lists. The
+/// waypoint list ends at the first all-zero 8-byte entry.
+///
+/// Citizens carry a per-location **home** waypoint (owner == their Entity
+/// index) and, when `archetype & 0x38 != 0`, a role **station** waypoint.
+pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
+    let required = SETTLEMENT_OFF + SETTLEMENT_COUNT * SETTLEMENT_STRIDE;
+    if data.len() < required {
+        return Err(format!(
+            "Settlement table truncated: file is {} bytes, need at least {} (0x{:X})",
+            data.len(),
+            required,
+            required
+        ));
+    }
+    let mut out = Vec::with_capacity(SETTLEMENT_COUNT);
+    for index in 0..SETTLEMENT_COUNT {
+        let o = SETTLEMENT_OFF + index * SETTLEMENT_STRIDE;
+        let loc_id = data[o + 3];
+        let mut waypoints = Vec::new();
+        for w in 0..WAYPOINT_MAX {
+            let wo = o + WAYPOINT_OFF + w * WAYPOINT_STRIDE;
+            let facing = data[wo];
+            let owner = u16(data, wo + 2) as u16;
+            let x = u16(data, wo + 4) as u16;
+            let y = u16(data, wo + 6) as u16;
+            if facing == 0 && owner == 0 && x == 0 && y == 0 {
+                break;
+            }
+            waypoints.push(Waypoint { facing, owner, x, y });
+        }
+        out.push(Settlement { index, loc_id, waypoints });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -552,6 +640,7 @@ mod tests {
         data[o + 0x03] = 0x04;
         data[o + 0x04] = 0x05;
         data[o + 0x05] = 0x06;
+        data[o + 0x12] = 0x12;
         set_u16(&mut data, o + 0x08, 0x0A0B);
         set_u16(&mut data, o + 0x0A, 0x0C0D);
         data[o + 0xD0] = 0xD0;
@@ -569,6 +658,7 @@ mod tests {
         assert_eq!(e.flags_b, 0x04);
         assert_eq!(e.archetype, 0x05);
         assert_eq!(e.group_id, 0x06);
+        assert_eq!(e.raw_0x12, 0x12);
         assert_eq!(e.x, 0x0A0B);
         assert_eq!(e.y, 0x0C0D);
         assert_eq!(e.dialogue_id, 0xD0);
@@ -763,6 +853,19 @@ mod tests {
         assert_eq!(e.inventory[31], 331);
     }
 
+    #[test]
+    fn entity_additional_and_special_equipment_offsets() {
+        let mut data = empty_game();
+        let o = ENTITY_OFF + 9 * ENTITY_STRIDE;
+        for i in 0..5 {
+            set_u16(&mut data, o + 0xB2 + i * 2, 400 + i as u16);
+        }
+        set_u16(&mut data, o + 0xCC, 0x1234);
+        let entities = parse_entities(&data).unwrap();
+        assert_eq!(entities[9].additional_equipment, [400, 401, 402, 403, 404]);
+        assert_eq!(entities[9].special_equipment, 0x1234);
+    }
+
     fn game1() -> Option<Vec<u8>> {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../Game.1");
         std::fs::read(&p).ok()
@@ -825,5 +928,22 @@ mod tests {
         ] {
             assert!(b.contains(needle), "missing {needle:?} in:\n{b}");
         }
+    }
+
+    #[test]
+    fn real_game1_settlement_waypoints_are_homes() {
+        let Some(data) = game1() else {
+            eprintln!("skipping: Game.1 not present");
+            return;
+        };
+        let settlements = parse_settlements(&data).unwrap();
+        assert_eq!(settlements.len(), SETTLEMENT_COUNT);
+        let s = settlements.iter().find(|s| s.loc_id == 4).expect("loc 4 settlement");
+        // Owners 0x0115..=0x0118 (277..280) map to their authored positions.
+        let by_owner = |o: u16| s.waypoints.iter().find(|w| w.owner == o).copied();
+        assert_eq!(by_owner(277).map(|w| (w.x, w.y)), Some((74, 39)));
+        assert_eq!(by_owner(278).map(|w| (w.x, w.y)), Some((50, 30)));
+        assert_eq!(by_owner(279).map(|w| (w.x, w.y)), Some((94, 22)));
+        assert_eq!(by_owner(280).map(|w| (w.x, w.y)), Some((60, 26)));
     }
 }

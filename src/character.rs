@@ -498,6 +498,28 @@ pub struct PlayerCharacter {
     pub strength_current: u16,
     pub endurance_base: u16,
     pub endurance_current: u16,
+
+    /// `Entity+0x66` — 6 equipped item instance ids (kept separate from the
+    /// inventory). Attached from the starting `Entity[0]` at game start.
+    pub equipment: [u16; 6],
+    /// `Entity+0x72` — 32 inventory item instance ids.
+    pub inventory: [u16; 32],
+    /// `Entity+0xB2` — 5 additional equipment item instance ids.
+    pub additional_equipment: [u16; 5],
+    /// `Entity+0xCC` — special equipment item instance id.
+    pub special_equipment: u16,
+    /// `Entity+0x5C` — HP (internal representation; 1600 at new game).
+    pub hp_internal: u16,
+    /// `Entity+0x50` — periodic damage (rendered as «Отравление»/poisoning).
+    pub periodic_damage: u16,
+    /// `Entity+0x4E` — base armor (equipped-item contributions are added on top).
+    pub base_armor: u16,
+    /// `Entity+0x12` — character-creation field used by the character screen's
+    /// overlapping equipment-slot branch.
+    pub raw_0x12: u8,
+    /// `Entity+0x03` — status flags; bit `0x02` selects the AUTO button state
+    /// (`INTR[170]` when set, else `INTR[169]`).
+    pub flags_b: u8,
 }
 
 impl PlayerCharacter {
@@ -526,7 +548,55 @@ impl PlayerCharacter {
             strength_current: build.strength,
             endurance_base: build.endurance,
             endurance_current: build.endurance,
+            equipment: [0; 6],
+            inventory: [0; 32],
+            additional_equipment: [0; 5],
+            special_equipment: 0,
+            hp_internal: 0,
+            periodic_damage: 0,
+            base_armor: 0,
+            raw_0x12: 0,
+            flags_b: 0,
         }
+    }
+
+    /// Copy the authored starting equipment/inventory from the protagonist
+    /// `Entity[0]` record. Called once at game start; never re-derived on redraw.
+    pub fn attach_starting_items(&mut self, entity: &crate::population::Entity) {
+        self.equipment = entity.equipment;
+        self.inventory = entity.inventory;
+        self.additional_equipment = entity.additional_equipment;
+        self.special_equipment = entity.special_equipment;
+        // `+0x5C` health and `+0x12` are restored from the loaded Game.N entity
+        // by the original new-game path (the equipment/inventory are not).
+        self.hp_internal = entity.stats.hp_internal;
+        self.periodic_damage = entity.stats.periodic_damage;
+        self.base_armor = entity.stats.base_armor;
+        self.raw_0x12 = entity.raw_0x12;
+        // Money (`+0x34`) is likewise taken from the loaded Game.N entity (the
+        // field-restore does not overwrite it).
+        self.money = entity.stats.money;
+        self.flags_b = entity.flags_b;
+    }
+
+    /// AUTO combat button state: `Entity+0x03 & 0x02`.
+    pub fn auto_enabled(&self) -> bool {
+        self.flags_b & 0x02 != 0
+    }
+
+    /// `Entity+0xD6` portrait group (the hero's visual index).
+    pub fn portrait_group(&self) -> u8 {
+        self.hero.visual_index
+    }
+
+    /// `Entity+0x04` status/appearance byte used by the portrait selector.
+    pub fn portrait_status(&self) -> u8 {
+        self.entity_class()
+    }
+
+    /// Iterate the 32 inventory slots exactly as authored (including empty `0`s).
+    pub fn inventory(&self) -> &[u16; 32] {
+        &self.inventory
     }
 
     /// `Entity+0x04` renderer class value.
@@ -573,6 +643,62 @@ impl PlayerCharacter {
 mod tests {
     use super::*;
     use crate::hero::hero;
+
+    #[test]
+    fn starting_loadout_is_the_loaded_game_entity_for_each_hero() {
+        // The menu character-creation equipment arrays are NOT the in-game
+        // loadout: the original loads Game.N and the field-restore does not copy
+        // equipment/inventory. The shipped Game.N Entity[0] records are the
+        // default (identical) loadout, so this verifies identity differs per
+        // hero while the items come from the correct Game.N file.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        for (idx, suffix) in [(0u32, 1u32), (1, 2), (2, 0)] {
+            let h = hero(idx).unwrap();
+            assert_eq!(h.game_suffix, suffix, "hero {idx} maps to Game.{suffix}");
+            let path = dir.join(format!("Game.{suffix}"));
+            let Ok(data) = std::fs::read(&path) else {
+                eprintln!("skipping: {} not present", path.display());
+                return;
+            };
+            let t = crate::population::parse_tables(&data).unwrap();
+            let mut pc = PlayerCharacter::from_build(
+                *h,
+                CharacterBuild::from_class(CharacterClass::Warrior),
+            );
+            pc.attach_starting_items(&t.entities[0]);
+            assert_eq!(pc.equipment, [0, 0, 1, 0, 0, 0], "hero {idx} equipment");
+            assert_eq!(&pc.inventory[0..7], &[2, 3, 4, 5, 6, 7, 0], "hero {idx} inventory");
+            assert_eq!(pc.hp_internal, 1600, "hero {idx} hp");
+            assert_eq!(pc.money, 100, "hero {idx} money");
+            assert_eq!(pc.raw_0x12, 2, "hero {idx} +0x12");
+            assert!(!pc.auto_enabled(), "hero {idx} AUTO off (flags_b & 2 == 0)");
+            assert_eq!(pc.portrait_group(), h.visual_index, "hero {idx} portrait group");
+        }
+    }
+
+    #[test]
+    fn attach_starting_items_copies_and_keeps_equipment_separate() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../Game.1");
+        let Ok(data) = std::fs::read(&p) else {
+            eprintln!("skipping: Game.1 not present");
+            return;
+        };
+        let t = crate::population::parse_tables(&data).unwrap();
+        let mut pc = PlayerCharacter::from_build(
+            *hero(0).unwrap(),
+            CharacterBuild::from_class(CharacterClass::Warrior),
+        );
+        // A fresh build has no items.
+        assert_eq!(pc.equipment, [0; 6]);
+        assert_eq!(pc.inventory, [0; 32]);
+        pc.attach_starting_items(&t.entities[0]);
+        assert_eq!(pc.equipment, [0, 0, 1, 0, 0, 0]);
+        assert_eq!(&pc.inventory[0..7], &[2, 3, 4, 5, 6, 7, 0]);
+        assert_eq!(pc.additional_equipment, [0; 5]);
+        assert_eq!(pc.special_equipment, 0);
+        // The equipped item (1) is not duplicated into the inventory.
+        assert!(!pc.inventory.contains(&1));
+    }
 
     #[test]
     fn exact_class_presets() {

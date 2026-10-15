@@ -13,13 +13,18 @@
 #![allow(clippy::missing_safety_doc)]
 
 pub mod actors;
+pub mod anim;
 pub mod app;
 pub mod character;
+pub mod character_screen;
 pub mod coords;
 pub mod edges;
 pub mod font;
 pub mod frontend;
 pub mod hero;
+pub mod hud;
+pub mod intr;
+pub mod item;
 pub mod loc;
 pub mod menu_res;
 pub mod names;
@@ -49,6 +54,9 @@ pub const KIND_NEWH640: u32 = 7;
 pub const KIND_NEWH800: u32 = 8;
 pub const KIND_SAVE640: u32 = 9;
 pub const KIND_SAVE800: u32 = 10;
+/// Original in-game interface image archives (see `intr.rs`).
+pub const KIND_INTR640: u32 = 11;
+pub const KIND_INTR800: u32 = 12;
 
 #[derive(Default)]
 struct Loader {
@@ -63,6 +71,8 @@ struct Loader {
     newh800: Vec<u8>,
     save640: Vec<u8>,
     save800: Vec<u8>,
+    intr640: Vec<u8>,
+    intr800: Vec<u8>,
     profiles: HashMap<u32, Vec<u8>>,
     konungs: Vec<(u32, Vec<u8>)>,
 }
@@ -183,6 +193,8 @@ pub extern "C" fn load_resource(kind: u32, ptr: *mut u8, len: u32) {
         KIND_NEWH800 => l.newh800 = data,
         KIND_SAVE640 => l.save640 = data,
         KIND_SAVE800 => l.save800 = data,
+        KIND_INTR640 => l.intr640 = data,
+        KIND_INTR800 => l.intr800 = data,
         _ => {}
     }
     dealloc(ptr, len);
@@ -345,12 +357,31 @@ fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 {
         return 0;
     }
 
-    let res = res::Res::new(
+    let mut res = res::Res::new(
         std::mem::take(&mut l.game),
         std::mem::take(&mut l.graph),
         std::mem::take(&mut l.objects),
         std::mem::take(&mut l.exe),
     );
+
+    // Original in-game interface images (INTR). Prefer the 800x600 variant (the
+    // game framebuffer is fixed 800x600); fall back to 640. Absence or a decode
+    // error is non-fatal: the game runs unchanged without INTR, which is not yet
+    // consumed by the renderer.
+    let intr_bytes = if !l.intr800.is_empty() {
+        std::mem::take(&mut l.intr800)
+    } else {
+        std::mem::take(&mut l.intr640)
+    };
+    if !intr_bytes.is_empty() {
+        match res.load_intr(&intr_bytes) {
+            Ok(n) => eprintln!("INTR: loaded {n} interface sprites"),
+            Err(e) => eprintln!("INTR: {e}"),
+        }
+    }
+
+    // Item templates + original fonts from konung.res (used by the HUD labels).
+    res.load_items_and_fonts(&l.names);
 
     let mut konungs = std::mem::take(&mut l.konungs);
     konungs.sort_by_key(|(id, _)| *id);
@@ -382,8 +413,12 @@ fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 {
         None => return 0,
     };
     let game_suffix = h.game_suffix;
+    // Item instances are read from the loaded Game.N save, not Game.res.
+    if let Some(data) = l.profiles.get(&game_suffix) {
+        res.set_save_game(data);
+    }
     // The one authoritative runtime player: hero identity + final build.
-    let player = PlayerCharacter::from_build(h, build);
+    let mut player = PlayerCharacter::from_build(h, build);
 
     // The selected Game.N supplies population tables, transitions and the
     // starting Entity[0] coordinates. Require it (fail loudly if malformed).
@@ -398,12 +433,26 @@ fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 {
             return 0;
         }
     };
+    // Citizen home/role waypoints (Game.N `Settlement[20]`).
+    let settlements = match l.profiles.get(&game_suffix) {
+        Some(d) => match population::parse_settlements(d) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Game.{} settlement parse failed: {e}", game_suffix);
+                return 0;
+            }
+        },
+        None => Vec::new(),
+    };
+
     let e0 = match game_tables.entities.get(0) {
         Some(e) => e,
         None => return 0,
     };
     let start_x = e0.x as f64;
     let start_y = e0.y as f64;
+    // Authored starting equipment + inventory belong to this protagonist only.
+    player.attach_starting_items(e0);
 
     let edges_vec = edges::build_exact_edges(Some(game_suffix), &profiles, &locs);
     let (pairs, one_way, self_edges) = edges::reciprocal_pairs(&edges_vec);
@@ -427,6 +476,7 @@ fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 {
         start_y,
         hero::NEW_GAME_FACING,
         Some(game_tables),
+        settlements,
     );
     let rt = runtime_mut();
     apply_host_to_app(&mut app, rt.host_w, rt.host_h);
@@ -696,6 +746,48 @@ pub extern "C" fn debug_game_exists() -> u32 {
     runtime_mut().game.is_some() as u32
 }
 
+/// Number of occupied INTR interface sprites attached to the live game's
+/// resources, or 0 when there is no game / no archive. Diagnostic only.
+#[no_mangle]
+pub extern "C" fn debug_intr_count() -> u32 {
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| g.world.res.intr.as_ref().map(|a| a.len()).unwrap_or(0) as u32)
+        .unwrap_or(0)
+}
+
+/// Semantic role code of an INTR index (see `intr::IntrRole`); tooling only.
+#[no_mangle]
+pub extern "C" fn debug_intr_role(id: u32) -> u32 {
+    use intr::IntrRole::*;
+    match intr::role_of(id as usize) {
+        HudOverlay => 0,
+        CharacterWindow => 1,
+        InventorySlot => 2,
+        InventoryArrow => 3,
+        AutoButton => 4,
+        Portrait => 5,
+        ItemIcon => 6,
+        WindowFrame => 7,
+        Panel => 8,
+        Button => 9,
+        InterfaceControl => 10,
+        SmallUi => 11,
+        Unclassified => 12,
+    }
+}
+
+/// 1 while the character screen (`INTR[2]`) is open in the live game, else 0.
+#[no_mangle]
+pub extern "C" fn debug_character_screen() -> u32 {
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| g.character_screen as u32)
+        .unwrap_or(0)
+}
+
 /// Live player runtime x/y (0 when no game). Used to prove state preservation.
 #[no_mangle]
 pub extern "C" fn debug_player_x() -> f32 {
@@ -878,6 +970,125 @@ pub extern "C" fn debug_image_w() -> u32 {
 #[no_mangle]
 pub extern "C" fn debug_image_h() -> u32 {
     unsafe { DEBUG_IMAGE_H }
+}
+
+/// Decode INTR interface sprite `index` from `variant` (`640` or anything else
+/// = 800) into the shared debug RGBA buffer and return 1 on success. Used by
+/// `tools/intr_png.mjs`; not used at runtime.
+#[no_mangle]
+pub extern "C" fn debug_decode_intr_image(variant: u32, index: u32) -> u32 {
+    let (bytes, graph) = {
+        let l = loader_mut();
+        let intr = if variant == 640 {
+            l.intr640.clone()
+        } else {
+            l.intr800.clone()
+        };
+        (intr, l.graph.clone())
+    };
+    if bytes.is_empty() || graph.is_empty() {
+        return 0;
+    }
+    let mut archive = match intr::IntrArchive::load(&bytes, &graph) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e}");
+            return 0;
+        }
+    };
+    let Some(img) = archive.get(index as usize) else {
+        return 0;
+    };
+    unsafe {
+        let slot = addr_of_mut!(DEBUG_IMAGE);
+        *slot = Some(img.data.clone());
+        DEBUG_IMAGE_W = img.w as u32;
+        DEBUG_IMAGE_H = img.h as u32;
+    }
+    1
+}
+
+// --------------------------------------------------------------------------
+// Debug: isolated HUD preview (diagnostic tooling; same composer as runtime)
+// --------------------------------------------------------------------------
+
+static mut DEBUG_HUD: Option<(Vec<u8>, u32, u32)> = None;
+
+/// Compose the INTR HUD for `variant` (`640`, else 800) over a checkerboard into
+/// a static frame and return 1 on success. Lets `tools/frame_png.mjs` capture the
+/// 640x480 HUD even though the live game is fixed at 800x600. Not used at runtime.
+#[no_mangle]
+pub extern "C" fn debug_render_intr_hud(variant: u32) -> u32 {
+    let (intr, graph) = {
+        let l = loader_mut();
+        let intr = if variant == 640 {
+            l.intr640.clone()
+        } else {
+            l.intr800.clone()
+        };
+        (intr, l.graph.clone())
+    };
+    if intr.is_empty() || graph.is_empty() {
+        return 0;
+    }
+    let mut archive = match intr::IntrArchive::load(&intr, &graph) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e}");
+            return 0;
+        }
+    };
+    let (w, h) = if variant == 640 {
+        (640u32, 480u32)
+    } else {
+        (800u32, 600u32)
+    };
+    let fw = w as usize;
+    let fh = h as usize;
+    let mut frame = vec![0u8; fw * fh * 4];
+    // Checkerboard so transparent HUD regions are visible in the preview.
+    for y in 0..fh {
+        for x in 0..fw {
+            let c = if ((x / 16) + (y / 16)) & 1 == 0 { 0x30u8 } else { 0x50u8 };
+            let i = (y * fw + x) * 4;
+            frame[i] = c;
+            frame[i + 1] = c;
+            frame[i + 2] = c;
+            frame[i + 3] = 255;
+        }
+    }
+    let layout = hud::layout(w as i32);
+    let state = hud::HudState::default();
+    hud::compose(&mut frame, fw, fh, &layout, &state, |id| archive.get(id));
+    unsafe {
+        let slot = addr_of_mut!(DEBUG_HUD);
+        *slot = Some((frame, w, h));
+    }
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn debug_hud_ptr() -> *const u8 {
+    match unsafe { &*addr_of!(DEBUG_HUD) } {
+        Some((v, _, _)) => v.as_ptr(),
+        None => std::ptr::null(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_hud_w() -> u32 {
+    match unsafe { &*addr_of!(DEBUG_HUD) } {
+        Some((_, w, _)) => *w,
+        None => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_hud_h() -> u32 {
+    match unsafe { &*addr_of!(DEBUG_HUD) } {
+        Some((_, _, h)) => *h,
+        None => 0,
+    }
 }
 
 // --------------------------------------------------------------------------

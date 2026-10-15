@@ -93,9 +93,175 @@ pub fn local_px_to_entity(px: i32, py: i32) -> (i32, i32) {
     )
 }
 
+// --- Original movement direction model ---------------------------------------
+//
+// Entity movement is **not** the plain 8-neighbour grid. Each of the 8 movement
+// direction codes (0..=7) maps to a cell delta that depends on the parity of the
+// current cell's `x` (the staggered isometric lattice). The two 8-entry
+// `{i16 dx, i16 dy}` tables were read verbatim from `konung.res`
+// (`FUN_0043D922`, bases `0x48010C` odd x / `0x480110` even x):
+//
+//   x even (0x480110): 0:(0,-1) 1:(-1,0)  2:(-2,0) 3:(-1,1) 4:(0,1) 5:(1,1) 6:(2,0) 7:(1,0)
+//   x odd  (0x48010C): 0:(0,-1) 1:(-1,-1) 2:(-2,0) 3:(-1,0) 4:(0,1) 5:(1,0) 6:(2,0) 7:(1,-1)
+//
+// The pathfinder `FUN_0043DA1F` enumerates exactly these 8 neighbours and stores
+// the direction code used to *enter* each visited cell; `FUN_0041435C` then steps
+// the cell with `FUN_0043D922`. Facing/`Entity+0x01` uses the same code space
+// (`FUN_0043897C`), so a straight walk keeps a constant facing.
+
+/// Movement direction → cell delta for an **even** `x` cell (`0x480110`).
+pub const DIR_EVEN: [(i32, i32); 8] = [
+    (0, -1),
+    (-1, 0),
+    (-2, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+    (2, 0),
+    (1, 0),
+];
+
+/// Movement direction → cell delta for an **odd** `x` cell (`0x48010C`).
+pub const DIR_ODD: [(i32, i32); 8] = [
+    (0, -1),
+    (-1, -1),
+    (-2, 0),
+    (-1, 0),
+    (0, 1),
+    (1, 0),
+    (2, 0),
+    (1, -1),
+];
+
+/// Step one runtime/Entity cell in direction `dir` (0..=7) from `(x, y)` using
+/// the parity-selected original direction table (`FUN_0043D922`). Bounds are the
+/// caller's concern (the original validates `0..320 × 0..160`).
+pub fn step_by_direction(x: i32, y: i32, dir: u8) -> (i32, i32) {
+    let table = if x & 1 == 0 { DIR_EVEN } else { DIR_ODD };
+    let (dx, dy) = table[(dir & 7) as usize];
+    (x + dx, y + dy)
+}
+
+/// The 8 movement neighbours of `(x, y)` as `(dir, nx, ny)`, indexed by direction
+/// code, using the parity-selected original table. Out-of-bounds candidates are
+/// returned too; callers filter them against their own bounds/collision.
+pub fn neighbors(x: i32, y: i32) -> [(u8, i32, i32); 8] {
+    let table = if x & 1 == 0 { DIR_EVEN } else { DIR_ODD };
+    let mut out = [(0u8, 0i32, 0i32); 8];
+    for (d, &(dx, dy)) in table.iter().enumerate() {
+        out[d] = (d as u8, x + dx, y + dy);
+    }
+    out
+}
+
+/// Per-step cost of a movement direction in `FUN_0043DA1F`: the `±1 x` family
+/// (dirs 1/3/5/7) costs 10; the `±y` / `±2 x` family (dirs 0/2/4/6) costs 14.
+pub fn direction_cost(dir: u8) -> u32 {
+    match dir & 7 {
+        1 | 3 | 5 | 7 => 10,
+        _ => 14,
+    }
+}
+
+/// Facing/direction code from current `(cx, cy)` toward `(tx, ty)`
+/// (`FUN_0043897C`): 0 = −y, 4 = +y, 2 = −x, 6 = +x, and 1/3/5/7 the staggered
+/// diagonals.
+pub fn direction_from_cells(tx: i32, ty: i32, cx: i32, cy: i32) -> u8 {
+    let adx = (cx - tx).abs();
+    let ady = (cy - ty).abs();
+    let q = adx / 4;
+    if ady / 2 < adx {
+        if cx < tx {
+            if q < ady {
+                if cy < ty {
+                    5
+                } else {
+                    7
+                }
+            } else {
+                6
+            }
+        } else if q < ady {
+            if cy < ty {
+                3
+            } else {
+                1
+            }
+        } else {
+            2
+        }
+    } else if ty < cy {
+        0
+    } else {
+        4
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direction_tables_match_original_bytes() {
+        assert_eq!(
+            DIR_EVEN,
+            [
+                (0, -1),
+                (-1, 0),
+                (-2, 0),
+                (-1, 1),
+                (0, 1),
+                (1, 1),
+                (2, 0),
+                (1, 0)
+            ]
+        );
+        assert_eq!(
+            DIR_ODD,
+            [
+                (0, -1),
+                (-1, -1),
+                (-2, 0),
+                (-1, 0),
+                (0, 1),
+                (1, 0),
+                (2, 0),
+                (1, -1)
+            ]
+        );
+    }
+
+    #[test]
+    fn step_by_direction_is_parity_dependent() {
+        // Even x: dir 1 steps straight left; odd x: dir 1 steps up-left.
+        assert_eq!(step_by_direction(4, 10, 1), (3, 10));
+        assert_eq!(step_by_direction(5, 10, 1), (4, 9));
+        // +y / −y are parity-independent.
+        assert_eq!(step_by_direction(4, 10, 4), (4, 11));
+        assert_eq!(step_by_direction(5, 10, 0), (5, 9));
+    }
+
+    #[test]
+    fn direction_cost_matches_astar_families() {
+        assert_eq!(direction_cost(1), 10);
+        assert_eq!(direction_cost(3), 10);
+        assert_eq!(direction_cost(5), 10);
+        assert_eq!(direction_cost(7), 10);
+        assert_eq!(direction_cost(0), 14);
+        assert_eq!(direction_cost(2), 14);
+        assert_eq!(direction_cost(4), 14);
+        assert_eq!(direction_cost(6), 14);
+    }
+
+    #[test]
+    fn direction_from_cells_cardinal_and_diagonal() {
+        assert_eq!(direction_from_cells(0, 0, 0, 5), 0); // target −y
+        assert_eq!(direction_from_cells(0, 10, 0, 5), 4); // target +y
+        assert_eq!(direction_from_cells(20, 5, 5, 5), 6); // target +x
+        assert_eq!(direction_from_cells(0, 5, 20, 5), 2); // target −x
+        assert_eq!(direction_from_cells(20, 20, 0, 0), 5); // +x,+y
+        assert_eq!(direction_from_cells(20, 0, 0, 20), 7); // +x,−y
+    }
 
     #[test]
     fn entity_projection_exact_cases() {

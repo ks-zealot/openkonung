@@ -28,9 +28,10 @@ pub const TERRAIN_ODD_OFFSET: i32 = 58;
 /// Base-terrain arrangement: 80 columns x 160 rows (12800 records).
 pub const LOCAL_TERRAIN_W: i32 = 80;
 pub const LOCAL_TERRAIN_H: i32 = 160;
-/// Legacy origin retained **only** for the isolated transition/portal helpers in
-/// `app.rs`. All local-world render layers (terrain, props, GRAPH, entities) use
-/// origin `0` per source-of-truth §7/§9/§10 (camera applied uniformly).
+/// Legacy terrain origin (`MAP_ORIGIN_X = 29`), retained for reference only.
+/// All local-world render layers (terrain, props, GRAPH, entities) use origin
+/// `0` per source-of-truth §7/§9/§10 (camera applied uniformly). Currently
+/// unreferenced; do not treat it as a live render origin.
 pub const LOCAL_ORIGIN_X: i32 = MAP_ORIGIN_X;
 /// Pixel surface implied by the corrected base-terrain lattice (renderer
 /// surface only; not a runtime-world bound). Origin is 0.
@@ -40,11 +41,13 @@ pub const LOCAL_PIXEL_H: i32 = (LOCAL_TERRAIN_H - 1) * TERRAIN_ROW_STEP + TERRAI
 
 pub const TERRAIN_OFF: usize = 0x00000;
 pub const TERRAIN_SIZE: usize = 0x06400;
-/// Collision/passability source block (MD §2.2). Sits immediately after the
-/// base terrain layer and is a 320x160 `u8` grid, `index = x * 160 + y`.
+/// Collision/passability source block (§8). Sits immediately after the base
+/// terrain layer and is a 320x160 `u8` grid, `index = x * 160 + y`.
 ///
-/// NOTE: its relationship to Game.N Entity/transition coordinates is **not
-/// proven**. Do not index this grid directly with transition coordinates.
+/// ORIGINAL-CODE VERIFIED (`FUN_0043adf0`): this **is** the Game.N
+/// Entity/Group-spawn/Transition runtime grid. The loader expands it, marks
+/// transition triggers (`|= 0x1000`) and world-object portals (`|= 0x2000`),
+/// and movement indexes it directly with Entity `x/y`.
 pub const COLLISION_OFF: usize = 0x06400;
 pub const COLLISION_BYTES: usize = 0x0C800;
 pub const PLACEMENTS_OFF: usize = 0x16A80;
@@ -139,10 +142,11 @@ pub struct Location {
     pub gates: Vec<Gate>,
     pub graph_placements: Vec<GraphPlacement>,
     /// Expanded collision table: `320 * 160` u16, `index = x * 160 + y`
-    /// (MD §2.2). Low 12 bits are the occupancy/passability state.
+    /// (§8). Low 12 bits are the occupancy/passability state; bit `0x1000`
+    /// marks a Transition trigger cell and `0x2000` a world-object/portal prop.
     ///
-    /// Parsed and queryable, but its mapping to Entity/transition coordinates
-    /// is unproven, so it is not currently applied to player movement.
+    /// It shares the Game.N Entity/transition runtime grid and **is** applied
+    /// to player and NPC movement (`app.rs` / `actors.rs`).
     pub collision: Vec<u16>,
     pub max_x: i32,
     pub max_y: i32,

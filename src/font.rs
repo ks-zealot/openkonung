@@ -261,6 +261,14 @@ pub struct Fonts {
 }
 
 impl Fonts {
+    /// No glyphs (used before `konung.res` fonts are parsed).
+    pub fn empty() -> Fonts {
+        Fonts {
+            small: None,
+            large: None,
+        }
+    }
+
     pub fn parse(konung: &[u8]) -> Fonts {
         Fonts {
             small: FontTable::parse(konung, SMALL_FONT_OFF),

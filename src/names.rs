@@ -8,6 +8,18 @@ pub const NAME_TABLE_OFF: usize = 0x41594;
 /// Fixed record size in bytes.
 pub const NAME_RECORD: usize = 40;
 
+/// Character-name table in `konung.res` (DGROUP VA `0x45E71C`): 32-byte CP866
+/// records indexed by `Entity+0xD4` (`name_id`). Verified: `124 = Драгомир`,
+/// `151 = Михаил`, `10 = Волк`.
+pub const CHAR_NAME_TABLE_OFF: usize = 0x4491C;
+pub const CHAR_NAME_RECORD: usize = 32;
+
+/// Character-class name table in `konung.res` (DGROUP VA `0x45ADC0`): 16-byte
+/// CP866 records indexed by `Entity+0x04 - 1` (`1 Храбрец, 2 Купец,
+/// 3 Охотник, 4 Вождь, 5 Воин`).
+pub const CLASS_NAME_TABLE_OFF: usize = 0x40FC0;
+pub const CLASS_NAME_RECORD: usize = 16;
+
 /// CP866 glyphs for byte values 0x80..0xFF (code points). 0x00..0x7F is ASCII.
 const CP866_HIGH: [u16; 128] = [
     1040, 1041, 1042, 1043, 1044, 1045, 1046, 1047, 1048, 1049, 1050, 1051, 1052, 1053, 1054,
@@ -43,8 +55,47 @@ fn cp866_byte_to_char(b: u8) -> char {
     }
 }
 
-fn decode_cp866(bytes: &[u8]) -> String {
+/// Decode a raw CP866 byte string to Unicode (used for location and item names).
+pub fn decode_cp866(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| cp866_byte_to_char(b)).collect()
+}
+
+fn decode_record(data: &[u8], off: usize, record: usize) -> Option<String> {
+    if off + record > data.len() {
+        return None;
+    }
+    let rec = &data[off..off + record];
+    let end = rec.iter().position(|&b| b == 0).unwrap_or(record);
+    Some(decode_cp866(&rec[..end]).trim_end().to_string())
+}
+
+/// Original character name by `Entity+0xD4` (`name_id`), from the CP866 table
+/// at [`CHAR_NAME_TABLE_OFF`]. Returns `None` when out of bounds.
+pub fn character_name(data: &[u8], name_id: u8) -> Option<String> {
+    let s = decode_record(data, CHAR_NAME_TABLE_OFF + name_id as usize * CHAR_NAME_RECORD, CHAR_NAME_RECORD)?;
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Original class name by `Entity+0x04` (`entity_class`), from the CP866 table
+/// at [`CLASS_NAME_TABLE_OFF`]. Returns `None` for id `0` or out of bounds.
+pub fn class_name(data: &[u8], entity_class: u8) -> Option<String> {
+    if entity_class == 0 {
+        return None;
+    }
+    let s = decode_record(
+        data,
+        CLASS_NAME_TABLE_OFF + (entity_class as usize - 1) * CLASS_NAME_RECORD,
+        CLASS_NAME_RECORD,
+    )?;
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 /// Decode the full location-name table. Records are cut at the first NUL and
@@ -66,4 +117,39 @@ pub fn parse_location_names(data: &[u8]) -> Vec<String> {
         o += NAME_RECORD;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn konung() -> Option<Vec<u8>> {
+        std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../konung.res"),
+        )
+        .ok()
+    }
+
+    #[test]
+    fn character_name_table_reference_values() {
+        let Some(d) = konung() else {
+            eprintln!("skipping: konung.res not present");
+            return;
+        };
+        assert_eq!(character_name(&d, 124).as_deref(), Some("Драгомир"));
+        assert_eq!(character_name(&d, 151).as_deref(), Some("Михаил"));
+        assert_eq!(character_name(&d, 10).as_deref(), Some("Волк"));
+        assert_eq!(character_name(&d, 0), None);
+    }
+
+    #[test]
+    fn class_name_table_reference_values() {
+        let Some(d) = konung() else { return };
+        assert_eq!(class_name(&d, 1).as_deref(), Some("Храбрец"));
+        assert_eq!(class_name(&d, 2).as_deref(), Some("Купец"));
+        assert_eq!(class_name(&d, 3).as_deref(), Some("Охотник"));
+        assert_eq!(class_name(&d, 4).as_deref(), Some("Вождь"));
+        assert_eq!(class_name(&d, 5).as_deref(), Some("Воин"));
+        assert_eq!(class_name(&d, 0), None);
+    }
 }

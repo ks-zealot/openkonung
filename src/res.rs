@@ -255,37 +255,14 @@ pub fn render_graph_4d28_frame(
     indexed_to_rgba(&idx, &alpha, w, h, palette)
 }
 
-pub fn equipment_overlay_selector(
-    game: &[u8],
-    exe: &[u8],
-    profile: &ExeProfile,
-    handle: u32,
-) -> Option<i32> {
-    if handle == 0 {
-        return None;
-    }
-    let o = GAME_ITEMS_OFF + handle as usize * 16;
-    if o + 16 > game.len() {
-        return None;
-    }
-    let ir = &game[o..o + 16];
-    let runtime_type = ir[0];
-    let subtype = ir[3];
-    if runtime_type > 5 {
-        return None;
-    }
-    let template_id = 14 + subtype as usize;
-    let off = exe_va_to_off(profile.item_template_va, profile) + template_id * 64;
-    if off + 0x40 > exe.len() {
-        return None;
-    }
-    Some(i16(exe, off + 0x3E))
-}
-
 // --- resource container ---
 
 pub struct Res {
     pub game: Vec<u8>,
+    /// The loaded save file (`Game.0/1/2`). Item instances are read from here
+    /// (offset 0, 8192 × 16), not from `game` (which is `Game.res` and only
+    /// supplies the variant table).
+    pub save_game: Vec<u8>,
     pub graph: Vec<u8>,
     pub objects: Vec<u8>,
     pub exe: Vec<u8>,
@@ -301,10 +278,21 @@ pub struct Res {
     pub object_entries: Vec<Option<(usize, usize)>>,
     pub overlay_palette_offsets: Vec<u32>,
 
+    /// Decoded `INTR{width}R.RES` interface archive (attached at game start via
+    /// [`Res::load_intr`]); `None` until/unless loaded. Not yet consumed by the
+    /// renderer.
+    pub intr: Option<crate::intr::IntrArchive>,
+    /// Item template database parsed from `konung.res` (icons + CP866 names).
+    pub item_db: Option<crate::item::ItemDb>,
+    /// Original bitmap fonts parsed from `konung.res` (used for item labels).
+    pub fonts: crate::font::Fonts,
+    /// Raw `konung.res` (character/class name tables). Empty until loaded.
+    pub konung: Vec<u8>,
+
     terrain_tile_cache: HashMap<usize, Option<Img>>,
     prop_sprite_cache: HashMap<(usize, u32), (Img, i32, i32)>,
     monster_frame_cache: HashMap<(usize, u32, usize), (Img, i32, i32, usize)>,
-    npc_frame_cache: HashMap<(i32, i32, i32, i32, i32), (Img, i32, i32, i32)>,
+    npc_frame_cache: HashMap<(i32, i32, i32, i32, i32, [u16; 6]), (Img, i32, i32, i32)>,
 }
 
 impl Res {
@@ -327,6 +315,7 @@ impl Res {
 
         Res {
             game,
+            save_game: Vec::new(),
             graph,
             objects,
             exe,
@@ -339,6 +328,10 @@ impl Res {
             human_overlay_positions,
             object_entries,
             overlay_palette_offsets,
+            intr: None,
+            item_db: None,
+            fonts: crate::font::Fonts::empty(),
+            konung: Vec::new(),
             terrain_tile_cache: HashMap::new(),
             prop_sprite_cache: HashMap::new(),
             monster_frame_cache: HashMap::new(),
@@ -358,6 +351,69 @@ impl Res {
             }
             _ => &[],
         }
+    }
+
+    // --- INTR interface sprites (original UI asset family) ---
+
+    /// Decode and attach an `INTR{width}R.RES` archive using this resource's
+    /// already-loaded GRAPH palettes. Validates the whole archive up front;
+    /// pixel buffers are decoded lazily per index. Returns the number of
+    /// occupied sprite indices.
+    pub fn load_intr(&mut self, intr_data: &[u8]) -> Result<usize, crate::intr::IntrError> {
+        let archive = crate::intr::IntrArchive::load(intr_data, &self.graph)?;
+        let count = archive.len();
+        self.intr = Some(archive);
+        Ok(count)
+    }
+
+    /// Decoded INTR interface sprite by its original numeric index, or `None`
+    /// when no archive is attached or the slot is unused.
+    pub fn intr_sprite(&mut self, id: usize) -> Option<Img> {
+        self.intr.as_mut().and_then(|a| a.get(id))
+    }
+
+    // --- items (loaded Game.N instances + konung.res templates) ---
+
+    /// Attach the loaded save file (`Game.0/1/2`) whose instance table at offset
+    /// 0 resolves the protagonist's inventory/equipment ids.
+    pub fn set_save_game(&mut self, save: &[u8]) {
+        self.save_game = save.to_vec();
+    }
+
+    /// Parse the original item templates and bitmap fonts from `konung.res`
+    /// (the `KIND_NAMES` resource). Idempotent and safe to skip when absent.
+    pub fn load_items_and_fonts(&mut self, konung: &[u8]) {
+        if konung.is_empty() {
+            return;
+        }
+        self.item_db = Some(crate::item::ItemDb::from_konung(konung));
+        self.fonts = crate::font::Fonts::parse(konung);
+        self.konung = konung.to_vec();
+    }
+
+    /// Original character name by `Entity+0xD4` from `konung.res`.
+    pub fn character_name(&self, name_id: u8) -> Option<String> {
+        if self.konung.is_empty() {
+            return None;
+        }
+        crate::names::character_name(&self.konung, name_id)
+    }
+
+    /// Original class name by `Entity+0x04` from `konung.res`.
+    pub fn class_name(&self, entity_class: u8) -> Option<String> {
+        if self.konung.is_empty() {
+            return None;
+        }
+        crate::names::class_name(&self.konung, entity_class)
+    }
+
+    /// Resolve an item-instance id (from an `Entity` inventory/equipment field)
+    /// to its original icon index and CP866 name. The instance is decoded from
+    /// the loaded save file (`Game.N`), matching the original loader. `None`
+    /// for the empty id `0`, when the save has not been attached, or when the
+    /// item database is not loaded.
+    pub fn item_info(&self, id: u16) -> Option<crate::item::ItemInfo> {
+        self.item_db.as_ref()?.resolve(&self.save_game, id)
     }
 
     // --- terrain ---
@@ -441,16 +497,65 @@ impl Res {
 
     // --- monsters ---
 
+    /// Original object block row for an action value. The object/monster family
+    /// has 6 rows of `0x130` bytes; actions `6..=11` alias rows `0..=5`
+    /// (`FUN_0041435C` / `FUN_00414078`: `if (5 < action) action -= 6`).
+    fn object_row(action: usize) -> usize {
+        if action > 5 {
+            action - 6
+        } else {
+            action
+        }
+    }
+
+    /// Animation-0 (row 0, direction 0) frame-id sequence. Retained for
+    /// callers that only need the base sequence.
     pub fn monster_animation0_sequence(&self, object_id: usize) -> Vec<u16> {
         let blk = self.object_block(object_id);
-        if blk.len() < 0x2E {
+        if blk.len() < 0x0C {
             return vec![0];
         }
-        let count = u16(blk, 0x08) as usize;
-        if count == 0 || count > 18 {
+        let (_, count) = self.monster_mapped_frame(object_id, 0, 0, 0);
+        if count == 0 {
             return vec![0];
         }
-        (0..count).map(|i| u16(blk, 0x0A + i * 2) as u16).collect()
+        (0..count)
+            .map(|i| u16(blk, 0x0A + i * 2) as u16)
+            .collect()
+    }
+
+    /// Frame count for one object-family action/direction. `0` when unresolved.
+    /// Table layout: `block + row*0x130 + direction*0x26 + 8` (count `u16`).
+    pub fn monster_frame_count(&self, object_id: usize, action: usize, direction: usize) -> usize {
+        let blk = self.object_block(object_id);
+        let row = Self::object_row(action);
+        let o = row * 0x130 + (direction & 7) * 0x26 + 8;
+        if o + 2 > blk.len() {
+            return 0;
+        }
+        u16(blk, o) as usize
+    }
+
+    /// Frame id and count for one object-family action/direction/frame index.
+    pub fn monster_mapped_frame(
+        &self,
+        object_id: usize,
+        action: usize,
+        direction: usize,
+        frame_index: usize,
+    ) -> (usize, usize) {
+        let mut count = self.monster_frame_count(object_id, action, direction);
+        if count == 0 {
+            count = 1;
+        }
+        let blk = self.object_block(object_id);
+        let row = Self::object_row(action);
+        let fi = frame_index % count;
+        let o = row * 0x130 + (direction & 7) * 0x26 + fi * 2 + 0x0A;
+        if o + 2 > blk.len() {
+            return (0, count);
+        }
+        (u16(blk, o) as usize, count)
     }
 
     pub fn monster_frame(&mut self, variant_id: usize, anim_frame_index: usize) -> (Img, i32, i32, usize) {
@@ -471,13 +576,26 @@ impl Res {
         palette_id: usize,
         anim_frame_index: usize,
     ) -> (Img, i32, i32, usize) {
-        let seq = self.monster_animation0_sequence(object_id);
-        let frame_id = seq[anim_frame_index % seq.len()] as usize;
+        self.monster_frame_state(object_id, palette_id, 0, 0, anim_frame_index)
+    }
+
+    /// Stateful object/monster frame: `action`/`direction` select the original
+    /// 6-row table (actions `6..=11` alias rows `0..=5`), `anim_frame_index`
+    /// wraps at the row's frame count.
+    pub fn monster_frame_state(
+        &mut self,
+        object_id: usize,
+        palette_id: usize,
+        action: usize,
+        direction: usize,
+        anim_frame_index: usize,
+    ) -> (Img, i32, i32, usize) {
+        let (frame_id, count) = self.monster_mapped_frame(object_id, action, direction, anim_frame_index);
         let key = (object_id, palette_id as u32, frame_id);
         if let Some(v) = self.monster_frame_cache.get(&key) {
             return v.clone();
         }
-        let value = self.decode_monster_frame(object_id, palette_id, frame_id, seq.len());
+        let value = self.decode_monster_frame(object_id, palette_id, frame_id, count);
         self.monster_frame_cache.insert(key, value.clone());
         value
     }
@@ -527,7 +645,6 @@ impl Res {
         if base_id >= self.human_base_positions.len() {
             return (Rc::new(Image::new(1, 1, [0, 0, 0, 0])), 0, 0, 1);
         }
-        let action = action % 6;
         let direction = direction & 7;
         let palette_id = match palette_override_id {
             Some(p) => p,
@@ -539,11 +656,6 @@ impl Res {
             human_mapped_frame(&self.graph, base_pos, action, direction, anim_frame_index);
         let fi = anim_frame_index % count;
 
-        let key = (variant_id as i32, action as i32, direction as i32, fi as i32, palette_id);
-        if let Some(v) = self.npc_frame_cache.get(&key) {
-            return v.clone();
-        }
-
         let mut equipment = [0u16; 6];
         for slot in 0..6 {
             let o = 0x45 + slot * 2;
@@ -551,8 +663,14 @@ impl Res {
                 equipment[slot] = u16(&vr, o) as u16;
             }
         }
+
+        let key = (variant_id as i32, action as i32, direction as i32, fi as i32, palette_id, equipment);
+        if let Some(v) = self.npc_frame_cache.get(&key) {
+            return v.clone();
+        }
+
         let value = self.compose_human(
-            &equipment, base_pos, action, direction, fi, palette_id, count,
+            &equipment, &self.game, base_pos, action, direction, fi, palette_id, count,
         );
         self.npc_frame_cache.insert(key, value.clone());
         value
@@ -560,11 +678,12 @@ impl Res {
 
     /// Render a human animation frame directly from a Game.N entity's
     /// `visual_index` (human base-graphics index) and its `palette_offset`
-    /// (D8, / 512 = palette id). No equipment is applied (equipment rendering
-    /// is a later task) and no Game.res variant lookup is involved. Retained
-    /// for the canonical population/visual phase (MD §10, §12).
+    /// (D8, / 512 = palette id). `equipment` is the entity's `Entity+0x66`
+    /// six-slot array; equipped items composite their GRAPH overlay blocks. No
+    /// Game.res variant lookup is involved.
     pub fn human_frame_from_base(
         &mut self,
+        equipment: &[u16; 6],
         base_id: usize,
         palette_id: i32,
         action: usize,
@@ -574,19 +693,25 @@ impl Res {
         if base_id >= self.human_base_positions.len() {
             return (Rc::new(Image::new(1, 1, [0, 0, 0, 0])), 0, 0, 1);
         }
-        let action = action % 6;
         let direction = direction & 7;
         let base_pos = self.human_base_positions[base_id];
         let (_, count) =
             human_mapped_frame(&self.graph, base_pos, action, direction, anim_frame_index);
         let fi = anim_frame_index % count;
         // Negative key space keeps these entries distinct from variant-based ones.
-        let key = (-(base_id as i32) - 1, action as i32, direction as i32, fi as i32, palette_id);
+        let key = (
+            -(base_id as i32) - 1,
+            action as i32,
+            direction as i32,
+            fi as i32,
+            palette_id,
+            *equipment,
+        );
         if let Some(v) = self.npc_frame_cache.get(&key) {
             return v.clone();
         }
         let value = self.compose_human(
-            &[0u16; 6], base_pos, action, direction, fi, palette_id, count,
+            equipment, &self.save_game, base_pos, action, direction, fi, palette_id, count,
         );
         self.npc_frame_cache.insert(key, value.clone());
         value
@@ -608,12 +733,13 @@ impl Res {
     /// index or palette cannot be resolved, or when the decoder yields no frame.
     pub fn actor_frame(
         &mut self,
+        equipment: &[u16; 6],
         archetype: u8,
         visual_index: u8,
         palette_offset: u32,
         facing: u8,
     ) -> Result<(Img, i32, i32), String> {
-        self.actor_frame_state(archetype, visual_index, palette_offset, facing, 0, 0)
+        self.actor_frame_state(equipment, archetype, visual_index, palette_offset, facing, 0, 0)
     }
 
     /// Stateful variant of [`actor_frame`] for animated humanoids.
@@ -621,13 +747,15 @@ impl Res {
     /// Humanoid family (`archetype & 0x40 == 0`): `base_id = visual_index`,
     /// `palette_id = palette_offset / 512`, resolved through
     /// [`human_frame_from_base`] with the supplied `action` / `anim_frame_index`
-    /// (frame wrapping/count comes from the GRAPH animation tables). No Game.res
-    /// variant and no equipment overlays are involved.
+    /// (frame wrapping/count comes from the GRAPH animation tables) and the
+    /// entity's `equipment` (`Entity+0x66`) composited as GRAPH overlay blocks.
     ///
     /// Object/monster family: animation state is not yet supported, so this
-    /// preserves the existing frame-0 behavior of [`actor_frame`].
+    /// preserves the existing frame-0 behavior of [`actor_frame`]; monsters have
+    /// no equipment overlays.
     pub fn actor_frame_state(
         &mut self,
+        equipment: &[u16; 6],
         archetype: u8,
         visual_index: u8,
         palette_offset: u32,
@@ -654,7 +782,8 @@ impl Res {
                     "object family visual_index {object_id} block too small for 0x3228 family"
                 ));
             }
-            let (im, gx, gy, _) = self.monster_frame_from_object(object_id, palette_id as usize, 0);
+            let (im, gx, gy, _) =
+                self.monster_frame_state(object_id, palette_id as usize, action, facing as usize, anim_frame_index);
             (im, gx, gy)
         } else {
             let base_id = visual_index as usize;
@@ -665,7 +794,7 @@ impl Res {
                 ));
             }
             let (im, gx, gy, _) =
-                self.human_frame_from_base(base_id, palette_id, action, facing as usize, anim_frame_index);
+                self.human_frame_from_base(equipment, base_id, palette_id, action, facing as usize, anim_frame_index);
             (im, gx, gy)
         };
 
@@ -677,10 +806,77 @@ impl Res {
         Ok((im, gx, gy))
     }
 
+    /// Animation-cycle length in frames for one family/direction/action, the
+    /// original `Entity+0xD7` written by `FUN_0041435c`. `FUN_00413de4` wraps the
+    /// frame counter at this value, and the walk action steps one collision cell
+    /// per completed cycle.
+    ///
+    /// `None` when the family/index cannot be resolved.
+    /// - humanoid (`archetype & 0x40 == 0`): GRAPH row `action` for `direction`.
+    /// - object/monster: 6-row table (`action 6..=11` alias `0..=5`).
+    pub fn action_cycle_frames(
+        &self,
+        archetype: u8,
+        visual_index: u8,
+        direction: usize,
+        action: usize,
+    ) -> Option<usize> {
+        if archetype & 0x40 != 0 {
+            let object_id = visual_index as usize;
+            if self.object_entries.get(object_id).and_then(|x| *x).is_none() {
+                return None;
+            }
+            let n = self.monster_frame_count(object_id, action, direction & 7);
+            if n == 0 {
+                None
+            } else {
+                Some(n)
+            }
+        } else {
+            let base_id = visual_index as usize;
+            let base_pos = *self.human_base_positions.get(base_id)?;
+            let n = human_frame_count(&self.graph, base_pos, action, direction & 7);
+            if n == 0 {
+                None
+            } else {
+                Some(n)
+            }
+        }
+    }
+
+    /// Walk-cycle length for the current stance: human row `1` (battle) / `7`
+    /// (peaceful); object rows alias to `1`.
+    pub fn walk_cycle_frames(
+        &self,
+        archetype: u8,
+        visual_index: u8,
+        direction: usize,
+        battle: bool,
+    ) -> Option<usize> {
+        self.action_cycle_frames(archetype, visual_index, direction, crate::anim::walk_action(battle))
+    }
+
+    /// GRAPH human-overlay selector (`equipped_visual`, prototype `+0x3E`) for
+    /// an equipped item-instance id. The instance is decoded from `instances`
+    /// (the loaded save for Game.N actors, or `Game.res` for the variant path)
+    /// and resolved against the `konung.res` templates. `None` when the item has
+    /// no body overlay (`equipped_visual` outside `0..=23`).
+    fn overlay_selector(&self, instances: &[u8], id: u16) -> Option<usize> {
+        let db = self.item_db.as_ref()?;
+        let inst = crate::item::ItemDb::decode_instance(instances, id)?;
+        let ov = db.info(inst.class, inst.subtype)?.equipped_visual;
+        if (0..24).contains(&ov) {
+            Some(ov as usize)
+        } else {
+            None
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn compose_human(
         &self,
         equipment: &[u16; 6],
+        instances: &[u8],
         base_pos: usize,
         action: usize,
         direction: usize,
@@ -712,16 +908,13 @@ impl Res {
             if handle == 0 {
                 continue;
             }
-            let selector = match equipment_overlay_selector(&self.game, &self.exe, &self.profile, handle) {
+            let selector = match self.overlay_selector(instances, handle as u16) {
                 Some(s) => s,
                 None => continue,
             };
-            if selector < 0 || selector >= 24 {
-                continue;
-            }
-            let opos = self.human_overlay_positions[selector as usize];
+            let opos = self.human_overlay_positions[selector];
             let ofid = human_mapped_frame(&self.graph, opos, action, direction, fi).0;
-            let opid = (self.overlay_palette_offsets[selector as usize] / 512) as usize;
+            let opid = (self.overlay_palette_offsets[selector] / 512) as usize;
             let oim = render_graph_4d28_frame(&self.graph, opos, &self.palettes[opid.min(255)], ofid);
             let ooff = opos + 0x2F28 + action * 0x300 + direction * 0x60 + fi * 8;
             let ox = if ooff + 8 <= self.graph.len() { anchor_x + i16(&self.graph, ooff + 4) } else { anchor_x };
@@ -950,7 +1143,7 @@ pub fn line(dst: &mut [u8], dw: usize, dh: usize, mut x0: i32, mut y0: i32, x1: 
 
 #[cfg(test)]
 mod tests {
-    use super::{human_frame_count, human_mapped_frame};
+    use super::{human_frame_count, human_mapped_frame, Res};
 
     #[test]
     fn human_frames_wrap_by_graph_sequence_count() {
@@ -975,5 +1168,70 @@ mod tests {
         let g = vec![0u8; 0x200];
         assert_eq!(human_frame_count(&g, 0, 0, 0), 0);
         assert_eq!(human_mapped_frame(&g, 0, 0, 0, 5), (0, 1));
+    }
+
+    #[test]
+    fn human_action_rows_do_not_fold_modulo_six() {
+        // Each of the 10 action rows must read its own table slice. Row 6/7
+        // (peaceful idle/walk) must NOT alias rows 0/1 (battle idle/walk).
+        let mut g = vec![0u8; 0x2000];
+        for a in 0..10usize {
+            let o = a * 0xD0 + 8;
+            g[o] = 1; // count = 1
+            g[o + 2] = (100 + a) as u8; // frame id == 100 + action
+            g[o + 3] = 0;
+        }
+        for a in 0..10usize {
+            assert_eq!(human_frame_count(&g, 0, a, 0), 1);
+            assert_eq!(human_mapped_frame(&g, 0, a, 0, 0), (100 + a, 1));
+        }
+        assert_ne!(
+            human_mapped_frame(&g, 0, 0, 0, 0),
+            human_mapped_frame(&g, 0, 6, 0, 0)
+        );
+        assert_ne!(
+            human_mapped_frame(&g, 0, 1, 0, 0),
+            human_mapped_frame(&g, 0, 7, 0, 0)
+        );
+    }
+
+    #[test]
+    fn object_actions_six_to_eleven_alias_zero_to_five() {
+        for a in 0..6usize {
+            assert_eq!(Res::object_row(a), a);
+            assert_eq!(Res::object_row(a + 6), a);
+        }
+    }
+
+    /// End-to-end: equipped items composite their GRAPH overlays onto a Game.N
+    /// humanoid, and the frame cache distinguishes different loadouts. Gated on
+    /// the original files being present.
+    #[test]
+    fn human_frame_from_base_applies_equipment_overlays() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let read = |n: &str| std::fs::read(dir.join(n)).ok();
+        let (Some(game), Some(graph), Some(objects), Some(exe), Some(konung), Some(save)) = (
+            read("Game.res"),
+            read("GRAPH.RES"),
+            read("Objects.res"),
+            read("CLIENT.EXE"),
+            read("konung.res"),
+            read("Game.1"),
+        ) else {
+            eprintln!("skipping: original resources not present");
+            return;
+        };
+        let mut res = Res::new(game, graph, objects, exe);
+        res.load_items_and_fonts(&konung);
+        res.set_save_game(&save);
+        // Гилли (Game.1 entity 277): visual_index 1, palette 30, equipment
+        // [0,0,288,289,0,0] = Нож + Кольчуга (overlays 4 and 8).
+        let bare = res.human_frame_from_base(&[0u16; 6], 1, 30, 0, 0, 0);
+        let dressed = res.human_frame_from_base(&[0, 0, 288, 289, 0, 0], 1, 30, 0, 0, 0);
+        assert!(bare.0.w > 0 && dressed.0.w > 0, "frames must decode");
+        assert_ne!(
+            bare.0.data, dressed.0.data,
+            "equipment must change the composited frame"
+        );
     }
 }
