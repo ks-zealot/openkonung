@@ -61,11 +61,10 @@ impl PlayableApp {
                 return;
             }
         }
-        if button == 3 && !self.mode_graph {
-            self.mode_graph = true;
-            self.selected = None;
-            self.drag = false;
-        } else if button == 1 {
+        if button == 1 {
+            // Left button: select a graph node, or move the party. Left-click
+            // never opens a dialogue — the original talks on the right button
+            // (`FUN_0042260C`, `_DAT_0081D5B0 & 1` = UI commands + move only).
             if self.mode_graph {
                 let v = self.window_to_virtual(x, y);
                 if let Some((vx, vy)) = v {
@@ -88,10 +87,19 @@ impl PlayableApp {
                     }
                 }
             } else {
-                self.world_click(x, y);
+                self.world_move(x, y);
             }
             self.drag = false;
             self.last_mouse = (x, y);
+        } else if button == 3 {
+            // Right button: world interaction — open a talkable human NPC's
+            // dialogue; otherwise move (original `FUN_0042260C` right-button
+            // branch, `_DAT_0081D5B0 & 2`, command code 0).
+            if !self.mode_graph {
+                self.world_interact(x, y);
+                self.drag = false;
+                self.last_mouse = (x, y);
+            }
         } else if button == 2 {
             self.camera_follow = false;
             self.drag = true;
@@ -100,11 +108,24 @@ impl PlayableApp {
     }
 
 
-    /// A left-click in the world: open a dialogue for a human NPC that has a
-    /// `dialogue_id`, otherwise move to the clicked cell. A click on any other
-    /// actor (monsters, objects, non-talkable humans) is ignored — it neither
-    /// opens a dialogue nor issues movement, matching the requested gate.
-    fn world_click(&mut self, x: f64, y: f64) {
+    /// A left-click in the world: move the selected party to the clicked cell.
+    /// Left-click never opens a dialogue — the original opens dialogues on the
+    /// right button (`FUN_0042260C`). Only selected party members receive
+    /// move/attack commands (`FUN_00411708`); with the leader deselected a world
+    /// click is inert.
+    fn world_move(&mut self, x: f64, y: f64) {
+        if self.party_selected[0] {
+            self.set_target_from_mouse(x, y);
+        }
+    }
+
+
+    /// A right-click in the world (original `FUN_0042260C` right-button branch,
+    /// `_DAT_0081D5B0 & 2`, command code 0): open a dialogue for a **human**
+    /// actor (`archetype & 0x40 == 0`) whose `dialogue_id != 0xFF`; otherwise
+    /// move. The original also issues an attack/order to the party for other
+    /// actors; that path is not implemented, so those clicks move instead.
+    fn world_interact(&mut self, x: f64, y: f64) {
         let Some((vx, vy)) = self.window_to_virtual(x, y) else {
             return;
         };
@@ -131,14 +152,12 @@ impl PlayableApp {
                     // humanoid (`rng()%4 + 0x0C`); deterministic pick here.
                     self.sounds.push(0x0C + (entity as u16 & 3));
                 }
+                return;
             }
-            return;
+            // Non-dialogue actor (monster/object/non-talkable human): the
+            // original orders an attack; unimplemented, so fall through to move.
         }
-        // Only selected party members receive move/attack commands
-        // (`FUN_00411708`); with the leader deselected a world click is inert.
-        if self.party_selected[0] {
-            self.set_target_from_mouse(x, y);
-        }
+        self.world_move(x, y);
     }
 
 

@@ -108,6 +108,27 @@ fn character_screen_open_close_and_no_world_clickthrough() {
 }
 
 #[test]
+fn right_click_moves_and_no_longer_toggles_graph() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    // Left-click moves (unchanged).
+    app.pointer_down(1, 500.0, 300.0);
+    assert!(app.target.is_some(), "left-click moves");
+    // Right-click also moves when no actor is under the cursor (original
+    // right-button branch, command code 0) and must NOT toggle the graph view.
+    app.target = None;
+    assert!(!app.mode_graph);
+    app.pointer_down(3, 500.0, 300.0);
+    assert!(!app.mode_graph, "right-click no longer opens the graph");
+    assert!(
+        app.target.is_some(),
+        "right-click moves when no actor is targeted"
+    );
+}
+
+#[test]
 fn tab_toggles_protagonist_battle_stance() {
     let Some(mut app) = build_test_app() else {
         eprintln!("skipping: original resources not present");
