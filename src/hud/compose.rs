@@ -37,12 +37,41 @@ pub fn portrait_id(
 }
 
 
-/// One party portrait to overlay on the panel. Binding to real character data
-/// is deferred (Task 3); [`HudState`] is empty until then.
+/// HP-indicator fill sprite, ported from `FUN_0042C730`'s bar branch:
+/// poisoning (`Entity+0x50 != 0`) wins, else the health tier selects the fill
+/// (`<401` deep-wounded, `<801` wounded, else healthy).
+pub fn hp_bar_id(poisoned: bool, health: u16) -> usize {
+    if poisoned {
+        crate::intr::HP_BAR_POISONED
+    } else if health <= 400 {
+        crate::intr::HP_BAR_DEEP_WOUNDED
+    } else if health <= 800 {
+        crate::intr::HP_BAR_WOUNDED
+    } else {
+        crate::intr::HP_BAR_HEALTHY
+    }
+}
+
+
+/// HP-indicator fill height in logical px: `max(1, health * bar_h / 1600)`
+/// (`FUN_0042C730`: `health * H / 0x640`, clamped to at least 1).
+pub fn hp_fill(health: u16, bar_h: i32) -> i32 {
+    ((health as i32 * bar_h) / 1600).max(1)
+}
+
+
+/// One party portrait to overlay on the panel: the portrait sprite plus the
+/// original selection marker (`FUN_00411708`) and HP indicator.
 #[derive(Clone, Copy, Debug)]
 pub struct PartyPortrait {
     pub cell: usize,
     pub intr_id: usize,
+    /// Member is in the 10-slot selection set (`FUN_00411708`).
+    pub selected: bool,
+    /// `Entity+0x5C` health; `0` suppresses the HP bar (dead).
+    pub health: u16,
+    /// `Entity+0x50` periodic damage (poison) selects the pink fill.
+    pub poisoned: bool,
 }
 
 
@@ -125,17 +154,32 @@ pub fn compose<F>(
         }
     }
 
-    // Party portraits (none until character binding exists).
+    // Party portraits, at the recovered per-slot origins (`0x45AF10`). Each is
+    // followed by the selection marker and the HP indicator, exactly as
+    // `FUN_0042C730` does for one member.
     for p in &state.party {
-        let Some(cell) = layout.party_cell(p.cell) else {
+        let Some((ox, oy)) = layout.party_origin(p.cell) else {
             continue;
         };
-        let Some(im) = lookup(p.intr_id) else {
-            continue;
-        };
-        let ox = cell.x + (cell.w - im.w as i32) / 2;
-        let oy = cell.y + (cell.h - im.h as i32) / 2;
-        blit(frame, fw, fh, &im.data, im.w, im.h, ox, oy);
+        if let Some(im) = lookup(p.intr_id) {
+            blit(frame, fw, fh, &im.data, im.w, im.h, ox, oy);
+        }
+        // Selection marker (`INTR[173]`) drawn at the same origin.
+        if p.selected {
+            if let Some(im) = lookup(crate::intr::SELECTION_MARKER) {
+                blit(frame, fw, fh, &im.data, im.w, im.h, ox, oy);
+            }
+        }
+        // HP indicator: bottom `fill` rows of the tier/poison fill sprite.
+        if p.health != 0 {
+            if let Some(im) = lookup(hp_bar_id(p.poisoned, p.health)) {
+                let bx = ox + layout.hp_bar.dx;
+                let by = oy + layout.hp_bar.dy;
+                let fill = hp_fill(p.health, layout.hp_bar.height).min(im.h as i32);
+                let skip = (im.h as i32 - fill).max(0) as usize;
+                crate::res::blit_rows(frame, fw, fh, &im.data, im.w, im.h, skip, bx, by);
+            }
+        }
     }
 }
 
@@ -152,7 +196,7 @@ pub fn draw_game_hud(
     inventory: &[u16; 32],
     scroll: usize,
     hovered: Option<usize>,
-    protagonist_portrait: Option<usize>,
+    party: &[PartyPortrait],
     auto_on: bool,
 ) {
     if res.intr.is_none() {
@@ -177,12 +221,7 @@ pub fn draw_game_hud(
         }
     }
 
-    // Only the protagonist occupies a party cell at new game (cell 0); the
-    // remaining nine stay empty.
-    let party = match protagonist_portrait {
-        Some(id) => vec![PartyPortrait { cell: 0, intr_id: id }],
-        None => Vec::new(),
-    };
+    let party = party.to_vec();
     let auto_id = if auto_on {
         crate::intr::AUTO_ON
     } else {

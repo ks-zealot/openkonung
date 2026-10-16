@@ -60,12 +60,12 @@ impl PlayableApp {
         let loc_id = self.current_map;
         if let Some(pop) = self.population_cache.get(&loc_id) {
             for a in &pop.actors {
-                // Live motion (cell + facing + action) when present, else the
+                // Live motion (draw cell + facing + action) when present, else the
                 // placement with the authored stance's idle action at frame 0.
                 let (facing, cell, action, frame) = pop
                     .motion
                     .get(&a.source_entity_id())
-                    .map(|m| (m.facing, m.cell, m.action as usize, m.frame as usize))
+                    .map(|m| (m.facing, m.render_cell, m.action as usize, m.frame as usize))
                     .unwrap_or_else(|| {
                         let battle = crate::anim::battle_from_flags(a.entity.flags_b);
                         (
@@ -128,7 +128,7 @@ impl PlayableApp {
             let (facing, cell, action, frame) = pop
                 .motion
                 .get(&a.source_entity_id())
-                .map(|m| (m.facing, m.cell, m.action as usize, m.frame as usize))
+                .map(|m| (m.facing, m.render_cell, m.action as usize, m.frame as usize))
                 .unwrap_or_else(|| {
                     let battle = crate::anim::battle_from_flags(a.entity.flags_b);
                     (

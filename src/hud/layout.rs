@@ -26,6 +26,50 @@ pub struct Rect {
 }
 
 
+/// HP-indicator bar geometry (`FUN_0042C730` bar branch).
+///
+/// `height` is the full bar height (`konung.res` table `0x463314`: 32 @640 /
+/// 40 @800); `dx`/`dy` are the bar top-left relative to the portrait origin
+/// (`0x466012`/`0x466014` high words: 4/8 @640, 6/10 @800).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HpBar {
+    pub height: i32,
+    pub dx: i32,
+    pub dy: i32,
+}
+
+
+/// Recovered party-panel portrait origins (`konung.res` table `0x45AF10`),
+/// row-major slots 0..10. The table stores `{x640,y640,x800,y800}` per slot;
+/// only the resolution-appropriate pair is kept here. These are the exact
+/// portrait / selection-marker / HP-bar anchor positions.
+const PARTY_ORIGINS_640: [(i32, i32); PARTY_CELLS] = [
+    (3, 1),
+    (58, 1),
+    (3, 55),
+    (58, 55),
+    (3, 109),
+    (58, 109),
+    (3, 163),
+    (58, 163),
+    (3, 217),
+    (58, 217),
+];
+
+const PARTY_ORIGINS_800: [(i32, i32); PARTY_CELLS] = [
+    (6, 4),
+    (74, 4),
+    (6, 71),
+    (74, 71),
+    (6, 139),
+    (74, 139),
+    (6, 206),
+    (74, 206),
+    (6, 273),
+    (74, 273),
+];
+
+
 /// Slot step used by the original executable: `slot_width - 1`
 /// (global `0x81D724`, computed at VA `0x42C4B5`).
 #[inline]
@@ -61,6 +105,10 @@ pub struct HudLayout {
     pub auto_pos: (i32, i32),
     /// 10 party portrait cells, row-major (row 0 = top).
     pub party_cells: [Rect; PARTY_CELLS],
+    /// HP-indicator bar geometry for this resolution.
+    pub hp_bar: HpBar,
+    /// Per-slot portrait/marker/HP-bar draw origin, from `0x45AF10`.
+    pub party_origins: [(i32, i32); PARTY_CELLS],
 }
 
 
@@ -95,6 +143,8 @@ pub fn layout_800() -> HudLayout {
         // Measured from INTR800[3]: columns x=2/70 (cell 68 wide),
         // rows y=2/70/137/205/272 (cell 68 tall).
         party_cells: build_party_cells(&[2, 70], &[2, 70, 137, 205, 272], 68, 68),
+        hp_bar: HpBar { height: 40, dx: 6, dy: 10 },
+        party_origins: PARTY_ORIGINS_800,
     }
 }
 
@@ -119,6 +169,8 @@ pub fn layout_640() -> HudLayout {
         // Measured from INTR640[3]: columns x=2/55 (cell 53 wide),
         // rows y=1/55/109/163/217 (cell 54 tall).
         party_cells: build_party_cells(&[2, 55], &[1, 55, 109, 163, 217], 53, 54),
+        hp_bar: HpBar { height: 32, dx: 4, dy: 8 },
+        party_origins: PARTY_ORIGINS_640,
     }
 }
 
@@ -192,6 +244,13 @@ impl HudLayout {
     /// Party portrait cell for a given flat cell index (0..10).
     pub fn party_cell(&self, index: usize) -> Option<Rect> {
         self.party_cells.get(index).copied()
+    }
+
+
+    /// Portrait / selection-marker / HP-bar draw origin for a flat party slot
+    /// (0..10), from the recovered table `0x45AF10`.
+    pub fn party_origin(&self, index: usize) -> Option<(i32, i32)> {
+        self.party_origins.get(index).copied()
     }
 
 

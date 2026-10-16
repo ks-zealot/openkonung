@@ -18,6 +18,27 @@ impl PlayableApp {
     }
 
 
+    /// Begin the next walk segment exactly like the original `FUN_0041435C`:
+    /// take the draw projection (`+0xE8`) from the CURRENT cell at entry, then
+    /// commit one cell step into `+0x08/+0x0A` and reset the frame counter. The
+    /// stored cell therefore leads the drawn sprite by one step.
+    pub(super) fn begin_player_segment(&mut self) {
+        let Some(&dir) = self.player_path.first() else {
+            return;
+        };
+        self.player_render_x = self.player_x;
+        self.player_render_y = self.player_y;
+        self.player_dir = dir as i32;
+        let (nx, ny) =
+            step_by_direction(self.player_x.round() as i32, self.player_y.round() as i32, dir);
+        self.player_x = nx as f64;
+        self.player_y = ny as f64;
+        self.player_path.remove(0);
+        self.player_step_t = 0.0;
+        self.player_active = true;
+    }
+
+
     pub(super) fn set_target_from_mouse(&mut self, x: f64, y: f64) {
         let (mx, my) = match self.window_to_virtual(x, y) {
             Some(v) => v,
@@ -28,17 +49,30 @@ impl PlayableApp {
         // Nearest runtime/entity cell, clamped only to the proven runtime
         // bounds (x 0..319, y 0..159) — not to the terrain surface.
         let (tx, ty) = local_px_to_entity(lx.round() as i32, ly.round() as i32);
+        // Origin is the stored runtime/Entity cell `+0x08/+0x0A`. Because a
+        // segment's step is committed at its START (`FUN_0041435C`), this is the
+        // cell the hero is walking INTO while a walk is in flight — so a mid-walk
+        // click re-plans from there and never rewinds to the cell being left.
         let start = (self.player_x.round() as i32, self.player_y.round() as i32);
         let path = self.compute_player_path(start, (tx, ty));
-        self.player_step_t = 0.0;
-        // The original `FUN_004142D4` stores the target fields *before* running
-        // the pathfinder, so the destination is recorded even when the route
-        // fails; only a successful route starts the walk. A blocked/unreachable
-        // point therefore never moves the hero.
+        // The original `FUN_004142D4`/`FUN_0041ECC8` store the destination before
+        // running the pathfinder, so it is recorded even when the route fails;
+        // only a successful route starts/restarts the walk.
         self.target = Some((tx as f64, ty as f64));
         match path {
-            Some(p) if !p.is_empty() => self.player_path = p,
-            _ => self.player_path.clear(),
+            Some(p) if !p.is_empty() => {
+                self.player_path = p;
+                self.begin_player_segment();
+            }
+            _ => {
+                // Blocked/unreachable (or same cell): abort to idle on the
+                // committed cell (no walk command).
+                self.player_path.clear();
+                self.player_active = false;
+                self.player_step_t = 0.0;
+                self.player_render_x = self.player_x;
+                self.player_render_y = self.player_y;
+            }
         }
     }
 
@@ -100,34 +134,39 @@ impl PlayableApp {
         self.teleport_cooldown = (self.teleport_cooldown - dt).max(0.0);
 
         // Movement is driven by the direction queue (`FUN_0043DA1F` →
-        // `Entity+0x13`), not by the raw target. Each completed walk-animation
-        // cycle consumes one direction code and steps exactly one cell
-        // (`FUN_0041435C`); facing is the pending direction (`FUN_004123BC` gate
-        // `facing == path[0]`), so a straight walk never zigzags.
-        if !self.player_path.is_empty() {
-            let dir = self.player_path[0];
-            self.player_dir = dir as i32;
+        // `Entity+0x13`), not by the raw target. One completed walk-animation
+        // cycle consumes one direction code; the next cell is committed at the
+        // START of its segment (`FUN_0041435C`), so `player_x/player_y` leads the
+        // drawn sprite (`player_render_*`) by one step. Facing is the pending
+        // direction (`FUN_004123BC` gate `facing == path[0]`), so a straight walk
+        // never zigzags.
+        if self.player_active {
             self.player_step_t += dt;
-            let period = self.player_cell_period();
-            if self.player_step_t >= period {
-                // Reset (never carry a backlog) so a frame-rate hitch can never
-                // consume several cells at once (no teleport).
-                self.player_step_t = 0.0;
-                let cur = (self.player_x.round() as i32, self.player_y.round() as i32);
-                let (nx, ny) = step_by_direction(cur.0, cur.1, dir);
-                self.player_x = nx as f64;
-                self.player_y = ny as f64;
-                self.player_path.remove(0);
-                if self.player_path.is_empty() {
-                    // Arrived, or a >MAX_PATH_STEPS route prefix was consumed:
-                    // re-route while the stored goal is still ahead.
+            if self.player_step_t >= self.player_cell_period() {
+                if !self.player_path.is_empty() {
+                    // Commit the next cell at cycle start.
+                    self.begin_player_segment();
+                } else {
+                    // Cycle finished with no queued direction: arrived, or a
+                    // >MAX_PATH_STEPS route prefix was consumed. Park the sprite
+                    // on the committed cell (never carry a backlog) and re-route
+                    // while the stored goal is still ahead.
+                    self.player_active = false;
+                    self.player_step_t = 0.0;
+                    self.player_render_x = self.player_x;
+                    self.player_render_y = self.player_y;
                     if let Some((tx, ty)) = self.target {
                         let goal = (tx.round() as i32, ty.round() as i32);
-                        if (nx, ny) == goal {
+                        let cur =
+                            (self.player_x.round() as i32, self.player_y.round() as i32);
+                        if cur == goal {
                             self.target = None;
                         } else {
-                            match self.compute_player_path((nx, ny), goal) {
-                                Some(p) if !p.is_empty() => self.player_path = p,
+                            match self.compute_player_path(cur, goal) {
+                                Some(p) if !p.is_empty() => {
+                                    self.player_path = p;
+                                    self.begin_player_segment();
+                                }
                                 _ => self.target = None,
                             }
                         }
@@ -166,8 +205,12 @@ impl PlayableApp {
                     self.selected = Some(dst);
                     self.player_x = ax as f64;
                     self.player_y = ay as f64;
+                    self.player_render_x = ax as f64;
+                    self.player_render_y = ay as f64;
                     self.target = None;
                     self.player_path.clear();
+                    self.player_active = false;
+                    self.player_step_t = 0.0;
                     self.dialog = None;
                     self.teleport_cooldown = 0.9;
                     self.last_teleport = Some((e.from, dst, e.rec));

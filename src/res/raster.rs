@@ -170,6 +170,58 @@ pub fn blit(dst: &mut [u8], dw: usize, dh: usize, src: &[u8], sw: usize, sh: usi
 }
 
 
+/// Alpha-composite only source rows `[sy0, sh)` of `src` onto `dst`, mapping
+/// source row `sy` to destination row `oy + sy`. Used by the party-panel HP
+/// indicator, whose fill is the bottom `h` rows of the full-height bar sprite
+/// (`FUN_0042C730`: `clip_y1 = origin_y + H - h`).
+#[allow(clippy::too_many_arguments)]
+pub fn blit_rows(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    sy0: usize,
+    ox: i32,
+    oy: i32,
+) {
+    if sw == 0 || sh == 0 || sy0 >= sh {
+        return;
+    }
+    for sy in sy0..sh {
+        let dy = oy + sy as i32;
+        if dy < 0 || dy >= dh as i32 {
+            continue;
+        }
+        let srow = sy * sw * 4;
+        let drow = dy as usize * dw * 4;
+        for sx in 0..sw {
+            let dx = ox + sx as i32;
+            if dx < 0 || dx >= dw as i32 {
+                continue;
+            }
+            let si = srow + sx * 4;
+            let a = src[si + 3];
+            if a == 0 {
+                continue;
+            }
+            let di = drow + dx as usize * 4;
+            if a == 255 {
+                dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+            } else {
+                let sa = a as u32;
+                let inv = 255 - sa;
+                dst[di] = ((src[si] as u32 * sa + dst[di] as u32 * inv) / 255) as u8;
+                dst[di + 1] = ((src[si + 1] as u32 * sa + dst[di + 1] as u32 * inv) / 255) as u8;
+                dst[di + 2] = ((src[si + 2] as u32 * sa + dst[di + 2] as u32 * inv) / 255) as u8;
+                dst[di + 3] = 255;
+            }
+        }
+    }
+}
+
+
 /// Fill a rectangle (opaque) clipping to the buffer.
 pub fn fill_rect(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
     let x0 = x.max(0);

@@ -105,6 +105,9 @@ pub extern "C" fn debug_intr_role(id: u32) -> u32 {
         InterfaceControl => 10,
         SmallUi => 11,
         Unclassified => 12,
+        // Appended after the original codes so existing tooling indices stay put.
+        SelectionMarker => 13,
+        HealthBar => 14,
     }
 }
 

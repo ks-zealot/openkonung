@@ -32,9 +32,11 @@ impl PlayableApp {
         self.props_drawn = sprites.len();
         let mut rejected = self.collect_actor_sprites(&mut sprites);
 
-        // Protagonist through the canonical Entity visual path (animated).
-        let moving = !self.player_path.is_empty();
-        let (plx, ply) = entity_to_local_px_f(self.player_x, self.player_y);
+        // Protagonist through the canonical Entity visual path (animated). The
+        // sprite is drawn from the pre-step (render) cell; the per-frame anchor
+        // sweeps it onto the committed (`player_x/player_y`) cell over the cycle.
+        let moving = self.player_active;
+        let (plx, ply) = entity_to_local_px_f(self.player_render_x, self.player_render_y);
         match self.player_frame(moving) {
             Ok((im, gx, gy)) => sprites.push(WorldSprite { img: im, gx, gy, lx: plx, ly: ply }),
             Err(reason) => rejected.push(format!(
@@ -100,16 +102,26 @@ impl PlayableApp {
                 world,
                 player,
                 hovered_slot,
+                party_selected,
                 ..
             } = self;
             // Protagonist portrait uses the original selector with the actual
-            // character fields (never a fixed INTR id).
+            // character fields (never a fixed INTR id). Only the protagonist
+            // occupies a party cell at new game (slot 0); the marker and HP bar
+            // are composed per `FUN_0042C730`.
             let portrait = crate::hud::portrait_id(
                 true,
                 player.portrait_group(),
                 player.portrait_status(),
                 player.hp_internal,
             );
+            let party = [crate::hud::PartyPortrait {
+                cell: 0,
+                intr_id: portrait,
+                selected: party_selected[0],
+                health: player.hp_internal,
+                poisoned: player.periodic_damage != 0,
+            }];
             // Fixed scroll offset for this task; the protagonist's own
             // inventory is read directly (never re-initialized per frame).
             crate::hud::draw_game_hud(
@@ -120,7 +132,7 @@ impl PlayableApp {
                 &player.inventory,
                 0,
                 *hovered_slot,
-                Some(portrait),
+                &party,
                 player.auto_enabled(),
             );
         }

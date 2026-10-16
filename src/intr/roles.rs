@@ -21,6 +21,24 @@ pub const AUTO_OFF: usize = 169;
 
 pub const AUTO_ON: usize = 170;
 
+/// Party-panel selection marker (four corner gems) drawn over a selected
+/// member's portrait (`FUN_0042C730` selection branch, descriptor `_DAT_0061F940`
+/// = slot 173). Verified visually against the decoded sprite.
+pub const SELECTION_MARKER: usize = 173;
+
+/// HP-indicator bar fills, selected by health tier and poisoning (`Entity+0x50`)
+/// in `FUN_0042C730`'s bar branch (`0xAE..0xB1` = descriptor slots 174..177).
+pub const HP_BAR_HEALTHY: usize = 174;
+
+/// Poisoned fill (`Entity+0x50 != 0`), drawn regardless of health tier.
+pub const HP_BAR_POISONED: usize = 175;
+
+/// Deeply wounded fill (`health < 401`).
+pub const HP_BAR_DEEP_WOUNDED: usize = 176;
+
+/// Wounded fill (`401 <= health < 801`).
+pub const HP_BAR_WOUNDED: usize = 177;
+
 /// First / last portrait index (`hud::portrait_id`).
 pub const PORTRAIT_FIRST: usize = 200;
 
@@ -46,6 +64,10 @@ pub enum IntrRole {
     InventoryArrow,
     /// AUTO combat button, off/on (`INTR[169]/[170]`).
     AutoButton,
+    /// Party-panel selection marker (`INTR[173]`).
+    SelectionMarker,
+    /// Party-panel HP-indicator fill (`INTR[174..177]`).
+    HealthBar,
     /// Character portrait (`INTR[200..274]`).
     Portrait,
     /// Item / ability icon referenced by the item tables.
@@ -74,6 +96,8 @@ pub fn role_of(id: usize) -> IntrRole {
         INVENTORY_SLOT => IntrRole::InventorySlot,
         18..=21 => IntrRole::InventoryArrow,
         169 | 170 => IntrRole::AutoButton,
+        SELECTION_MARKER => IntrRole::SelectionMarker,
+        174..=177 => IntrRole::HealthBar,
         200..=274 => IntrRole::Portrait,
         22..=168 => IntrRole::ItemIcon,
         0 | 1 | 4 | 5 | 6 => IntrRole::WindowFrame,
@@ -81,7 +105,7 @@ pub fn role_of(id: usize) -> IntrRole {
         8 | 9 | 16 | 172 | 178 => IntrRole::Panel,
         180..=183 => IntrRole::Button,
         10..=15 => IntrRole::InterfaceControl,
-        171 | 173..=177 | 184..=199 => IntrRole::SmallUi,
+        171 | 184..=199 => IntrRole::SmallUi,
         _ => IntrRole::Unclassified,
     }
 }

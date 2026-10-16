@@ -210,6 +210,10 @@ fn catalog_roles_for_known_indices() {
     }
     assert_eq!(role_of(AUTO_OFF), IntrRole::AutoButton);
     assert_eq!(role_of(AUTO_ON), IntrRole::AutoButton);
+    assert_eq!(role_of(SELECTION_MARKER), IntrRole::SelectionMarker);
+    for id in HP_BAR_HEALTHY..=HP_BAR_WOUNDED {
+        assert_eq!(role_of(id), IntrRole::HealthBar, "hp bar {id}");
+    }
     assert_eq!(role_of(PORTRAIT_FIRST), IntrRole::Portrait);
     assert_eq!(role_of(PORTRAIT_LAST), IntrRole::Portrait);
     assert_eq!(role_of(ITEM_ICON_FIRST), IntrRole::ItemIcon);

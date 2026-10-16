@@ -222,6 +222,7 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                     e.index,
                     ActorMotion {
                         cell: (e.x as i32, e.y as i32),
+                        render_cell: (e.x as i32, e.y as i32),
                         facing: e.facing,
                         rect_a: g.rect_a,
                         citizen,
@@ -247,6 +248,7 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                             e.index,
                             ActorMotion {
                                 cell: (raw.x, raw.y),
+                                render_cell: (raw.x, raw.y),
                                 facing: e.facing,
                                 rect_a: g.rect_a,
                                 citizen,

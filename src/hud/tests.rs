@@ -157,6 +157,8 @@ fn compose_preserves_world_through_transparent_pixels() {
         arrows: [(18, -1000, -1000), (20, -1000, -1000)],
         auto_pos: (-1000, -1000),
         party_cells: [Rect { x: 0, y: 0, w: 8, h: 8 }; 10],
+        hp_bar: HpBar { height: 0, dx: 0, dy: 0 },
+        party_origins: [(0, 0); 10],
     };
     // 2x2 HUD: top-left transparent, others opaque red.
     let mut hud = Image::new(2, 2, [255, 0, 0, 255]);
@@ -187,6 +189,8 @@ fn compose_clips_out_of_bounds_without_panic() {
         arrows: [(18, -1000, -1000), (20, -1000, -1000)],
         auto_pos: (-1000, -1000),
         party_cells: [Rect { x: 0, y: 0, w: 68, h: 68 }; 10],
+        hp_bar: HpBar { height: 0, dx: 0, dy: 0 },
+        party_origins: [(0, 0); 10],
     };
     let big = solid(70, 70, [1, 2, 3, 255]);
     let state = HudState::default();
@@ -291,17 +295,24 @@ fn compose_is_idempotent() {
 }
 
 #[test]
-fn portraits_center_in_cells() {
+fn portraits_use_recovered_origin_table() {
     let fw = 200;
     let fh = 40;
     let mut frame = vec![0u8; fw * fh * 4];
     let l = layout_640();
-    let cell = l.party_cells[0];
+    // Recovered table `0x45AF10`, slot 0 @640 = (3, 1).
+    let (ox, oy) = l.party_origin(0).unwrap();
+    assert_eq!((ox, oy), (3, 1));
     let state = HudState {
-        party: vec![PartyPortrait { cell: 0, intr_id: 240 }],
+        party: vec![PartyPortrait {
+            cell: 0,
+            intr_id: 240,
+            selected: false,
+            health: 0,
+            poisoned: false,
+        }],
         ..HudState::default()
     };
-    // 20x20 portrait: centered offset within the cell.
     let art = solid(20, 20, [222, 0, 0, 255]);
     compose(&mut frame, fw, fh, &l, &state, |id| {
         if id == 240 {
@@ -310,7 +321,102 @@ fn portraits_center_in_cells() {
             None
         }
     });
-    let ox = (cell.x + (cell.w - 20) / 2) as usize;
-    let oy = (cell.y + (cell.h - 20) / 2) as usize;
-    assert_eq!(px(&frame, fw, ox, oy), [222, 0, 0, 255]);
+    assert_eq!(px(&frame, fw, ox as usize, oy as usize), [222, 0, 0, 255]);
+}
+
+#[test]
+fn hp_bar_thresholds_and_fill() {
+    // Poison wins regardless of tier.
+    assert_eq!(hp_bar_id(true, 1600), crate::intr::HP_BAR_POISONED);
+    assert_eq!(hp_bar_id(true, 100), crate::intr::HP_BAR_POISONED);
+    // Tier borders: <=400 deep, 401..=800 wounded, >800 healthy.
+    assert_eq!(hp_bar_id(false, 400), crate::intr::HP_BAR_DEEP_WOUNDED);
+    assert_eq!(hp_bar_id(false, 401), crate::intr::HP_BAR_WOUNDED);
+    assert_eq!(hp_bar_id(false, 800), crate::intr::HP_BAR_WOUNDED);
+    assert_eq!(hp_bar_id(false, 801), crate::intr::HP_BAR_HEALTHY);
+    assert_eq!(hp_bar_id(false, 1600), crate::intr::HP_BAR_HEALTHY);
+    // Fill = health * H / 1600, min 1.
+    assert_eq!(hp_fill(1600, 40), 40);
+    assert_eq!(hp_fill(800, 40), 20);
+    assert_eq!(hp_fill(400, 40), 10);
+    assert_eq!(hp_fill(0, 40), 1);
+    assert_eq!(hp_fill(1600, 32), 32);
+}
+
+#[test]
+fn selection_marker_drawn_only_when_selected() {
+    let fw = 80;
+    let fh = 40;
+    let l = layout_640();
+    let (ox, oy) = l.party_origin(0).unwrap();
+    let marker = solid(10, 10, [10, 20, 200, 255]);
+    let run = |selected: bool| {
+        let mut frame = vec![0u8; fw * fh * 4];
+        let state = HudState {
+            party: vec![PartyPortrait {
+                cell: 0,
+                intr_id: 999, // no portrait sprite
+                selected,
+                health: 0,
+                poisoned: false,
+            }],
+            ..HudState::default()
+        };
+        compose(&mut frame, fw, fh, &l, &state, |id| {
+            if id == crate::intr::SELECTION_MARKER {
+                Some(marker.clone())
+            } else {
+                None
+            }
+        });
+        frame
+    };
+    let on = run(true);
+    assert_eq!(px(&on, fw, ox as usize, oy as usize), [10, 20, 200, 255]);
+    let off = run(false);
+    assert_eq!(px(&off, fw, ox as usize, oy as usize), [0, 0, 0, 0]);
+}
+
+#[test]
+fn hp_bar_shows_only_bottom_fill_rows() {
+    let fw = 120;
+    let fh = 60;
+    let l = layout_640();
+    let (ox, oy) = l.party_origin(0).unwrap();
+    let bar = solid(3, 32, [255, 255, 0, 255]); // full-height yellow bar
+    let draw = |health: u16| {
+        let mut frame = vec![0u8; fw * fh * 4];
+        let state = HudState {
+            party: vec![PartyPortrait {
+                cell: 0,
+                intr_id: 999,
+                selected: false,
+                health,
+                poisoned: false,
+            }],
+            ..HudState::default()
+        };
+        compose(&mut frame, fw, fh, &l, &state, |id| {
+            if (crate::intr::HP_BAR_HEALTHY..=crate::intr::HP_BAR_WOUNDED).contains(&id) {
+                Some(bar.clone())
+            } else {
+                None
+            }
+        });
+        frame
+    };
+    let bx = (ox + l.hp_bar.dx) as usize;
+    let by = (oy + l.hp_bar.dy) as usize;
+    // Full health: whole 32px bar colored.
+    let full = draw(1600);
+    assert_eq!(px(&full, fw, bx, by), [255, 255, 0, 255]);
+    assert_eq!(px(&full, fw, bx, by + 31), [255, 255, 0, 255]);
+    // Half fill (health 800 -> 16px): top 16 rows blank, bottom 16 colored.
+    let half = draw(800);
+    assert_eq!(px(&half, fw, bx, by), [0, 0, 0, 0]);
+    assert_eq!(px(&half, fw, bx, by + 15), [0, 0, 0, 0]);
+    assert_eq!(px(&half, fw, bx, by + 16), [255, 255, 0, 255]);
+    // Dead: no bar at all.
+    let dead = draw(0);
+    assert_eq!(px(&dead, fw, bx, by + 31), [0, 0, 0, 0]);
 }

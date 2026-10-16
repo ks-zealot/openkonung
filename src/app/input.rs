@@ -4,14 +4,34 @@ use super::*;
 
 impl PlayableApp {
     /// Index of the party-portrait cell under the pointer (2x5 grid), if any.
-    /// Read-only hit test; the original *selects* the member here (region
-    /// `0x1e..0x27`) and never opens the character screen from it.
+    /// The original *selects* the member here (`FUN_00424D8C`) and never opens
+    /// the character screen from it.
     pub(super) fn party_cell_at(&self, x: f64, y: f64) -> Option<usize> {
         let (mx, my) = self.window_to_virtual(x, y)?;
         let (mx, my) = (mx.round() as i32, my.round() as i32);
         let l = crate::hud::layout(VIRTUAL_W);
         (0..crate::hud::PARTY_CELLS)
             .find(|&i| l.party_cell(i).map(|r| r.contains(mx, my)).unwrap_or(false))
+    }
+
+
+    /// Original member selection `FUN_00424D8C`: without the additive modifier
+    /// (`_DAT_0081D624`, Shift) the whole 10-slot set is cleared and `cell`
+    /// becomes the sole selection; with the modifier held, `cell` is added to
+    /// the existing set.
+    pub(super) fn select_party_member(&mut self, cell: usize) {
+        if !self.shift_down {
+            self.party_selected = [false; crate::hud::PARTY_CELLS];
+        }
+        if let Some(slot) = self.party_selected.get_mut(cell) {
+            *slot = true;
+        }
+    }
+
+
+    /// Update the additive-selection modifier (`Event.shiftKey`).
+    pub fn set_shift(&mut self, down: bool) {
+        self.shift_down = down;
     }
 
 
@@ -31,12 +51,15 @@ impl PlayableApp {
         if self.character_screen {
             return;
         }
-        // A left-click on a party-portrait cell is consumed (the original
-        // selects that member; with a one-member party it is a no-op). It must
-        // not issue a world movement command. The character screen is not opened
-        // by this click (original: opened by a command) — use `C` instead.
-        if button == 1 && !self.mode_graph && self.party_cell_at(x, y).is_some() {
-            return;
+        // A left-click on a party-portrait cell selects that member
+        // (`FUN_00424D8C`; additive with Shift) and is consumed. It must not
+        // issue a world movement command. The character screen is not opened by
+        // this click (original: opened by a command) — use `C` instead.
+        if button == 1 && !self.mode_graph {
+            if let Some(cell) = self.party_cell_at(x, y) {
+                self.select_party_member(cell);
+                return;
+            }
         }
         if button == 3 && !self.mode_graph {
             self.mode_graph = true;
@@ -111,7 +134,11 @@ impl PlayableApp {
             }
             return;
         }
-        self.set_target_from_mouse(x, y);
+        // Only selected party members receive move/attack commands
+        // (`FUN_00411708`); with the leader deselected a world click is inert.
+        if self.party_selected[0] {
+            self.set_target_from_mouse(x, y);
+        }
     }
 
 

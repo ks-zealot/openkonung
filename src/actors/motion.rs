@@ -5,8 +5,18 @@ use super::*;
 /// Live movement state for one runtime actor (original Entity grid).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ActorMotion {
-    /// Current runtime/Entity cell.
+    /// Current **committed** runtime/Entity cell (`Entity+0x08/+0x0A`). Advanced
+    /// at the START of each walk segment (`FUN_0041435C`), so while walking it is
+    /// the cell being stepped INTO.
     pub cell: (i32, i32),
+    /// Draw-only cell: the pre-step (source) cell of the animating segment
+    /// (`Entity+0xE8`). The sprite is drawn here; the anchor sweeps it onto
+    /// `cell` over the cycle. Equals `cell` when idle.
+    pub render_cell: (i32, i32),
+    /// True while a walk segment is animating (the final segment's direction is
+    /// consumed at segment START, so `path` is already empty yet the sprite is
+    /// still walking).
+    pub walking: bool,
     /// Destination cell, when walking.
     pub target: Option<(i32, i32)>,
     /// Remaining movement-direction codes (0..=7) to the target
@@ -88,6 +98,32 @@ pub fn sort_actors(actors: &mut [RuntimeActor]) {
 }
 
 
+/// Begin the next walk segment exactly like the original `FUN_0041435C`: take
+/// the draw cell (`render_cell`) from the CURRENT cell, face and step one
+/// collision cell, then reset the walk frame. The stored `cell` therefore leads
+/// the drawn sprite by one step.
+fn begin_actor_segment(
+    m: &mut ActorMotion,
+    occupied: &mut HashSet<(i32, i32)>,
+    collision: &[u16],
+) {
+    let Some(&dir) = m.path.first() else {
+        return;
+    };
+    m.render_cell = m.cell;
+    m.facing = dir;
+    m.frame = 0;
+    m.walking = true;
+    m.path.remove(0);
+    let (nx, ny) = step_by_direction(m.cell.0, m.cell.1, dir);
+    if is_free(collision, nx, ny) && !occupied.contains(&(nx, ny)) {
+        occupied.remove(&m.cell);
+        m.cell = (nx, ny);
+        occupied.insert((nx, ny));
+    }
+}
+
+
 /// Fixed-step citizen update (`FUN_004168a4` + `FUN_00413a84` + `FUN_004142d4`/
 /// `FUN_0041435c`).
 ///
@@ -163,34 +199,37 @@ pub fn update_population(
             let rect = m.rect_a;
             let cell = m.cell;
 
-            // Settlement home waypoint owned by this entity (`FUN_0041182C`):
-            // its owner walks there and then stays put (`FUN_004168A4` keeps it
-            // idle, facing the authored direction); only entities WITHOUT a home
-            // waypoint random-wander (`FUN_00413A84`).
-            if let Some(w) = homes.get(&(eid as u16)).copied() {
-                let home_cell = (w.x as i32, w.y as i32);
-                if cell == home_cell {
-                    m.path.clear();
-                    m.target = None;
-                    if m.facing != w.facing {
-                        m.facing = w.facing;
-                    }
-                } else if m.path.is_empty() {
-                    // (Re)issue a route to the home waypoint. A route longer than
-                    // `MAX_PATH_STEPS` is re-issued once its prefix is consumed.
-                    m.target = Some(home_cell);
-                    let bounds = path_bounds(&rect, cell, home_cell);
-                    match find_path(collision, &occupied, cell, home_cell, bounds) {
-                        Some(p) if !p.is_empty() => m.path = p,
-                        _ => {
-                            m.wait = 30;
-                            m.target = None;
+            // Route issuing runs only while no segment is in flight, so a route
+            // is never re-issued mid-step (the committed cell leads the sprite).
+            if !m.walking {
+                // Settlement home waypoint owned by this entity (`FUN_0041182C`):
+                // its owner walks there and then stays put (`FUN_004168A4` keeps it
+                // idle, facing the authored direction); only entities WITHOUT a home
+                // waypoint random-wander (`FUN_00413A84`).
+                if let Some(w) = homes.get(&(eid as u16)).copied() {
+                    let home_cell = (w.x as i32, w.y as i32);
+                    if cell == home_cell {
+                        m.path.clear();
+                        m.target = None;
+                        if m.facing != w.facing {
+                            m.facing = w.facing;
+                        }
+                    } else {
+                        // (Re)issue a route to the home waypoint. A route longer
+                        // than `MAX_PATH_STEPS` is re-issued once its prefix is
+                        // consumed.
+                        m.target = Some(home_cell);
+                        let bounds = path_bounds(&rect, cell, home_cell);
+                        match find_path(collision, &occupied, cell, home_cell, bounds) {
+                            Some(p) if !p.is_empty() => m.path = p,
+                            _ => {
+                                m.wait = 30;
+                                m.target = None;
+                            }
                         }
                     }
-                }
-            } else if let Some(t) = m.target {
-                // Continue/refresh an in-flight wander route.
-                if m.path.is_empty() {
+                } else if let Some(t) = m.target {
+                    // Continue/refresh an in-flight wander route.
                     if cell == t {
                         m.target = None;
                         m.wait = 30 + (build.rng.next_u32() % 60) as u16;
@@ -204,66 +243,65 @@ pub fn update_population(
                             }
                         }
                     }
-                }
-            } else {
-                // Think when idle: 50 % skip, else pick a random rect-A target.
-                if m.wait > 0 {
-                    m.wait -= 1;
-                } else if build.rng.next_u32() % 2 == 0 {
-                    if let Some(t) = wander_target(&rect, cell, &mut build.rng, collision) {
-                        if t != cell {
-                            let bounds = path_bounds(&rect, cell, t);
-                            match find_path(collision, &occupied, cell, t, bounds) {
-                                Some(p) if !p.is_empty() => {
-                                    m.path = p;
-                                    m.target = Some(t);
+                } else {
+                    // Think when idle: 50 % skip, else pick a random rect-A target.
+                    if m.wait > 0 {
+                        m.wait -= 1;
+                    } else if build.rng.next_u32() % 2 == 0 {
+                        if let Some(t) = wander_target(&rect, cell, &mut build.rng, collision) {
+                            if t != cell {
+                                let bounds = path_bounds(&rect, cell, t);
+                                match find_path(collision, &occupied, cell, t, bounds) {
+                                    Some(p) if !p.is_empty() => {
+                                        m.path = p;
+                                        m.target = Some(t);
+                                    }
+                                    _ => m.wait = 30,
                                 }
-                                _ => m.wait = 30,
                             }
                         }
                     }
                 }
+
+                // Commit the first cell of a freshly issued route at its START
+                // (`FUN_0041435C`): draw from the pre-step cell, then advance.
+                if !m.path.is_empty() {
+                    begin_actor_segment(m, &mut occupied, collision);
+                }
             }
 
             // Animate the current stance action (`FUN_00414A34` idle 0/6,
-            // `FUN_004142D4` walk 1/7). Walking faces the pending direction and
-            // steps one cell per completed walk cycle (`FUN_004123BC` gate:
-            // facing == path[0]). The idle frame is **held**, not looped: the
-            // original's per-entity machine (`FUN_004123BC`) only reaches its
-            // idle cases `0`/`6` for `flags_a & 0x40 == 0` entities, or for a
-            // `flags_a & 0x40` entity when its AI (`FUN_00412E00`) reports an
-            // active move. Every actor in the shipped active population is
-            // `flags_a = 0x40` and idles with `FUN_00412E00 == 0`, so it holds
-            // the frame the idle action was issued with (`0`).
-            let next_action = if m.path.is_empty() {
-                crate::anim::idle_action(battle) as u8
-            } else {
+            // `FUN_004142D4` walk 1/7). Walking steps one cell per completed walk
+            // cycle; the idle frame is **held**, not looped (the shipped active
+            // population idles with `FUN_00412E00 == 0`, so it holds frame 0).
+            let next_action = if m.walking {
                 crate::anim::walk_action(battle) as u8
+            } else {
+                crate::anim::idle_action(battle) as u8
             };
             if m.action != next_action {
                 m.action = next_action;
                 m.frame = 0;
             }
-            if !m.path.is_empty() {
+            if m.walking {
                 let walk_frames = if m.walk_frames == 0 {
                     FALLBACK_WALK_FRAMES
                 } else {
                     m.walk_frames
                 };
-                m.facing = m.path[0];
                 m.frame = m.frame.saturating_add(1);
                 if m.frame >= walk_frames {
                     m.frame = 0;
-                    let dir = m.path.remove(0);
-                    let (nx, ny) = step_by_direction(m.cell.0, m.cell.1, dir);
-                    if is_free(collision, nx, ny) && !occupied.contains(&(nx, ny)) {
-                        occupied.remove(&m.cell);
-                        m.cell = (nx, ny);
-                        occupied.insert((nx, ny));
-                    }
-                    if m.path.is_empty() && m.target == Some(m.cell) {
-                        m.target = None;
-                        m.wait = 30 + (build.rng.next_u32() % 60) as u16;
+                    if !m.path.is_empty() {
+                        // Commit the next cell at cycle start.
+                        begin_actor_segment(m, &mut occupied, collision);
+                    } else {
+                        m.walking = false;
+                        m.render_cell = m.cell;
+                        if m.target == Some(m.cell) {
+                            m.target = None;
+                            m.wait = 30 + (build.rng.next_u32() % 60) as u16;
+                        }
                     }
                 }
             } else {

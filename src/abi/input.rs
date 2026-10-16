@@ -63,6 +63,19 @@ pub extern "C" fn pointer_move(x: f32, y: f32) {
 }
 
 
+/// Additive party-selection modifier (`Event.shiftKey`); mirrors the original
+/// `_DAT_0081D624` flag read by `FUN_00424D8C`.
+#[no_mangle]
+pub extern "C" fn set_shift(down: u32) {
+    let rt = runtime_mut();
+    if rt.active == ActiveMode::Game {
+        if let Some(g) = rt.game.as_deref_mut() {
+            g.set_shift(down != 0);
+        }
+    }
+}
+
+
 #[no_mangle]
 pub extern "C" fn wheel(delta: f32) {
     let rt = runtime_mut();

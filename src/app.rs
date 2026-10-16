@@ -112,9 +112,19 @@ pub struct PlayableApp {
     /// One authoritative runtime player: hero identity + class + the
     /// character-creation values copied from the final [`crate::character::CharacterBuild`].
     pub player: PlayerCharacter,
-    /// Player position in runtime/Entity coordinates (continuous during motion).
+    /// Player **committed** runtime/Entity cell (`Entity+0x08/+0x0A`). Advanced
+    /// at the START of each walk segment (`FUN_0041435C`), so while a walk is in
+    /// flight this is already the cell the hero is stepping INTO. Commands,
+    /// teleport triggers and the camera key off this cell.
     pub player_x: f64,
     pub player_y: f64,
+    /// Draw-only cell: the pre-step (source) cell of the segment currently
+    /// animated. This is the original `Entity+0xE8/+0xF0`, computed by
+    /// `FUN_0041435C` from `+0x08/+0x0A` *before* the step is committed, so the
+    /// sprite is drawn one step behind the logical cell (the per-frame anchor
+    /// sweeps it onto `player_x/player_y` over the cycle).
+    pub player_render_x: f64,
+    pub player_render_y: f64,
     pub player_dir: i32,
     target: Option<(f64, f64)>,
     /// Remaining movement-direction codes (0..=7) to `target`. Each completed
@@ -123,6 +133,10 @@ pub struct PlayableApp {
     player_path: Vec<u8>,
     /// Seconds accumulated toward the next player cell step.
     player_step_t: f64,
+    /// True while a walk segment is animating. Kept separate from `player_path`
+    /// because the final segment's direction is consumed at segment START, so
+    /// the queue is already empty while the sprite is still walking.
+    player_active: bool,
     anim_time: f64,
     teleport_cooldown: f64,
     last_teleport: Option<(u32, u32, usize)>,
@@ -178,6 +192,13 @@ pub struct PlayableApp {
     /// Set by Escape: the host runtime should open the frontend/menu while
     /// preserving this live game state (do **not** quit or rebuild).
     pub request_menu: bool,
+    /// 10-slot party selection set (`FUN_00411708`, array `0x81A814`). Slot 0
+    /// is the protagonist/leader and is selected at game start. Only selected
+    /// members receive move/attack commands.
+    pub party_selected: [bool; crate::hud::PARTY_CELLS],
+    /// Additive-selection modifier (`_DAT_0081D624`, Shift): when held, a
+    /// party-portrait click adds the member instead of replacing the set.
+    pub shift_down: bool,
 }
 
 impl PlayableApp {
@@ -215,10 +236,13 @@ impl PlayableApp {
             player,
             player_x: start_x,
             player_y: start_y,
+            player_render_x: start_x,
+            player_render_y: start_y,
             player_dir: start_dir & 7,
             target: None,
             player_path: Vec::new(),
             player_step_t: 0.0,
+            player_active: false,
             anim_time: 0.0,
             teleport_cooldown: 0.0,
             last_teleport: None,
@@ -252,7 +276,12 @@ impl PlayableApp {
             last_mouse: (0.0, 0.0),
             quit: false,
             request_menu: false,
+            party_selected: [false; crate::hud::PARTY_CELLS],
+            shift_down: false,
         };
+        // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
+        // sets `selection[0] = leader` after loading the save).
+        app.party_selected[0] = true;
         app.rebuild_portal_bindings();
         app.center_camera_on_player(true, 0.0);
         app.fit_graph();

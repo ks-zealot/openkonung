@@ -54,6 +54,9 @@ pub struct PlayerCharacter {
     /// `Entity+0x03` — status flags; bit `0x02` selects the AUTO button state
     /// (`INTR[170]` when set, else `INTR[169]`).
     pub flags_b: u8,
+    /// `Entity+0x04` bit `0x80` — dead/incapacitated. Forces the dead portrait
+    /// variant (`FUN_0042C730`, set by the defeat path `FUN_0041D048`).
+    pub dead: bool,
 }
 
 
@@ -92,6 +95,7 @@ impl PlayerCharacter {
             base_armor: 0,
             raw_0x12: 0,
             flags_b: 0,
+            dead: false,
         }
     }
 
@@ -128,9 +132,10 @@ impl PlayerCharacter {
     }
 
 
-    /// `Entity+0x04` status/appearance byte used by the portrait selector.
+    /// `Entity+0x04` status/appearance byte used by the portrait selector:
+    /// low 3 bits = appearance, bit `0x80` = dead/special (`FUN_0042C730`).
     pub fn portrait_status(&self) -> u8 {
-        self.entity_class()
+        self.entity_class() | if self.dead { 0x80 } else { 0 }
     }
 
 

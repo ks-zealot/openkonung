@@ -441,6 +441,41 @@ fn idle_wanderer_holds_its_frame_not_loops() {
 }
 
 #[test]
+fn actor_commits_the_first_step_at_segment_start() {
+    // A wandering citizen: the first cell of every route is committed at the
+    // START of its segment (`FUN_0041435C`), so the stored cell leads the drawn
+    // sprite (`render_cell`) by one step.
+    let rect = Rect { x1: 30, x2: 70, y1: 8, y2: 24 };
+    let groups = vec![group(1, 0, 1, 1, 0x81, rect)];
+    let mut c = entity(0, 6, 0x05, 50, 16);
+    c.flags_a = FLAG_WANDER;
+    let t = tables(groups, vec![c]);
+    let collision = free_collision();
+    let mut b = build_population(&t, 1, &collision);
+
+    // Idle at spawn: no segment in flight, draw cell == stored cell.
+    assert!(!b.motion[&0].walking);
+    assert_eq!(b.motion[&0].render_cell, b.motion[&0].cell);
+    let start = b.motion[&0].cell;
+
+    let mut issued = false;
+    for _ in 0..600 {
+        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+        let m = &b.motion[&0];
+        if m.walking {
+            // The first committed step advanced the stored cell, while the draw
+            // cell still holds the pre-step (spawn) cell.
+            assert_eq!(m.render_cell, start, "draw cell is the pre-step cell");
+            assert_ne!(m.cell, start, "stored cell leads the sprite by one step");
+            assert_eq!(m.cell, step_by_direction(start.0, start.1, m.facing));
+            issued = true;
+            break;
+        }
+    }
+    assert!(issued, "citizen should begin walking");
+}
+
+#[test]
 fn real_game1_group23_owners_stay_non_owners_wander() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let (Ok(game), Ok(k4)) = (
