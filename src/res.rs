@@ -4,12 +4,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 
+mod cursor;
 mod exe;
 mod graph;
 mod human;
 mod objects;
 mod raster;
 
+pub use self::cursor::*;
 pub use self::exe::*;
 pub use self::human::*;
 pub use self::raster::*;

@@ -13,6 +13,7 @@ use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
 
 
 mod camera;
+mod cursor;
 mod debug_overlay;
 mod graph;
 mod input;
@@ -199,6 +200,10 @@ pub struct PlayableApp {
     /// Additive-selection modifier (`_DAT_0081D624`, Shift): when held, a
     /// party-portrait click adds the member instead of replacing the set.
     pub shift_down: bool,
+    /// Virtual-space pointer position (`_DAT_0081D5C0/_D5C4`). The game-drawn
+    /// cursor (see `app::cursor`, `res::cursor`) is blitted here. `(-1,-1)` means
+    /// off-screen / not shown.
+    cursor_virtual: (f64, f64),
 }
 
 impl PlayableApp {
@@ -278,6 +283,7 @@ impl PlayableApp {
             request_menu: false,
             party_selected: [false; crate::hud::PARTY_CELLS],
             shift_down: false,
+            cursor_virtual: (-1.0, -1.0),
         };
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
         // sets `selection[0] = leader` after loading the save).

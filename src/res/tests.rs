@@ -28,6 +28,27 @@ fn zero_count_sequence_is_single_frame() {
 }
 
 #[test]
+fn cursor_block_decodes_16bit_color_and_transparency() {
+    // One cursor block at 0x20000: `[u32 type][u32 size][u16 w][u16 h]
+    // [row-size table][rows]`. Row 0 = skip 1 px + literal 1 px 0x7C00 (red) + end.
+    let payload: Vec<u8> = {
+        let mut p = vec![2u8, 0, 1, 0]; // w=2, h=1
+        p.extend_from_slice(&[5u8, 0]); // row byte length = 5
+        p.extend_from_slice(&[0x81, 0x01, 0x00, 0x7C, 0x00]); // skip1, literal1, px, end
+        p
+    };
+    let mut g = vec![0u8; crate::res::CURSOR_GRAPH_OFF];
+    g.extend_from_slice(&0x0500_0000u32.to_le_bytes()); // type
+    g.extend_from_slice(&(payload.len() as u32).to_le_bytes()); // size
+    g.extend_from_slice(&payload);
+    let img = crate::res::cursor_image(&g, 0).expect("decodes");
+    assert_eq!((img.w, img.h), (2, 1));
+    assert_eq!(img.data[3], 0, "skipped pixel is transparent");
+    assert_eq!(&img.data[4..8], &[255, 0, 0, 255], "literal pixel 0x7C00 = red");
+    assert!(crate::res::cursor_image(&g, 1).is_none(), "second block absent");
+}
+
+#[test]
 fn human_action_rows_do_not_fold_modulo_six() {
     // Each of the 10 action rows must read its own table slice. Row 6/7
     // (peaceful idle/walk) must NOT alias rows 0/1 (battle idle/walk).

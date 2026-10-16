@@ -187,6 +187,39 @@ pub extern "C" fn debug_decode_intr_image(variant: u32, index: u32) -> u32 {
 }
 
 // --------------------------------------------------------------------------
+// Debug: original mouse-cursor frames (diagnostic tooling; same decoder)
+// --------------------------------------------------------------------------
+
+
+/// Number of original cursor frames (11). Diagnostic only.
+#[no_mangle]
+pub extern "C" fn debug_cursor_count() -> u32 {
+    res::CURSOR_COUNT as u32
+}
+
+
+/// Decode original mouse-cursor frame `i` (0..11) from the loaded `GRAPH.RES`
+/// into the shared debug RGBA buffer and return 1 on success. Used by
+/// `tools/cursor_png.mjs`; not used at runtime.
+#[no_mangle]
+pub extern "C" fn debug_decode_cursor_image(i: u32) -> u32 {
+    let graph = loader_mut().graph.clone();
+    if graph.is_empty() {
+        return 0;
+    }
+    let Some(img) = res::cursor_image(&graph, i as usize) else {
+        return 0;
+    };
+    unsafe {
+        let slot = addr_of_mut!(DEBUG_IMAGE);
+        *slot = Some(img.data.clone());
+        DEBUG_IMAGE_W = img.w as u32;
+        DEBUG_IMAGE_H = img.h as u32;
+    }
+    1
+}
+
+// --------------------------------------------------------------------------
 // Debug: isolated HUD preview (diagnostic tooling; same composer as runtime)
 // --------------------------------------------------------------------------
 

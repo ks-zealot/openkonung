@@ -36,6 +36,10 @@ impl PlayableApp {
 
 
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
+        // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
+        if let Some(v) = self.window_to_virtual(x, y) {
+            self.cursor_virtual = v;
+        }
         // While a dialogue is open it consumes every click: option selection
         // only (left button). It is closed with Escape or by an end option.
         if self.dialog.is_some() {
@@ -186,6 +190,10 @@ impl PlayableApp {
 
 
     pub fn pointer_move(&mut self, x: f64, y: f64) {
+        // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
+        if let Some(v) = self.window_to_virtual(x, y) {
+            self.cursor_virtual = v;
+        }
         // Dialogue hover: highlight the option under the cursor.
         if self.dialog.is_some() {
             if let Some((vx, vy)) = self.window_to_virtual(x, y) {

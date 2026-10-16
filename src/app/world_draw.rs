@@ -163,6 +163,27 @@ impl PlayableApp {
             }
         }
 
+        // Original game-drawn mouse cursor (`FUN_0042A470` -> `FUN_0043D2FE`): the
+        // Win32 cursor is hidden and one of the 11 GRAPH cursor frames is blitted
+        // at the pointer (`_DAT_0081D5C0/_D5C4`). Drawn last so it sits over the
+        // world, HUD and dialogue.
+        let cursor = self.cursor_index();
+        if let Some(img) = self.world.res.cursor_sprite(cursor) {
+            let (cx, cy) = self.cursor_virtual;
+            if cx >= 0.0 && cy >= 0.0 && cx < VIRTUAL_W as f64 && cy < VIRTUAL_H as f64 {
+                blit(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    &img.data,
+                    img.w,
+                    img.h,
+                    cx.round() as i32,
+                    cy.round() as i32,
+                );
+            }
+        }
+
         let portals = self.outgoing(self.current_map).len();
         let cur = self.label(self.current_map);
         let hdr = format!(

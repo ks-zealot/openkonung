@@ -108,6 +108,23 @@ fn character_screen_open_close_and_no_world_clickthrough() {
 }
 
 #[test]
+fn cursor_class_mapping_matches_original_jump_table() {
+    use super::cursor::cursor_for_class;
+    // FUN_00424E0C jump table 0x424E78 (cases 0..=0xC, default 9).
+    assert_eq!(cursor_for_class(0), 10);
+    assert_eq!(cursor_for_class(1), 2);
+    assert_eq!(cursor_for_class(2), 10);
+    for c in 3..=5 {
+        assert_eq!(cursor_for_class(c), 0);
+    }
+    for c in [6, 7, 8, 10, 11, 13, 255] {
+        assert_eq!(cursor_for_class(c), 9);
+    }
+    assert_eq!(cursor_for_class(9), 8);
+    assert_eq!(cursor_for_class(12), 2);
+}
+
+#[test]
 fn right_click_moves_and_no_longer_toggles_graph() {
     let Some(mut app) = build_test_app() else {
         eprintln!("skipping: original resources not present");
