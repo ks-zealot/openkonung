@@ -84,6 +84,9 @@ pub struct DialogOption {
     pub next: i16,
     /// `B1` record index of the option.
     pub record: usize,
+    /// `+0x0A` `B5` action program id (`-1` = none); run on selection
+    /// (`FUN_00434BB8`).
+    pub action: i16,
     /// Bounding rect `(x, y, w, h)` in virtual coordinates.
     pub row: (i32, i32, i32, i32),
 }
@@ -106,6 +109,9 @@ pub struct DialogState {
     pub options: Vec<DialogOption>,
     /// Currently highlighted option (mouse hover), if any.
     pub selected: Option<usize>,
+    /// `B5` action program ids of the included conditional (statement) entries;
+    /// the original `FUN_00434C74` runs them when the page is built.
+    pub on_open_actions: Vec<u16>,
 }
 
 /// Greedy wrap to `max_px` using the original small-font advances.
@@ -190,14 +196,24 @@ fn blit_clip(
     }
 }
 
-/// Build the display page for a node: NPC statement lines (first `conditional`
-/// entries) and the selectable options (next `unconditional` entries).
+/// True when an entry's `+0x06` condition is absent (`-1`) or its `B4` program
+/// evaluates true (`FUN_00434FE8`).
+fn entry_condition_ok(cond: i16, eval: &dyn Fn(u16) -> bool) -> bool {
+    cond < 0 || eval(cond as u16)
+}
+
+/// Build the display page for a node exactly like `FUN_00434C74`: the first
+/// `conditional` (f7) entries are the NPC statement lines, the next
+/// `unconditional` (f6) entries are the selectable options. An entry is included
+/// only when its condition is absent or evaluates true; a passing statement
+/// entry's `B5` action is queued (its `on_open_actions`).
 fn build_page(
     quest: &QuestData,
     fonts: &Fonts,
     node: usize,
     logical_w: i32,
-) -> Option<(usize, Vec<String>, Vec<DialogOption>)> {
+    eval: &dyn Fn(u16) -> bool,
+) -> Option<(usize, Vec<String>, Vec<DialogOption>, Vec<u16>)> {
     let lay = layout(logical_w);
     let n = quest.node(node)?;
     let entries = quest.entries(node);
@@ -205,8 +221,15 @@ fn build_page(
     let opt_n = n.unconditional as usize;
 
     let mut prompt_lines: Vec<String> = Vec::new();
+    let mut on_open_actions: Vec<u16> = Vec::new();
     for &e in entries.iter().take(prompt_n) {
         let Some(o) = quest.option(e) else { continue };
+        if !entry_condition_ok(o.condition, eval) {
+            continue;
+        }
+        if o.action >= 0 {
+            on_open_actions.push(o.action as u16);
+        }
         let Some(line) = o.text_line else { continue };
         let t = quest.line_text(line);
         if !t.trim().is_empty() {
@@ -218,6 +241,9 @@ fn build_page(
     let mut y = lay.opt_pos.1;
     for &e in entries.iter().skip(prompt_n).take(opt_n) {
         let Some(o) = quest.option(e) else { continue };
+        if !entry_condition_ok(o.condition, eval) {
+            continue;
+        }
         let label = o.text_line.map(|l| quest.line_text(l)).unwrap_or_default();
         if label.trim().is_empty() && o.next == LINK_NONE {
             continue;
@@ -228,77 +254,106 @@ fn build_page(
             lines,
             next: o.next,
             record: e,
+            action: o.action,
             row: (lay.opt_pos.0, y, lay.text_width, h),
         });
         y += h;
     }
-    Some((node, prompt_lines, options))
+    Some((node, prompt_lines, options, on_open_actions))
 }
 
-/// Follow `-2` branch nodes to the first display page, then build it.
+/// Resolve a start/branch chain to the first display page (`FUN_00434C74`).
+///
+/// A branch page (`+0x0A == -2`) selects the first case record whose condition is
+/// absent or holds and follows its `+0x04`; `-1`/`-2`, or no matching case,
+/// ends the dialogue. Then build the display page.
 fn resolve(
     quest: &QuestData,
     fonts: &Fonts,
     start: usize,
     logical_w: i32,
-) -> Option<(usize, Vec<String>, Vec<DialogOption>)> {
+    eval: &dyn Fn(u16) -> bool,
+) -> Option<(usize, Vec<String>, Vec<DialogOption>, Vec<u16>)> {
     let mut cur = start;
     for _ in 0..MAX_RESOLVE_HOPS {
         let n = quest.node(cur)?;
         if n.is_branch() {
-            if n.next < 0 {
-                return None;
+            let mut next: Option<i16> = None;
+            for &c in &quest.entries(cur) {
+                let Some(o) = quest.option(c) else { continue };
+                if entry_condition_ok(o.condition, eval) {
+                    next = Some(o.next);
+                    break;
+                }
             }
-            cur = n.next as usize;
-            continue;
+            match next {
+                Some(nx) if nx >= 0 => {
+                    cur = nx as usize;
+                    continue;
+                }
+                _ => return None,
+            }
         }
-        return build_page(quest, fonts, cur, logical_w);
+        return build_page(quest, fonts, cur, logical_w, eval);
     }
     None
 }
 
 impl DialogState {
-    /// Open the dialogue for `dialogue_id` on `npc_entity`. Returns `None` when
-    /// the id has no start node or resolves to an end link.
+    /// Open the dialogue for `dialogue_id` on `npc_entity`. `eval` evaluates a
+    /// `B4` condition-program id (`FUN_00434FE8`). Returns `None` when the id has
+    /// no start node or resolves to an end link.
     pub fn start(
         quest: &QuestData,
         fonts: &Fonts,
         npc_entity: usize,
         dialogue_id: u8,
         logical_w: i32,
+        eval: &dyn Fn(u16) -> bool,
     ) -> Option<DialogState> {
         let start = quest.dialogue_start(dialogue_id)?;
-        let (page, prompt_lines, options) = resolve(quest, fonts, start, logical_w)?;
+        let (page, prompt_lines, options, on_open_actions) =
+            resolve(quest, fonts, start, logical_w, eval)?;
         Some(DialogState {
             npc_entity,
             page,
             prompt_lines,
             options,
             selected: None,
+            on_open_actions,
         })
     }
 
     /// Select option `index`. Returns `true` when the dialog should stay open,
-    /// `false` when it ended (end link, dead end, or no such option).
+    /// `false` when it ended (end link, dead end, or no such option). The
+    /// caller runs the option's `B5` action (`FUN_00434BB8`) before this call.
     pub fn select(
         &mut self,
         quest: &QuestData,
         fonts: &Fonts,
         index: usize,
         logical_w: i32,
+        eval: &dyn Fn(u16) -> bool,
     ) -> bool {
         let Some(next) = self.options.get(index).map(|o| o.next) else {
             return true;
         };
-        if next == LINK_END || next == LINK_NONE {
+        if next == LINK_END {
             return false;
         }
-        match resolve(quest, fonts, next as usize, logical_w) {
-            Some((page, prompt_lines, options)) => {
+        // `-1` falls back to the current page; otherwise follow the link.
+        let target = if next == LINK_NONE {
+            self.page
+        } else {
+            next as usize
+        };
+        match resolve(quest, fonts, target, logical_w, eval) {
+            Some((page, prompt_lines, options, on_open_actions)) => {
                 self.page = page;
                 self.prompt_lines = prompt_lines;
                 self.options = options;
                 self.selected = None;
+                self.on_open_actions = on_open_actions;
                 true
             }
             None => false,

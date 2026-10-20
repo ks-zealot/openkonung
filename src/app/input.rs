@@ -15,10 +15,12 @@ impl PlayableApp {
     }
 
 
-    /// Original member selection `FUN_00424D8C`: without the additive modifier
-    /// (`_DAT_0081D624`, Shift) the whole 10-slot set is cleared and `cell`
-    /// becomes the sole selection; with the modifier held, `cell` is added to
-    /// the existing set.
+    /// Party member selection (`FUN_00424D8C`, selection array `0x81A814`).
+    ///
+    /// Without the additive modifier (`_DAT_0081D624`, Shift) the whole 10-slot
+    /// set is cleared and `cell` becomes the sole selection; with Shift held,
+    /// `cell` is added to the existing set. Selecting another member (or an empty
+    /// cell) therefore deselects the previous one.
     pub(super) fn select_party_member(&mut self, cell: usize) {
         if !self.shift_down {
             self.party_selected = [false; crate::hud::PARTY_CELLS];
@@ -112,15 +114,19 @@ impl PlayableApp {
     }
 
 
-    /// A left-click in the world: move the selected party to the clicked cell.
-    /// Left-click never opens a dialogue — the original opens dialogues on the
-    /// right button (`FUN_0042260C`). Only selected party members receive
-    /// move/attack commands (`FUN_00411708`); with the leader deselected a world
-    /// click is inert.
+    /// A left-click in the world: command the selected party to the clicked
+    /// cell. Left-click never opens a dialogue — the original opens dialogues on
+    /// the right button (`FUN_0042260C`). Matching the original command 0, the
+    /// clicked cell is stored on **every** selected unit (selection array
+    /// `0x81A814`): the leader and each selected companion path to the same cell.
     fn world_move(&mut self, x: f64, y: f64) {
+        let Some((tx, ty)) = self.mouse_to_cell(x, y) else {
+            return;
+        };
         if self.party_selected[0] {
-            self.set_target_from_mouse(x, y);
+            self.set_player_target(tx, ty);
         }
+        self.command_selected_companions(tx, ty);
     }
 
 
@@ -137,25 +143,7 @@ impl PlayableApp {
         if let Some((entity, archetype, dialogue_id)) = self.actor_at(vx, vy) {
             // Human visual family (`archetype & 0x40 == 0`) with a dialogue id.
             if archetype & 0x40 == 0 && dialogue_id != 0xFF {
-                let fw = VIRTUAL_W;
-                let started = {
-                    let world = &self.world;
-                    world.res.quest.as_ref().and_then(|q| {
-                        crate::dialog::DialogState::start(
-                            q,
-                            &world.res.fonts,
-                            entity,
-                            dialogue_id,
-                            fw,
-                        )
-                    })
-                };
-                if let Some(state) = started {
-                    self.dialog = Some(state);
-                    // NPC voice line: `FUN_00435290` picks 0x0C..0x0F for a
-                    // humanoid (`rng()%4 + 0x0C`); deterministic pick here.
-                    self.sounds.push(0x0C + (entity as u16 & 3));
-                }
+                self.open_dialog(entity, dialogue_id);
                 return;
             }
             // Non-dialogue actor (monster/object/non-talkable human): the
@@ -170,15 +158,7 @@ impl PlayableApp {
         let Some(index) = self.dialog.as_ref().and_then(|d| d.option_at(vx, vy)) else {
             return;
         };
-        let fw = VIRTUAL_W;
-        let PlayableApp { dialog, world, .. } = self;
-        let (Some(quest), Some(state)) = (world.res.quest.as_ref(), dialog.as_mut()) else {
-            *dialog = None;
-            return;
-        };
-        if !state.select(quest, &world.res.fonts, index, fw) {
-            *dialog = None;
-        }
+        self.dialog_click_option(index);
     }
 
 

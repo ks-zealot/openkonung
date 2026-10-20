@@ -88,6 +88,9 @@ pub const NODE_COUNT: usize = B1_LEN / NODE_STRIDE;
 /// `B2` dialogue-id table length (`dialogue_id -> node`).
 pub const DIALOGUE_ENTRIES: usize = B2_LEN / 2;
 
+/// Number of `B7` flag slots (`4`-byte records).
+pub const FLAG_SLOTS: usize = B7_LEN / 4;
+
 /// Terminator of a `B4`/`B5` program.
 pub const PROGRAM_END: u16 = 0xFFFF;
 /// Low operand mask of a program word.
@@ -402,6 +405,14 @@ impl QuestData {
         }
         let w = self.u16(o + 2);
         (w != UNUSED).then_some(w)
+    }
+
+    /// The initial runtime `B7` flag bytes (the first byte of each 4-byte slot).
+    /// The original copies these into its runtime flag array and toggles bit
+    /// `0x80` at runtime (`FUN_00434BB8` / read by `FUN_00434FE8`). Slots whose
+    /// file byte already has `0x80` set start "active".
+    pub fn initial_flags(&self) -> Vec<u8> {
+        (0..FLAG_SLOTS).map(|i| self.bytes[B7_OFF + i * 4]).collect()
     }
 }
 

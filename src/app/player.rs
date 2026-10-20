@@ -39,20 +39,23 @@ impl PlayableApp {
     }
 
 
-    pub(super) fn set_target_from_mouse(&mut self, x: f64, y: f64) {
-        let (mx, my) = match self.window_to_virtual(x, y) {
-            Some(v) => v,
-            None => return,
-        };
+    /// The runtime/entity cell under a window-space pointer, or `None` when the
+    /// pointer is outside the play view.
+    pub(super) fn mouse_to_cell(&self, x: f64, y: f64) -> Option<(i32, i32)> {
+        let (mx, my) = self.window_to_virtual(x, y)?;
         let (ox, oy) = (self.detail_pan[0], self.detail_pan[1]);
         let (lx, ly) = (mx - ox, my - oy);
         // Nearest runtime/entity cell, clamped only to the proven runtime
         // bounds (x 0..319, y 0..159) — not to the terrain surface.
-        let (tx, ty) = local_px_to_entity(lx.round() as i32, ly.round() as i32);
-        // Origin is the stored runtime/Entity cell `+0x08/+0x0A`. Because a
-        // segment's step is committed at its START (`FUN_0041435C`), this is the
-        // cell the hero is walking INTO while a walk is in flight — so a mid-walk
-        // click re-plans from there and never rewinds to the cell being left.
+        Some(local_px_to_entity(lx.round() as i32, ly.round() as i32))
+    }
+
+    /// Store the destination and (re)start the protagonist's walk to `(tx, ty)`.
+    /// Origin is the stored runtime/Entity cell `+0x08/+0x0A`. Because a
+    /// segment's step is committed at its START (`FUN_0041435C`), this is the
+    /// cell the hero is walking INTO while a walk is in flight — so a mid-walk
+    /// click re-plans from there and never rewinds to the cell being left.
+    pub(super) fn set_player_target(&mut self, tx: i32, ty: i32) {
         let start = (self.player_x.round() as i32, self.player_y.round() as i32);
         let path = self.compute_player_path(start, (tx, ty));
         // The original `FUN_004142D4`/`FUN_0041ECC8` store the destination before
@@ -207,6 +210,17 @@ impl PlayableApp {
                     self.player_y = ay as f64;
                     self.player_render_x = ax as f64;
                     self.player_render_y = ay as f64;
+                    // Companions travel with the party: snap them onto the
+                    // arrival cell (their previous map cells are meaningless
+                    // here) and clear their follow routes.
+                    for m in self.party.iter_mut() {
+                        m.motion.cell = (ax as i32, ay as i32);
+                        m.motion.render_cell = (ax as i32, ay as i32);
+                        m.motion.path.clear();
+                        m.motion.target = None;
+                        m.motion.walking = false;
+                        m.motion.frame = 0;
+                    }
                     self.target = None;
                     self.player_path.clear();
                     self.player_active = false;

@@ -31,6 +31,9 @@ impl PlayableApp {
         let mut sprites: Vec<WorldSprite> = self.world.collect_props(self.current_map);
         self.props_drawn = sprites.len();
         let mut rejected = self.collect_actor_sprites(&mut sprites);
+        // Recruited companions render in the same dynamic depth pass and follow
+        // the leader (`update_party`).
+        rejected.extend(self.collect_party_sprites(&mut sprites));
 
         // Protagonist through the canonical Entity visual path (animated). The
         // sprite is drawn from the pre-step (render) cell; the per-frame anchor
@@ -103,25 +106,44 @@ impl PlayableApp {
                 player,
                 hovered_slot,
                 party_selected,
+                party,
                 ..
             } = self;
-            // Protagonist portrait uses the original selector with the actual
-            // character fields (never a fixed INTR id). Only the protagonist
-            // occupies a party cell at new game (slot 0); the marker and HP bar
-            // are composed per `FUN_0042C730`.
-            let portrait = crate::hud::portrait_id(
-                true,
-                player.portrait_group(),
-                player.portrait_status(),
-                player.hp_internal,
-            );
-            let party = [crate::hud::PartyPortrait {
+            // Protagonist (party slot 0) uses the original selector with the
+            // actual character fields; recruited companions (slots 1..) use the
+            // non-main-hero portrait branch with their `Entity` fields
+            // (`FUN_0042C730`). The marker and HP bar are composed per member.
+            let mut portraits: Vec<crate::hud::PartyPortrait> = Vec::with_capacity(1 + party.len());
+            portraits.push(crate::hud::PartyPortrait {
                 cell: 0,
-                intr_id: portrait,
+                intr_id: crate::hud::portrait_id(
+                    true,
+                    player.portrait_group(),
+                    player.portrait_status(),
+                    player.hp_internal,
+                ),
                 selected: party_selected[0],
                 health: player.hp_internal,
                 poisoned: player.periodic_damage != 0,
-            }];
+            });
+            for (i, m) in party.iter().enumerate() {
+                let cell = i + 1;
+                if cell >= crate::hud::PARTY_CELLS {
+                    break;
+                }
+                portraits.push(crate::hud::PartyPortrait {
+                    cell,
+                    intr_id: crate::hud::portrait_id(
+                        false,
+                        m.entity.visual_index,
+                        m.entity.archetype,
+                        m.entity.stats.hp_internal,
+                    ),
+                    selected: party_selected[cell],
+                    health: m.entity.stats.hp_internal,
+                    poisoned: m.entity.stats.periodic_damage != 0,
+                });
+            }
             // Fixed scroll offset for this task; the protagonist's own
             // inventory is read directly (never re-initialized per frame).
             crate::hud::draw_game_hud(
@@ -132,7 +154,7 @@ impl PlayableApp {
                 &player.inventory,
                 0,
                 *hovered_slot,
-                &party,
+                &portraits,
                 player.auto_enabled(),
             );
         }

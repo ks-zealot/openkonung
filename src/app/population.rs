@@ -16,6 +16,15 @@ impl PlayableApp {
                 _ => PopulationBuild::default(),
             }
         };
+        // A recruited companion left its location group (original `0x123` moves
+        // the entity into the party group 0), so it must not be rebuilt as a
+        // world NPC at its location.
+        if !self.party.is_empty() {
+            let party_ids: std::collections::HashSet<usize> =
+                self.party.iter().map(|m| m.entity.index).collect();
+            build.actors.retain(|a| !party_ids.contains(&a.source_entity_id()));
+            build.motion.retain(|k, _| !party_ids.contains(k));
+        }
         // Per-actor cycle lengths (original `Entity+0xD7`): one collision cell
         // is stepped per this many walk frames. Resolved once, from the spawn
         // facing and the actor's authored stance (`Entity+0x03 & 0x04`).
@@ -119,39 +128,62 @@ impl PlayableApp {
         let PlayableApp {
             world,
             population_cache,
+            party,
             ..
         } = self;
-        let Some(pop) = population_cache.get(&loc) else {
-            return None;
-        };
-        for a in &pop.actors {
-            let (facing, cell, action, frame) = pop
-                .motion
-                .get(&a.source_entity_id())
-                .map(|m| (m.facing, m.render_cell, m.action as usize, m.frame as usize))
-                .unwrap_or_else(|| {
-                    let battle = crate::anim::battle_from_flags(a.entity.flags_b);
-                    (
-                        a.entity.facing,
-                        (a.entity.x as i32, a.entity.y as i32),
-                        crate::anim::idle_action(battle),
-                        0,
-                    )
-                });
+        if let Some(pop) = population_cache.get(&loc) {
+            for a in &pop.actors {
+                let (facing, cell, action, frame) = pop
+                    .motion
+                    .get(&a.source_entity_id())
+                    .map(|m| (m.facing, m.render_cell, m.action as usize, m.frame as usize))
+                    .unwrap_or_else(|| {
+                        let battle = crate::anim::battle_from_flags(a.entity.flags_b);
+                        (
+                            a.entity.facing,
+                            (a.entity.x as i32, a.entity.y as i32),
+                            crate::anim::idle_action(battle),
+                            0,
+                        )
+                    });
+                if let Ok((im, gx, gy)) = world.res.actor_frame_state(
+                    &a.entity.equipment,
+                    a.entity.archetype,
+                    a.entity.visual_index,
+                    a.entity.palette_offset,
+                    facing,
+                    action,
+                    frame,
+                ) {
+                    let (lx, ly) = entity_to_local_px_f(cell.0 as f64, cell.1 as f64);
+                    let x = iox + lx.round() as i32 + gx;
+                    let y = ioy + ly.round() as i32 + gy;
+                    if mx >= x && mx < x + im.w as i32 && my >= y && my < y + im.h as i32 {
+                        best = Some((a.source_entity_id(), a.entity.archetype, a.entity.dialogue_id));
+                    }
+                }
+            }
+        }
+        // Recruited companions are no longer world NPCs but remain clickable at
+        // their followed position (party-mode dialogue, `0x15E`).
+        for m in party.iter() {
             if let Ok((im, gx, gy)) = world.res.actor_frame_state(
-                &a.entity.equipment,
-                a.entity.archetype,
-                a.entity.visual_index,
-                a.entity.palette_offset,
-                facing,
-                action,
-                frame,
+                &m.entity.equipment,
+                m.entity.archetype,
+                m.entity.visual_index,
+                m.entity.palette_offset,
+                m.motion.facing,
+                m.motion.action as usize,
+                m.motion.frame as usize,
             ) {
-                let (lx, ly) = entity_to_local_px_f(cell.0 as f64, cell.1 as f64);
+                let (lx, ly) = entity_to_local_px_f(
+                    m.motion.render_cell.0 as f64,
+                    m.motion.render_cell.1 as f64,
+                );
                 let x = iox + lx.round() as i32 + gx;
                 let y = ioy + ly.round() as i32 + gy;
                 if mx >= x && mx < x + im.w as i32 && my >= y && my < y + im.h as i32 {
-                    best = Some((a.source_entity_id(), a.entity.archetype, a.entity.dialogue_id));
+                    best = Some((m.entity.index, m.entity.archetype, m.entity.dialogue_id));
                 }
             }
         }

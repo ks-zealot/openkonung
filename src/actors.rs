@@ -80,6 +80,20 @@ pub fn visual_family(archetype: u8) -> VisualFamily {
     }
 }
 
+/// One recruited party member (original reserved **group 0** member, appended by
+/// the recruit opcode `0x123` = `FUN_00431820`).
+///
+/// Holds the canonical parsed [`Entity`] (authored stats/graphics/ids, never
+/// mutated) plus its live [`ActorMotion`]. Party slot 0 is the protagonist (held
+/// separately as [`crate::character::PlayerCharacter`]); companions occupy
+/// slots `1..=N`, and each companion's HUD panel cell is its slot index
+/// (`FUN_0042C730`: cell = `entity_index - group.first_entity`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartyMember {
+    pub entity: Entity,
+    pub motion: ActorMotion,
+}
+
 impl fmt::Display for PlacementError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

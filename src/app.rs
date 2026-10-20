@@ -15,8 +15,10 @@ use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
 mod camera;
 mod cursor;
 mod debug_overlay;
+mod dialogue_exec;
 mod graph;
 mod input;
+mod party;
 mod player;
 mod population;
 mod portals;
@@ -197,9 +199,20 @@ pub struct PlayableApp {
     /// is the protagonist/leader and is selected at game start. Only selected
     /// members receive move/attack commands.
     pub party_selected: [bool; crate::hud::PARTY_CELLS],
+    /// Recruited companions (original reserved **group 0** members added by the
+    /// dialogue recruit opcode `0x123`). Slot 0 of the party is the protagonist
+    /// (`self.player`); companion `i` occupies HUD cell `i + 1`.
+    pub party: Vec<crate::actors::PartyMember>,
+    /// Runtime `B7` quest-flag bytes (300 slots, first byte; bit `0x80` =
+    /// active). Initialized from the loaded `QUEST_R.RES` at game start and
+    /// mutated by dialogue action programs (`FUN_00434BB8`) / read by condition
+    /// programs (`FUN_00434FE8`).
+    pub quest_flags: Vec<u8>,
     /// Additive-selection modifier (`_DAT_0081D624`, Shift): when held, a
     /// party-portrait click adds the member instead of replacing the set.
     pub shift_down: bool,
+    /// Seconds accumulated toward the next companion follow-logic tick.
+    party_step_t: f64,
     /// Virtual-space pointer position (`_DAT_0081D5C0/_D5C4`). The game-drawn
     /// cursor (see `app::cursor`, `res::cursor`) is blitted here. `(-1,-1)` means
     /// off-screen / not shown.
@@ -225,6 +238,14 @@ impl PlayableApp {
         tables: Option<GameTables>,
         settlements: Vec<Settlement>,
     ) -> PlayableApp {
+        // Runtime `B7` flag array (300 slots), initialized from the loaded
+        // dialogue database exactly like the original loader.
+        let quest_flags = world
+            .res
+            .quest
+            .as_ref()
+            .map(|q| q.initial_flags())
+            .unwrap_or_default();
         let mut app = PlayableApp {
             world,
             edges,
@@ -282,7 +303,10 @@ impl PlayableApp {
             quit: false,
             request_menu: false,
             party_selected: [false; crate::hud::PARTY_CELLS],
+            party: Vec::new(),
+            quest_flags,
             shift_down: false,
+            party_step_t: 0.0,
             cursor_virtual: (-1.0, -1.0),
         };
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
@@ -302,6 +326,7 @@ impl PlayableApp {
             self.ensure_population(self.current_map);
             self.update_actors(dt);
             self.update_player(dt);
+            self.update_party(dt);
             if self.camera_follow {
                 self.center_camera_on_player(false, dt);
             }

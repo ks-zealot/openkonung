@@ -538,3 +538,44 @@ fn real_game1_group23_owners_stay_non_owners_wander() {
         assert!(rect_contains(&m.rect_a, m.cell), "left rect A: {id} {:?}", m.cell);
     }
 }
+
+#[test]
+fn follow_distance_matches_original_grid_metric() {
+    // FUN_0043881c
+    assert_eq!(follow_distance((0, 0), (0, 0)), 0);
+    assert_eq!(follow_distance((0, 0), (9, 0)), 9);
+    assert_eq!(follow_distance((0, 0), (10, 0)), 10);
+    assert_eq!(follow_distance((0, 0), (3, 5)), 6);
+    assert_eq!(follow_distance((0, 0), (1, 5)), 5);
+}
+
+#[test]
+fn followers_walk_toward_a_distant_leader_and_stop_when_close() {
+    let collision = free_collision();
+    let leader = (100, 80);
+    let mut member = PartyMember {
+        entity: entity(539, 6, 0x05, 80, 80),
+        motion: ActorMotion::default(),
+    };
+    member.motion.cell = (80, 80);
+    member.motion.render_cell = (80, 80);
+    member.motion.facing = 5;
+    member.motion.walk_frames = 4;
+    member.motion.action = 0;
+
+    // 20 cells away (>= FOLLOW_DISTANCE): issues a route and starts walking.
+    update_followers(std::slice::from_mut(&mut member), &collision, leader, 1);
+    assert!(member.motion.walking, "companion starts following");
+    let start = member.motion.cell;
+
+    for _ in 0..600 {
+        update_followers(std::slice::from_mut(&mut member), &collision, leader, 1);
+    }
+    assert_ne!(member.motion.cell, start, "companion moved toward the leader");
+    assert!(
+        follow_distance(member.motion.cell, leader) < FOLLOW_DISTANCE,
+        "companion arrived within follow distance (cell {:?})",
+        member.motion.cell
+    );
+    assert!(!member.motion.walking, "companion settled");
+}

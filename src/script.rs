@@ -151,6 +151,80 @@ pub fn script_op(op: u16) -> Option<&'static ScriptOp> {
     OPS.get(i).filter(|s| s.op == op)
 }
 
+// ---------------------------------------------------------------------------
+// Program execution (`FUN_00434FE8` conditions / `FUN_00434BB8` actions)
+// ---------------------------------------------------------------------------
+
+use crate::quest::{OP_FLAG_GROUP, OP_FLAG_NEGATE, OP_FLAG_SCRIPT, OP_MASK, PROGRAM_END};
+
+/// Evaluate a `B4` condition program exactly like `FUN_00434FE8`.
+///
+/// Each word is a term: a `B7` flag slot (bit `0x80`) or, with
+/// [`OP_FLAG_SCRIPT`] (`0x2000`), a script opcode predicate; [`OP_FLAG_NEGATE`]
+/// (`0x8000`) negates the term. A term with [`OP_FLAG_GROUP`] (`0x4000`) is
+/// ANDed into the running result (short-circuit); a term without it restarts the
+/// result only once it has already failed (OR-alternative). The shipped
+/// dialogue/quest data sets `0x4000` on every term, giving a plain AND.
+pub fn evaluate_condition(
+    words: &[u16],
+    mut flag_active: impl FnMut(usize) -> bool,
+    mut eval_op: impl FnMut(u16) -> bool,
+) -> bool {
+    let mut acc = true;
+    for &w in words {
+        if w == PROGRAM_END {
+            break;
+        }
+        let group = w & OP_FLAG_GROUP != 0;
+        // Matches `FUN_00434FE8`: a group term is evaluated only while the
+        // running result is still true (AND short-circuit); a non-group term
+        // only once it has failed (OR-alternative).
+        if group {
+            if !acc {
+                continue;
+            }
+        } else if acc {
+            continue;
+        }
+        let raw = if w & OP_FLAG_SCRIPT != 0 {
+            eval_op(w & OP_MASK)
+        } else {
+            flag_active((w & OP_MASK) as usize)
+        };
+        acc = if w & OP_FLAG_NEGATE != 0 { !raw } else { raw };
+    }
+    acc
+}
+
+/// One decoded `B5` action-program step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionStep {
+    /// Set `B7` flag slot `index` active (`0x8000` present, no `0x2000`).
+    SetFlag(usize),
+    /// Clear `B7` flag slot `index` if active (no `0x2000`/`0x8000`).
+    ClearFlag(usize),
+    /// Run script opcode `op` (`0x2000` present).
+    Op(u16),
+}
+
+/// Decode a `B5` action program into ordered steps (`FUN_00434BB8`).
+pub fn action_steps(words: &[u16]) -> Vec<ActionStep> {
+    let mut out = Vec::new();
+    for &w in words {
+        if w == PROGRAM_END {
+            break;
+        }
+        if w & OP_FLAG_SCRIPT != 0 {
+            out.push(ActionStep::Op(w & OP_MASK));
+        } else if w & OP_FLAG_NEGATE != 0 {
+            out.push(ActionStep::SetFlag((w & OP_MASK) as usize));
+        } else {
+            out.push(ActionStep::ClearFlag((w & OP_MASK) as usize));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +252,38 @@ mod tests {
         assert!(script_op(OP_LAST).is_some());
         assert!(script_op(OP_BASE - 1).is_none());
         assert!(script_op(0xFFFF).is_none());
+    }
+
+    #[test]
+    fn condition_programs_are_short_circuit_and() {
+        use crate::quest::{OP_FLAG_GROUP, OP_FLAG_NEGATE, OP_FLAG_SCRIPT};
+        // Single group term: result == the opcode result.
+        let one = [OP_FLAG_GROUP | OP_FLAG_SCRIPT | 0x15E];
+        assert!(evaluate_condition(&one, |_| false, |op| op == 0x15E));
+        assert!(!evaluate_condition(&one, |_| false, |op| op == 0x160));
+
+        // Two group terms: AND (a false first term short-circuits).
+        let two = [
+            OP_FLAG_GROUP | OP_FLAG_SCRIPT | 0x15E,
+            OP_FLAG_GROUP | OP_FLAG_SCRIPT | 0x160,
+        ];
+        assert!(evaluate_condition(&two, |_| false, |op| op == 0x15E || op == 0x160));
+        assert!(!evaluate_condition(&two, |_| false, |op| op == 0x15E));
+
+        // `0x8000` negates a `B7` flag term.
+        let neg = [OP_FLAG_GROUP | OP_FLAG_NEGATE | 207];
+        assert!(evaluate_condition(&neg, |i| i != 207, |_| false));
+        assert!(!evaluate_condition(&neg, |i| i == 207, |_| false));
+    }
+
+    #[test]
+    fn action_steps_decode_flags_and_ops() {
+        use crate::quest::OP_FLAG_NEGATE;
+        let words = [OP_FLAG_SCRIPT | 0x123, OP_FLAG_NEGATE | 207, 44];
+        let steps = action_steps(&words);
+        assert_eq!(
+            steps,
+            vec![ActionStep::Op(0x123), ActionStep::SetFlag(207), ActionStep::ClearFlag(44)]
+        );
     }
 }
