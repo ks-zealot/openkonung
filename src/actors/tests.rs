@@ -424,6 +424,9 @@ fn idle_wanderer_holds_its_frame_not_loops() {
     let settlement = Settlement {
         index: 0,
         loc_id: 1,
+        group_id: 0,
+        flags_4b2: 0,
+        targets: Vec::new(),
         waypoints: vec![Waypoint {
             facing: 3,
             owner: 1,

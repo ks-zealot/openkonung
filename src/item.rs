@@ -51,6 +51,7 @@ use crate::constants::exe_tables::NAME4_VA;
 use crate::constants::exe_tables::ARMOR_TABLE_VA;
 use crate::constants::exe_tables::ARMOR_STRIDE;
 use crate::constants::exe_tables::ITEM_DURABILITY_OFF;
+use crate::constants::exe_tables::ITEM_LIFETIME_OFF;
 use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
 use crate::constants::exe_tables::ITEM_MODIFIER_STRIDE;
 use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
@@ -109,6 +110,8 @@ pub struct ItemInfo {
     pub durability: u16,
     /// Prototype reach (`u16@+0x34`, stride-`0x40` records only).
     pub range: u16,
+    /// Projectile lifetime in frames (`u8@+0x08`, read by `FUN_0041BF44`).
+    pub projectile_lifetime: u8,
     /// World/ground sprite id (`FUN_00438CC8`). The original loader resolves
     /// this from the icon/weight table at `+4` of the class record, except
     /// class 12 (stackable arrows) = `0x99` and classes 10/other = `0xA3`.
@@ -190,19 +193,20 @@ impl ItemDb {
         } else {
             0
         };
-        let (durability, range) = if stride == 64 {
-            (
-                rd_u16(&self.konung, o + ITEM_DURABILITY_OFF) as u16,
-                rd_u16(&self.konung, o + ITEM_RANGE_OFF) as u16,
-            )
-        } else {
-            (0, 0)
-        };
-        // The name is a separate parallel table, read at +0.
+        // The name/prototype record is a separate parallel table read at +0.
         let no = va_to_file(name_va) + subtype as usize * stride;
         if no + stride > self.konung.len() {
             return None;
         }
+        let (durability, range, projectile_lifetime) = if stride == 64 {
+            (
+                rd_u16(&self.konung, no + ITEM_DURABILITY_OFF) as u16,
+                rd_u16(&self.konung, no + ITEM_RANGE_OFF) as u16,
+                self.konung[no + ITEM_LIFETIME_OFF],
+            )
+        } else {
+            (0, 0, 0)
+        };
         let raw = &self.konung[no..no + stride];
         let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
         let name = decode_cp866(&raw[..end]);
@@ -226,6 +230,7 @@ impl ItemDb {
             rating,
             durability,
             range,
+            projectile_lifetime,
             world_sprite,
             equipped_visual,
             name,
@@ -254,6 +259,17 @@ impl ItemDb {
             return None;
         }
         Some(rd_u16(&self.konung, o) as u16)
+    }
+
+    /// Prototype combat rating by subtype (`0x459B7C + subtype*0x40`), used by
+    /// the projectile damage path where only the bow subtype is stored.
+    pub fn rating_for_subtype(&self, subtype: u8) -> u16 {
+        let o = va_to_file(ARMOR_TABLE_VA) + subtype as usize * ARMOR_STRIDE;
+        if o + 2 <= self.konung.len() {
+            rd_u16(&self.konung, o) as u16
+        } else {
+            0
+        }
     }
 
     /// CP866 name suffix of weapon modifier `index` (e.g. `", на муравьев"`).

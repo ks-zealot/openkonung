@@ -27,6 +27,8 @@ pub const ARMOR_STRIDE: usize = 64;
 /// stride-`0x40` item record.
 pub const ITEM_DURABILITY_OFF: usize = 0x2E;
 pub const ITEM_RANGE_OFF: usize = 0x34;
+/// Projectile lifetime byte (`+0x08`) read by `FUN_0041BF44` for bows.
+pub const ITEM_LIFETIME_OFF: usize = 0x08;
 /// Weapon-vs-creature modifier table (`FUN_0041aea8`); 18 records of `0x40`
 /// bytes: `+0x00 u16 value`, `+0x02 u16 target_archetype`, `+0x14` CP866 name
 /// suffix.

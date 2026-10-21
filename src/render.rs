@@ -107,6 +107,71 @@ impl World {
         out
     }
 
+    /// Front-most opaque prop sprite under a local-world point. Returns
+    /// `(prop_table_index, grid_x, grid_y)`.
+    pub fn prop_at_local(&mut self, loc_id: u32, lx: i32, ly: i32) -> Option<(usize, i32, i32)> {
+        let idx = *self.loc_index.get(&loc_id)?;
+        let loc = &self.locs[idx];
+        let props: Vec<(usize, i32, i32)> = loc
+            .props
+            .iter()
+            .map(|p| (p.ri, p.grid_x, p.grid_y))
+            .collect();
+        let mut best: Option<(usize, i32, i32, i32)> = None;
+        for (ri, gx, gy) in props {
+            let Some(p) = self.locs[idx].props.iter().find(|p| p.ri == ri) else {
+                continue;
+            };
+            let (img, sx, sy) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.res.prop_sprite(p.object_id, 0, p.palette)
+            })) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let (plx, ply) = prop_to_local_px(gx, gy);
+            let px = lx - (plx + sx);
+            let py = ly - (ply + sy);
+            if px < 0 || py < 0 || px >= img.w as i32 || py >= img.h as i32 {
+                continue;
+            }
+            let a = img.data[((py as usize * img.w + px as usize) * 4) + 3];
+            if a == 0 {
+                continue;
+            }
+            let front = (ply + sy) as i32;
+            if best.map(|(_, _, _, by)| front >= by).unwrap_or(true) {
+                best = Some((ri, gx, gy, front));
+            }
+        }
+        best.map(|(i, x, y, _)| (i, x, y))
+    }
+
+    /// `FUN_0043E4EA` equivalent: is the local-world point opaque on prop
+    /// sprite `index`?
+    pub fn prop_opaque_at(&mut self, loc_id: u32, index: usize, lx: i32, ly: i32) -> bool {
+        let idx = match self.loc_index.get(&loc_id) {
+            Some(&i) => i,
+            None => return false,
+        };
+        let Some(p) = self.locs[idx].props.iter().find(|p| p.ri == index) else {
+            return false;
+        };
+        let (gx, gy, object_id, palette) = (p.grid_x, p.grid_y, p.object_id, p.palette);
+        let (img, sx, sy) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.res.prop_sprite(object_id, 0, palette)
+        })) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        let (plx, ply) = prop_to_local_px(gx, gy);
+        let px = lx - (plx + sx);
+        let py = ly - (ply + sy);
+        if px < 0 || py < 0 || px >= img.w as i32 || py >= img.h as i32 {
+            return false;
+        }
+        img.data[((py as usize * img.w + px as usize) * 4) + 3] != 0
+    }
+
     pub fn thumbnail(&mut self, loc_id: u32, w: i32, h: i32) -> Img {
         if let Some(t) = self.thumb_cache.get(&(loc_id, w, h)) {
             return t.clone();

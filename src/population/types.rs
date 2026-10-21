@@ -180,7 +180,23 @@ pub struct Waypoint {
 pub struct Settlement {
     pub index: usize,
     pub loc_id: u8,
+    /// `+0x02` group index woken by `FUN_004245B4`.
+    pub group_id: u8,
+    /// `+0x4B2` runtime flags (`0x15` set by the projectile prop branch).
+    pub flags_4b2: u8,
+    /// `+0x18` target list, 8 bytes per entry.
+    pub targets: Vec<SettlementTarget>,
     pub waypoints: Vec<Waypoint>,
+}
+
+/// One `Settlement+0x18` target entry: `+0x00 key`, `+0x01 state`,
+/// `+0x02 u16 prop index`, `+0x06 u16 timer`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SettlementTarget {
+    pub key: u8,
+    pub state: u8,
+    pub prop_index: u16,
+    pub timer: u16,
 }
 
 

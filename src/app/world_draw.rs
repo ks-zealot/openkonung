@@ -65,6 +65,27 @@ impl PlayableApp {
             blit(&mut self.frame, fw, fh, &s.img.data, s.img.w, s.img.h, ax, ay);
         }
 
+        // Ranged projectile pool (`0x80B0D0`) is drawn after the entity/prop
+        // depth pass (original sort key `y + 0x5E`).
+        {
+            let PlayableApp {
+                frame,
+                world,
+                projectiles,
+                world_frame,
+                ..
+            } = self;
+            let parity = *world_frame as usize & 1;
+            for p in projectiles.iter() {
+                let Some(img) = world.res.intr_sprite(p.sprite_base + parity) else {
+                    continue;
+                };
+                let ax = iox + p.x.round() as i32 + p.draw_dx as i32;
+                let ay = ioy + p.y.round() as i32 + p.draw_dy as i32;
+                blit(frame, fw, fh, &img.data, img.w, img.h, ax, ay);
+            }
+        }
+
         // Live portals: drawn at the CANONICAL source trigger (center of the
         // transition trigger rectangle) through the normal Entity/runtime-grid
         // render transform, so the visible ring is exactly the cell gameplay

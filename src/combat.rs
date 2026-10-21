@@ -16,6 +16,7 @@ use crate::item::ItemDb;
 use crate::population::Entity;
 
 pub mod loot;
+pub mod projectile;
 
 /// Original LCG (`FUN_0043ea46`): `seed = seed*0x41c64e6d + 0x3039`,
 /// result `(seed >> 16) & 0x7FFF`.
@@ -104,6 +105,8 @@ pub enum CombatTarget {
     Party(usize),
     /// World actor source `Entity` id.
     World(usize),
+    /// Prop/object table index (`Entity+0x06` negative target encoding).
+    Prop(usize),
 }
 
 /// The combat-relevant view of an Entity / PlayerCharacter.
@@ -259,6 +262,110 @@ pub fn mitigate_damage(s: &CombatStats, incoming: i32, armor: i32) -> u16 {
     let value = MITIGATE_ENDURANCE_SCALE
         * (1.0 + (incoming * MITIGATE_PIERCE_SCALE + temp) / endurance);
     round_even(value).clamp(0, u16::MAX as i64) as u16
+}
+
+/// Snapshot of the bow fields copied into a projectile by `FUN_0041BF44`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BowShot {
+    pub rating: u16,
+    pub modifier: i8,
+    pub subtype: u8,
+    pub poison: u16,
+}
+
+/// `FUN_0041bf44`: bow rating/modifier/subtype/poison from `Equipment[1]`.
+pub fn bow_shot(db: &ItemDb, save: &[u8], s: &CombatStats) -> Option<BowShot> {
+    if s.weapon_slot != 1 {
+        return None;
+    }
+    let id = *s.equipment.get(1)?;
+    if id == 0 {
+        return None;
+    }
+    let inst = ItemDb::decode_instance(save, id)?;
+    let info = db.info(inst.class, inst.subtype)?;
+    if info.class != 1 || info.range == 0 {
+        return None;
+    }
+    Some(BowShot {
+        rating: info.rating,
+        modifier: inst.modifier_index,
+        subtype: inst.subtype,
+        poison: inst.poison,
+    })
+}
+
+/// `FUN_0041AC40`: projectile damage = `(modifier or bow rating) * bow rating`.
+pub fn ranged_damage(db: &ItemDb, bow: &BowShot, target_archetype: u8) -> (i32, u16) {
+    let base = db
+        .modifier_damage(bow.modifier, target_archetype)
+        .unwrap_or_else(|| db.rating_for_subtype(bow.subtype)) as i64;
+    let raw = base * bow.rating as i64;
+    (raw.clamp(0, i32::MAX as i64) as i32, bow.poison)
+}
+
+/// `FUN_0041B658`: kill power used for ranged money/archery rewards and the
+/// corpse-loot `bonus` argument.
+pub fn combat_power(db: &ItemDb, save: &[u8], s: &CombatStats) -> i32 {
+    let armor = armor_total(db, save, s) as f64;
+    let mut power = armor * 0.1
+        + s.dexterity as f64 * 0.2
+        + s.strength as f64 * 0.3
+        + s.endurance as f64 * 0.3;
+    if !s.is_object_family() {
+        power += s.melee_mastery as f64 * 0.002 + s.archery_mastery as f64 * 0.003;
+        if let Some(slot) = s.weapon_slot_index() {
+            let id = s.equipment[slot];
+            let rating = ItemDb::decode_instance(save, id)
+                .and_then(|i| db.info(i.class, i.subtype))
+                .map(|i| i.rating)
+                .unwrap_or(0);
+            power = rating as f64 * 0.2 + power;
+        }
+    }
+    round_even(power).max(0) as i32
+}
+
+/// Projectile damage application (`FUN_0041C1E8`): dexterity dodge then the
+/// same armor/endurance mitigation as melee (no facing table, no weapon wear).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProjectileRoll {
+    pub hit: bool,
+    pub dodged: bool,
+    pub damage: u16,
+    pub incoming: u16,
+    pub lethal: bool,
+    pub poison: u16,
+}
+
+pub fn resolve_projectile(
+    db: &ItemDb,
+    save: &[u8],
+    bow: &BowShot,
+    defender: &CombatStats,
+    rng: &mut OriginalRng,
+) -> ProjectileRoll {
+    if (rng.roll() as i64) <= round_even(defender.dexterity as f64 * DODGE_DEX_SCALE) {
+        return ProjectileRoll {
+            hit: false,
+            dodged: true,
+            damage: 0,
+            incoming: 0,
+            lethal: false,
+            poison: 0,
+        };
+    }
+    let (raw, poison) = ranged_damage(db, bow, defender.archetype);
+    let armor = armor_total(db, save, defender);
+    let damage = mitigate_damage(defender, raw, armor);
+    ProjectileRoll {
+        hit: true,
+        dodged: false,
+        damage,
+        incoming: raw.clamp(0, u16::MAX as i32) as u16,
+        lethal: damage >= defender.hp,
+        poison,
+    }
 }
 
 /// Complete one melee attack (`FUN_0041b060` -> `FUN_0041aea8` ->

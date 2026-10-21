@@ -252,6 +252,13 @@ pub struct PlayableApp {
     pub(super) player_attack_frame: u8,
     /// Protagonist attack-cycle length for the current stance.
     pub(super) player_attack_frames: u8,
+    /// Protagonist ranged order (bow + ammo) and action-row-4 cycle.
+    pub(super) player_attack_ranged: bool,
+    pub(super) player_ranged_frame: u8,
+    pub(super) player_ranged_frames: u8,
+    pub(super) player_ranged_fired: bool,
+    /// Live ranged projectiles (original `0x80B0D0` pool, session-local).
+    pub(super) projectiles: Vec<crate::combat::projectile::Projectile>,
     /// Protagonist death-cycle length/frame (final frame is held).
     pub(super) player_death_frames: u8,
     pub(super) player_death_frame: u8,
@@ -260,6 +267,7 @@ pub struct PlayableApp {
     pub(super) combat_message_t: f64,
     /// Diagnostic-only target retained after the order completes (smoke test).
     pub(super) combat_test_target: Option<usize>,
+    pub(super) combat_test_prop: Option<usize>,
     pub(super) combat_attacks: u64,
     pub(super) combat_hits: u64,
 }
@@ -367,11 +375,17 @@ impl PlayableApp {
             player_attack_target: None,
             player_attack_frame: 0,
             player_attack_frames: 1,
+            player_attack_ranged: false,
+            player_ranged_frame: 0,
+            player_ranged_frames: 0,
+            player_ranged_fired: false,
+            projectiles: Vec::new(),
             player_death_frames: 1,
             player_death_frame: 0,
             combat_message: None,
             combat_message_t: 0.0,
             combat_test_target: None,
+            combat_test_prop: None,
             combat_attacks: 0,
             combat_hits: 0,
         };

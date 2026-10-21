@@ -279,6 +279,11 @@ impl PlayableApp {
                 crate::anim::death_action(battle),
                 self.player_death_frame as usize,
             )
+        } else if !moving && !self.player_active && self.player_attack_ranged {
+            (
+                crate::anim::ACT_RANGED,
+                self.player_ranged_frame as usize,
+            )
         } else if !moving && !self.player_active && self.player_attack_target.is_some() {
             (
                 crate::anim::attack_action(battle),

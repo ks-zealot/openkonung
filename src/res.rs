@@ -298,6 +298,80 @@ impl Res {
         }
     }
 
+    /// Stack quantity of a class-12 arrow/ammo instance (`+0x04 u32`).
+    pub fn item_quantity(&self, id: u16) -> Option<u32> {
+        if id == 0 {
+            return None;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 4 > self.save_game.len() {
+            return None;
+        }
+        Some(crate::res::u32(&self.save_game, o + 4))
+    }
+
+    /// Decrement an ammo stack by one (`FUN_004123BC` action row 4). When the
+    /// stack reaches zero the instance class becomes `0xFF`. Returns the
+    /// remaining quantity.
+    pub fn decrement_item_quantity(&mut self, id: u16) -> Option<u32> {
+        if id == 0 {
+            return None;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return None;
+        }
+        let q = crate::res::u32(&self.save_game, o + 4).saturating_sub(1);
+        self.save_game[o + 4..o + 8].copy_from_slice(&q.to_le_bytes());
+        if q == 0 {
+            self.save_game[o] = 0xFF;
+        }
+        Some(q)
+    }
+
+    /// Diagnostic/test helper: set an ammo stack quantity (`+0x04 u32`).
+    pub fn set_item_quantity(&mut self, id: u16, quantity: u32) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 8 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 4..o + 8].copy_from_slice(&quantity.to_le_bytes());
+        if quantity > 0 {
+            self.save_game[o] = 12;
+        }
+        true
+    }
+
+    /// Diagnostic/test helper: overwrite an instance's `+0x02` modifier byte.
+    pub fn set_item_modifier(&mut self, id: u16, modifier: i8) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 2] = modifier as u8;
+        true
+    }
+
+    /// Diagnostic/test helper: set current durability and max durability.
+    pub fn set_item_durability(&mut self, id: u16, current: f32) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 12 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 4..o + 8].copy_from_slice(&current.to_le_bytes());
+        self.save_game[o + 8..o + 12].copy_from_slice(&current.to_le_bytes());
+        true
+    }
+
     /// Decrement the instance `+0x0C` counter used by the weapon wear path
     /// (`FUN_0041c3cc`); returns the remaining value.
     pub fn decrement_item_charge(&mut self, id: u16) -> Option<u16> {

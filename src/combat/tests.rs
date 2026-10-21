@@ -252,6 +252,123 @@ fn level_tiers_match_fun_00417144() {
 }
 
 #[test]
+fn bow_lifetime_and_ranged_damage_match_the_original() {
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
+    // Game.1 bow instances: 23 short bow, 68 composite bow, 1024 glued bow.
+    assert_eq!(db.resolve(&game, 23).unwrap().projectile_lifetime, 32);
+    assert_eq!(db.resolve(&game, 68).unwrap().projectile_lifetime, 169);
+    assert_eq!(db.resolve(&game, 1024).unwrap().projectile_lifetime, 171);
+    let stats = CombatStats {
+        archetype: 3,
+        weapon_slot: 1,
+        hp: 1600,
+        dexterity: 10,
+        strength: 15,
+        endurance: 10,
+        base_armor: 10,
+        melee_mastery: 0,
+        archery_mastery: 100,
+        periodic_damage: 0,
+        equipment: [0, 23, 0, 0, 0, 0],
+    };
+    let bow = bow_shot(&db, &game, &stats).expect("bow shot");
+    assert_eq!(bow.rating, 112);
+    assert_eq!(bow.subtype, 8);
+    // No modifier: rating * rating.
+    assert_eq!(ranged_damage(&db, &bow, 0x55), (112 * 112, 0));
+    // Modifier 1 matches ants: 5000 * 112.
+    let modified = BowShot {
+        modifier: 1,
+        ..bow
+    };
+    assert_eq!(ranged_damage(&db, &modified, 0x55), (5000 * 112, 0));
+    assert_eq!(ranged_damage(&db, &modified, 0x41), (112 * 112, 0));
+}
+
+#[test]
+fn projectile_geometry_matches_the_verified_tables() {
+    use crate::combat::projectile as p;
+    assert_eq!(p::muzzle_offset(0), (-70.0, -65.0));
+    assert_eq!(p::muzzle_offset(7), (-60.0, -31.0));
+    assert_eq!(p::MUZZLE_X, [-70, -48, 12, 68, 80, 52, -8, -60]);
+    assert_eq!(p::MUZZLE_Y, [-65, -99, -85, -90, -58, -26, -10, -31]);
+    assert_eq!(p::DRAW_DX, [0, 0, 0, 0, -3, -29, -29, -23]);
+    assert_eq!(p::DRAW_DY, [-3, 0, 0, -3, 0, 0, -17, 0]);
+    let (vx, vy) = p::aim_velocity((0.0, 0.0), (100.0, 0.0));
+    assert!((vx - 100.0 / 25.001).abs() < 1e-6);
+    assert!(vy.abs() < 1e-6);
+    let proj = p::spawn(
+        CombatTarget::Player,
+        (10.0, 20.0),
+        (110.0, 20.0),
+        3,
+        BowShot {
+            rating: 1,
+            modifier: -1,
+            subtype: 8,
+            poison: 0,
+        },
+        32,
+        None,
+    );
+    assert_eq!(proj.sprite_base, 0xB8 + 6);
+    assert_eq!(proj.draw_dx, 0);
+    assert_eq!(proj.draw_dy, -3);
+}
+
+#[test]
+fn projectile_dodge_and_mitigation_use_the_melee_constants() {
+    let Some((db, game, hero, ant)) = heroes() else {
+        return;
+    };
+    let hs = CombatStats::from_entity(&hero);
+    // Hero has no bow in the shipped loadout; use the short-bow rating.
+    let bow = BowShot {
+        rating: 112,
+        modifier: -1,
+        subtype: 8,
+        poison: 0,
+    };
+    let as_ = CombatStats::from_entity(&ant);
+    let mut rng = OriginalRng::new(1);
+    let roll = resolve_projectile(&db, &game, &bow, &as_, &mut rng);
+    assert!(roll.hit);
+    assert_eq!(roll.incoming, 112 * 112);
+    let dodger = CombatStats {
+        dexterity: 2000,
+        ..as_
+    };
+    let mut rng = OriginalRng::new(1);
+    let roll = resolve_projectile(&db, &game, &bow, &dodger, &mut rng);
+    assert!(!roll.hit && roll.dodged);
+    let _ = hs;
+}
+
+#[test]
+fn arrow_carrying_mob_inventory_reaches_the_corpse_plan() {
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
+    let entities = crate::population::parse_entities(&game).unwrap();
+    let ant = entities.get(40).unwrap();
+    assert_eq!(ant.inventory[0], 102);
+    let mut rng = OriginalRng::new(1);
+    let plan = crate::combat::loot::plan_corpse_loot(
+        &db,
+        &mut rng,
+        ant.stats.money,
+        &ant.inventory,
+        ant.stats.raw_0x52,
+        0,
+        0,
+        0,
+    );
+    assert!(plan.existing.contains(&102), "30-arrow stack must be lootable");
+}
+
+#[test]
 fn player_stats_view_maps_the_authored_fields() {
     let p = PlayerCharacter {
         hero: crate::hero::HEROES[0],

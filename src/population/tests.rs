@@ -381,4 +381,13 @@ fn real_game1_settlement_waypoints_are_homes() {
     assert_eq!(by_owner(278).map(|w| (w.x, w.y)), Some((50, 30)));
     assert_eq!(by_owner(279).map(|w| (w.x, w.y)), Some((94, 22)));
     assert_eq!(by_owner(280).map(|w| (w.x, w.y)), Some((60, 26)));
+    // Settlement target list / group used by the projectile prop branch.
+    assert_eq!(s.group_id, 23);
+    assert_eq!(s.flags_4b2 & 0x10, 0x10);
+    let t = s
+        .targets
+        .iter()
+        .find(|t| t.prop_index == 33)
+        .expect("prop 33 target");
+    assert_eq!(t.state, 3);
 }

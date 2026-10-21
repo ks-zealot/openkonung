@@ -30,6 +30,8 @@ pub const ACT_BATTLE_IDLE: usize = 0;
 pub const ACT_BATTLE_WALK: usize = 1;
 pub const ACT_BATTLE_ATTACK: usize = 2;
 pub const ACT_BATTLE_DEATH: usize = 3;
+/// Ranged/special attack row used by the archery path (`FUN_004123BC` case 4).
+pub const ACT_RANGED: usize = 4;
 pub const ACT_SPECIAL_4: usize = 4;
 pub const ACT_SPECIAL_5: usize = 5;
 pub const ACT_PEACE_IDLE: usize = 6;

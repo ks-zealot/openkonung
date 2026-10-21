@@ -322,7 +322,7 @@ fn reference_sprites_have_expected_transparency() {
     );
     // ...while the HUD overlay, window frames and icons carry transparent
     // pixels (transparent RLE runs / short rows), not opaque palette index 0.
-    for id in [0usize, 1, 3, 71, 150, 240] {
+    for id in [0usize, 1, 3, 71, 150, 184, 185, 198, 199, 240] {
         let im = arch.get(id).unwrap();
         assert!(
             im.data.chunks(4).any(|p| p[3] == 0),

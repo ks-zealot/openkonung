@@ -52,6 +52,9 @@ pub struct ActorMotion {
     pub combat_target: Option<crate::combat::CombatTarget>,
     /// Attack-cycle length (`Res::action_cycle_frames` for the attack row).
     pub attack_frames: u8,
+    /// Ranged order (action row 4) for bow-armed actors.
+    pub ranged_order: bool,
+    pub ranged_fired: bool,
     /// Death-cycle length (`Res::action_cycle_frames` for the death row).
     pub death_frames: u8,
     /// Death state: the death row has been entered and the final frame is held.

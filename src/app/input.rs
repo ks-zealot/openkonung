@@ -130,8 +130,10 @@ impl PlayableApp {
         // also replaces any pending melee target.
         self.player_interact = false;
         self.player_attack_target = None;
+        self.player_attack_ranged = false;
         for m in self.party.iter_mut() {
             m.motion.combat_target = None;
+            m.motion.ranged_order = false;
         }
         self.world_move_command(x, y);
     }
@@ -186,6 +188,15 @@ impl PlayableApp {
             }
             // Non-dialogue actor (monster/object/non-talkable human).
             self.issue_attack_order(entity);
+            return;
+        }
+        // Prop/object under the cursor (`_DAT_0081D57C`): a ranged prop order
+        // only, using the original ammo `+0x02 == 0` gate.
+        let lx = vx - self.detail_pan[0].round() as i32;
+        let ly = vy - self.detail_pan[1].round() as i32;
+        if let Some((prop, gx, gy)) = self.world.prop_at_local(self.current_map, lx, ly) {
+            let _ = (gx, gy);
+            self.issue_prop_order(prop);
             return;
         }
         // Right-click empty ground sets the interaction/occupy flag and moves.

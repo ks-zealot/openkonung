@@ -195,6 +195,23 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
     for index in 0..SETTLEMENT_COUNT {
         let o = SETTLEMENT_OFF + index * SETTLEMENT_STRIDE;
         let loc_id = data[o + 3];
+        let group_id = data[o + 2];
+        let flags_4b2 = data[o + 0x4B2];
+        // `FUN_00420F30`: target count = u8[+0] + u8[+1] + 7; entries at +0x18.
+        let target_count = data[o] as usize + data[o + 1] as usize + 7;
+        let mut targets = Vec::with_capacity(target_count.min(120));
+        for t in 0..target_count {
+            let to = o + 0x18 + t * 8;
+            if to + 8 > o + SETTLEMENT_STRIDE {
+                break;
+            }
+            targets.push(SettlementTarget {
+                key: data[to],
+                state: data[to + 1],
+                prop_index: u16(data, to + 2) as u16,
+                timer: u16(data, to + 6) as u16,
+            });
+        }
         let mut waypoints = Vec::new();
         for w in 0..WAYPOINT_MAX {
             let wo = o + WAYPOINT_OFF + w * WAYPOINT_STRIDE;
@@ -207,7 +224,14 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
             }
             waypoints.push(Waypoint { facing, owner, x, y });
         }
-        out.push(Settlement { index, loc_id, waypoints });
+        out.push(Settlement {
+            index,
+            loc_id,
+            group_id,
+            flags_4b2,
+            targets,
+            waypoints,
+        });
     }
     Ok(out)
 }
