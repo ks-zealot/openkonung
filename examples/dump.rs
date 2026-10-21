@@ -249,6 +249,8 @@ fn main() {
             }
             match res.actor_frame(
                 &a.entity.equipment,
+                a.entity.raw_0x12,
+                openkonung::anim::battle_from_flags(a.entity.flags_b),
                 a.entity.archetype,
                 a.entity.visual_index,
                 a.entity.palette_offset,
@@ -372,7 +374,7 @@ fn main() {
 
     // Exercise the retained direct-render helpers (used again by the canonical
     // population phase). Base id 0 / palette 0 is a stable smoke input.
-    let (im, gx, gy, c) = res.human_frame_from_base(&[0u16; 6], 0, 0, 0, 0, 0);
+    let (im, gx, gy, c) = res.human_frame_from_base(&[0u16; 6], 0, false, 0, 0, 0, 0, 0);
     println!(
         "human_base vc=0 pal=0 {}x{} off={},{} count={} hash={:016x}",
         im.w,

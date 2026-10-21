@@ -35,6 +35,107 @@ impl PlayableApp {
         crate::actors::update_followers(party, collision, leader, ticks);
     }
 
+    /// Original `FUN_00421554` battle/peace stance toggle over the current
+    /// selection array. The remake binds this to TAB (the original uses SPACE).
+    ///
+    /// The direction comes from the **first selected** unit. Every selected
+    /// living unit is moved into that stance; unselected members are untouched.
+    /// Companion action rows and walk/idle cycle lengths are updated immediately
+    /// so the pose changes on the same frame (`FUN_00414078`/`FUN_0041435C`).
+    pub(super) fn toggle_selected_battle_stance(&mut self) {
+        let leader_selected = self.party_selected.get(0).copied().unwrap_or(false);
+        let first_battle = if leader_selected {
+            crate::anim::battle_from_flags(self.player.flags_b)
+        } else {
+            let mut found = None;
+            for (i, m) in self.party.iter().enumerate() {
+                if self.party_selected.get(i + 1).copied().unwrap_or(false) {
+                    found = Some(crate::anim::battle_from_flags(m.entity.flags_b));
+                    break;
+                }
+            }
+            match found {
+                Some(b) => b,
+                None => return,
+            }
+        };
+        let enter = !first_battle;
+
+        if leader_selected && !self.player.dead {
+            let cur = crate::anim::battle_from_flags(self.player.flags_b);
+            if cur != enter {
+                if enter {
+                    self.player.flags_b |= crate::anim::FLAG_BATTLE;
+                } else {
+                    self.player.flags_b &= !crate::anim::FLAG_BATTLE;
+                }
+                self.anim_time = 0.0;
+            }
+        }
+
+        let PlayableApp {
+            world,
+            party,
+            party_selected,
+            ..
+        } = self;
+        for (i, m) in party.iter_mut().enumerate() {
+            if !party_selected.get(i + 1).copied().unwrap_or(false) {
+                continue;
+            }
+            let action_row = m.motion.action as usize;
+            if m.entity.archetype & 0x80 != 0
+                || action_row == crate::anim::ACT_BATTLE_DEATH
+                || action_row == crate::anim::ACT_PEACE_DEATH
+            {
+                continue;
+            }
+            let cur = crate::anim::battle_from_flags(m.entity.flags_b);
+            if cur == enter {
+                continue;
+            }
+            if enter {
+                m.entity.flags_b |= crate::anim::FLAG_BATTLE;
+            } else {
+                m.entity.flags_b &= !crate::anim::FLAG_BATTLE;
+            }
+            let battle = crate::anim::battle_from_flags(m.entity.flags_b);
+            let action = if action_row == crate::anim::ACT_BATTLE_ATTACK
+                || action_row == crate::anim::ACT_PEACE_ATTACK
+            {
+                crate::anim::attack_action(battle)
+            } else if m.motion.walking {
+                crate::anim::walk_action(battle)
+            } else {
+                crate::anim::idle_action(battle)
+            };
+            if m.motion.action as usize != action {
+                m.motion.action = action as u8;
+                if !m.motion.walking {
+                    m.motion.frame = 0;
+                }
+            }
+            let dir = (m.motion.facing & 7) as usize;
+            if let Some(frames) =
+                world
+                    .res
+                    .walk_cycle_frames(m.entity.archetype, m.entity.visual_index, dir, battle)
+            {
+                m.motion.walk_frames = frames.min(u8::MAX as usize) as u8;
+            }
+            m.motion.idle_frames = world
+                .res
+                .action_cycle_frames(
+                    m.entity.archetype,
+                    m.entity.visual_index,
+                    dir,
+                    crate::anim::idle_action(battle),
+                )
+                .unwrap_or(0)
+                .min(u8::MAX as usize) as u8;
+        }
+    }
+
     /// Store a world-click destination on every **selected** companion and start
     /// its walk, mirroring the original left-click command 0 (`FUN_0042260C`),
     /// which writes the clicked cell `(tx,ty)` to `Entity+0x0C/+0x0E` on every
@@ -74,6 +175,8 @@ impl PlayableApp {
         for m in party.iter() {
             match world.res.actor_frame_state(
                 &m.entity.equipment,
+                m.entity.raw_0x12,
+                crate::anim::battle_from_flags(m.entity.flags_b),
                 m.entity.archetype,
                 m.entity.visual_index,
                 m.entity.palette_offset,

@@ -69,8 +69,10 @@ impl PlayableApp {
             }
             _ => {
                 // Blocked/unreachable (or same cell): abort to idle on the
-                // committed cell (no walk command).
+                // committed cell (no walk command). The interaction flag is
+                // consumed on arrival/failure like the original `0x422075`.
                 self.player_path.clear();
+                self.player_interact = false;
                 self.player_active = false;
                 self.player_step_t = 0.0;
                 self.player_render_x = self.player_x;
@@ -163,6 +165,13 @@ impl PlayableApp {
                         let cur =
                             (self.player_x.round() as i32, self.player_y.round() as i32);
                         if cur == goal {
+                            // Right-click interaction arrival: `FUN_00421B50`
+                            // only calls the pickup handler when `+0x03 & 0x40`
+                            // is set; a plain move never collects.
+                            if self.player_interact {
+                                self.try_pickup_here();
+                                self.player_interact = false;
+                            }
                             self.target = None;
                         } else {
                             match self.compute_player_path(cur, goal) {
@@ -225,6 +234,8 @@ impl PlayableApp {
                     self.player_path.clear();
                     self.player_active = false;
                     self.player_step_t = 0.0;
+                    self.player_interact = false;
+                    self.rebuild_world_objects();
                     self.dialog = None;
                     self.teleport_cooldown = 0.9;
                     self.last_teleport = Some((e.from, dst, e.rec));
@@ -254,9 +265,10 @@ impl PlayableApp {
     /// (`FUN_004142D4`/`FUN_00414A34`): walk `1`/`7` while moving, idle `0`/`6`
     /// otherwise, chosen by `Entity+0x03 & 0x04` (see [`crate::anim`]). The
     /// renderer family/class comes from `PlayerCharacter.class` (`Entity+0x04`);
-    /// the visual index and palette come from the hero identity. No Game.res
-    /// variant fallback and no equipment overlays. One walk cycle == one cell
-    /// step (`FUN_00413de4`).
+    /// the visual index and palette come from the hero identity. Equipped items
+    /// composite their GRAPH overlays via the original `FUN_00427e9c` rules,
+    /// including the active-weapon "in hand" variant (`Entity+0x12`). No Game.res
+    /// variant fallback. One walk cycle == one cell step (`FUN_00413de4`).
     pub(super) fn player_frame(&mut self, moving: bool) -> Result<(Img, i32, i32), String> {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
         let action = if moving {
@@ -267,6 +279,8 @@ impl PlayableApp {
         let fi = self.player_frame_index(moving, action);
         self.world.res.actor_frame_state(
             &self.player.equipment,
+            self.player.raw_0x12,
+            battle,
             self.player.entity_class(),
             self.player.hero.visual_index,
             self.player.hero.palette_offset,

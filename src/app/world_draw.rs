@@ -95,6 +95,28 @@ impl PlayableApp {
         let pay = ioy + ply.round() as i32;
         ellipse_outline(&mut self.frame, fw, fh, pax as f32, pay as f32, 3.0, 3.0, 1, [255, 245, 120, 255]);
 
+        // Game.N WorldObject pass (`FUN_0042532C` marker pass). The original
+        // draws this after terrain/entities/party rings and outside the depth
+        // sort, in x-then-y scan order; sprite anchor is the Entity projection
+        // (`FUN_00438A78`) minus half the sprite size.
+        {
+            let PlayableApp {
+                frame,
+                world,
+                active_world_objects,
+                ..
+            } = self;
+            for obj in active_world_objects.iter() {
+                let Some(img) = world.res.intr_sprite(obj.sprite as usize) else {
+                    continue;
+                };
+                let (lx, ly) = entity_to_local_px(obj.x, obj.y);
+                let ax = iox + lx - img.w as i32 / 2;
+                let ay = ioy + ly - img.h as i32 / 2;
+                blit(frame, fw, fh, &img.data, img.w, img.h, ax, ay);
+            }
+        }
+
         // Original INTR HUD: whole-screen overlay, empty inventory slot strip and
         // (once bound) party portraits. Composited after the world and its
         // overlays; transparent regions keep the world visible. Debug overlays
@@ -162,13 +184,26 @@ impl PlayableApp {
         // Original character screen (INTR[2]) over the world area; its window
         // geometry keeps the party panel and bottom inventory strip visible.
         if self.character_screen {
+            // The original paper doll uses the selected entity's live action,
+            // facing and frame (`FUN_0042ea6c`).
+            let doll_battle = crate::anim::battle_from_flags(self.player.flags_b);
+            let doll_action = if moving {
+                crate::anim::walk_action(doll_battle)
+            } else {
+                crate::anim::idle_action(doll_battle)
+            };
+            let doll_pose = crate::character_screen::PaperDollPose {
+                action: doll_action,
+                direction: self.player_dir.max(0) as u8,
+                frame: self.player_frame_index(moving, doll_action),
+            };
             let PlayableApp {
                 frame,
                 world,
                 player,
                 ..
             } = self;
-            crate::character_screen::draw(frame, fw, fh, &mut world.res, player);
+            crate::character_screen::draw(frame, fw, fh, &mut world.res, player, doll_pose);
         }
 
         // NPC dialogue (original `FUN_0042CBD0` mode 1): INTR[1] window + INTR[0]
@@ -203,6 +238,12 @@ impl PlayableApp {
                     cx.round() as i32,
                     cy.round() as i32,
                 );
+            }
+        }
+
+        if let Some(msg) = self.pickup_message.clone() {
+            if self.pickup_message_t > 0.0 {
+                self.text_wrapped(12, 34, 0xFF_E0A0, 1.0, msg);
             }
         }
 

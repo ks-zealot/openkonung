@@ -50,7 +50,7 @@ module root; a matching sibling directory holds its subsystems and its
 |---|---|
 | `graph.rs` | GRAPH terrain tiles and GRAPH layout parsing. |
 | `objects.rs` | OBJECTS props/monsters: object index, prop sprites, monster animation frames. |
-| `human.rs` | Humanoid frames, equipment overlays, `HUMAN_DRAW_ORDER`, `compose_human`. |
+| `human.rs` | Humanoid frames, peace/battle equipment overlays, `compose_human`, `paper_doll_frame`. |
 | `raster.rs` | `Image`, indexed RLE, palette conversion, `blit`/`fill_*`/`line`, byte readers. |
 | `exe.rs` | EXE profile mapping (virtual address ↔ file offset) for embedded tables. |
 | `tests.rs` | Human/object frame and overlay tests. |

@@ -59,6 +59,7 @@ pub mod render;
 pub mod res;
 pub mod script;
 pub mod sound;
+pub mod world_objects;
 
 use std::collections::HashMap;
 use std::ptr::{addr_of, addr_of_mut, slice_from_raw_parts_mut};

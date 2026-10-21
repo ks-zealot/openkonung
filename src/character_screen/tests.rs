@@ -109,3 +109,83 @@ fn draw_uses_intr2_and_does_not_panic() {
     assert_eq!(p.portrait_group(), 1);
     assert_eq!(p.portrait_status(), 5);
 }
+
+#[test]
+fn paper_doll_positions_match_executable_tables() {
+    // konung.res DGROUP 0x46035C/0x460360, stride 0x10.
+    assert_eq!(paper_doll_position(640), (470, 127));
+    assert_eq!(paper_doll_position(800), (570, 160));
+}
+
+#[test]
+fn draw_blits_paper_doll_pixels() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |n: &str| std::fs::read(dir.join(n)).ok();
+    let (Some(game), Some(graph), Some(objects), Some(exe), Some(konung), Some(save)) = (
+        read("Game.res"),
+        read("GRAPH.RES"),
+        read("Objects.res"),
+        read("CLIENT.EXE"),
+        read("konung.res"),
+        read("Game.1"),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let mut res = Res::new(game, graph, objects, exe);
+    res.load_items_and_fonts(&konung);
+    res.set_save_game(&save);
+
+    let mut p = player();
+    p.equipment = [0, 0, 1, 0, 0, 0];
+    p.raw_0x12 = 2;
+    let pose = PaperDollPose { action: 6, direction: 5, frame: 0 };
+    let doll = res
+        .paper_doll_frame(&p.equipment, p.raw_0x12, false, 1, p.hero.palette_id(), pose.action, pose.direction as usize, pose.frame)
+        .expect("doll");
+    let (dx, dy) = paper_doll_position(800);
+
+    let mut frame = vec![0u8; 800 * 600 * 4];
+    draw(&mut frame, 800, 600, &mut res, &p, pose);
+
+    let mut matching = 0;
+    let mut opaque = 0;
+    for y in 0..doll.h {
+        for x in 0..doll.w {
+            let si = (y * doll.w + x) * 4;
+            if doll.data[si + 3] == 0 {
+                continue;
+            }
+            opaque += 1;
+            let fx = dx as usize + x;
+            let fy = dy as usize + y;
+            let fi = (fy * 800 + fx) * 4;
+            if frame[fi..fi + 4] == doll.data[si..si + 4] {
+                matching += 1;
+            }
+        }
+    }
+    assert!(opaque > 100, "doll must have opaque pixels");
+    assert!(matching > 50, "draw must blit the paper doll ({matching}/{opaque} matched)");
+}
+
+#[test]
+fn paper_doll_positions_match_original_dgroup() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let Ok(konung) = std::fs::read(dir.join("konung.res")) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let word = |va: u32| -> i32 {
+        let o = 0x36200 + (va as usize - 0x450000);
+        i32::from_le_bytes([konung[o], konung[o + 1], konung[o + 2], konung[o + 3]])
+    };
+    for sel in 0..2u32 {
+        let x = word(0x46035C + sel * 0x10);
+        let y = word(0x460360 + sel * 0x10);
+        let expected = if sel == 0 { (470, 127) } else { (570, 160) };
+        assert_eq!((x, y), expected);
+        let logical_w = if sel == 0 { 640 } else { 800 };
+        assert_eq!(paper_doll_position(logical_w), expected);
+    }
+}

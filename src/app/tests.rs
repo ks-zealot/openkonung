@@ -107,6 +107,145 @@ fn character_screen_open_close_and_no_world_clickthrough() {
     assert_eq!(app.player.hp_internal, hp0);
 }
 
+/// Real Game.1 + Konung.3: the 19 `Земляной орех` nodes on location 3 load,
+///
+/// collect, deactivate for 0x1518 frames and respawn with a fresh instance.
+#[test]
+fn herb_world_object_pickup_and_respawn() {
+    use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
+    use crate::hero::hero;
+    use crate::loc::make_location;
+    use crate::render::World;
+    use crate::res::Res;
+    let dir = install_dir();
+    let (Ok(game_res), Ok(exe), Ok(konung), Ok(save), Ok(konung3)) = (
+        std::fs::read(dir.join("Game.res")),
+        std::fs::read(dir.join("CLIENT.EXE")),
+        std::fs::read(dir.join("konung.res")),
+        std::fs::read(dir.join("Game.1")),
+        std::fs::read(dir.join("Konung.3")),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let graph = vec![0u8; 0x30000];
+    let objects = vec![0u8; 8 + 512 * 8];
+    let mut res = Res::new(game_res, graph, objects, exe);
+    res.load_items_and_fonts(&konung);
+    res.set_save_game(&save);
+    if let Ok(intr) = std::fs::read(dir.join("INTR800R.RES")) {
+        let _ = res.load_intr(&intr);
+    }
+    let loc = make_location(3, konung3).expect("Konung.3");
+    let world = World::new(res, vec![loc]);
+    let h = *hero(0).unwrap();
+    let player = PlayerCharacter::from_build(
+        h,
+        CharacterBuild::from_class(CharacterClass::Warrior),
+    );
+    let mut app = PlayableApp::new(
+        world,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        HashMap::new(),
+        1,
+        Vec::new(),
+        player,
+        3,
+        0.0,
+        0.0,
+        5,
+        None,
+        Vec::new(),
+    );
+    app.world_frame = 100;
+
+    let (source_index, item, cell) = app
+        .world_object_sources
+        .iter()
+        .enumerate()
+        .find_map(|(i, s)| {
+            if s.loc != 3 {
+                return None;
+            }
+            let info = app.world.res.item_info(s.items[0])?;
+            (info.class == 9 && info.subtype == 1)
+                .then_some((i, s.items[0], (s.x as i32, s.y as i32)))
+        })
+        .expect("location 3 has Earth-nut nodes");
+    app.rebuild_world_objects();
+    let active = app
+        .active_world_objects
+        .iter()
+        .find(|o| o.cell() == cell)
+        .expect("Earth-nut node active on location 3");
+    assert_eq!(active.sprite, 160, "FUN_00438CC8 world sprite");
+    if app.world.res.intr.is_some() {
+        assert!(
+            app.world.res.intr_sprite(160).is_some(),
+            "herb world sprite is an occupied INTR index"
+        );
+    }
+    assert_eq!(app.player.inventory, [0; 32]);
+    // The marker pass must actually draw the herb sprite at the projected cell.
+    let (lx, ly) = crate::coords::entity_to_local_px(cell.0, cell.1);
+    app.detail_pan = [
+        -(lx as f64 - VIRTUAL_W as f64 / 2.0),
+        -(ly as f64 - VIRTUAL_H as f64 / 2.0),
+    ];
+    app.active_world_objects.clear();
+    app.draw_detail();
+    let without = app.frame.clone();
+    app.rebuild_world_objects();
+    app.draw_detail();
+    let cx = VIRTUAL_W as usize / 2;
+    let cy = VIRTUAL_H as usize / 2;
+    let mut changed = 0usize;
+    for y in cy.saturating_sub(32)..(cy + 32).min(VIRTUAL_H as usize) {
+        for x in cx.saturating_sub(32)..(cx + 32).min(VIRTUAL_W as usize) {
+            let o = (y * VIRTUAL_W as usize + x) * 4;
+            if without[o..o + 4] != app.frame[o..o + 4] {
+                changed += 1;
+            }
+        }
+    }
+    assert!(changed > 0, "herb sprite must be blitted into the frame");
+
+    app.player_x = cell.0 as f64;
+    app.player_y = cell.1 as f64;
+    app.try_pickup_here();
+    assert_eq!(app.player.inventory[0], item, "collected at inventory slot 0");
+    assert!(
+        !app.active_world_objects.iter().any(|o| o.cell() == cell),
+        "runtime marker removed"
+    );
+    let src = &app.world_object_sources[source_index];
+    assert_eq!((src.t0, src.t4), (-100, -100), "deactivation timestamp");
+
+    // Before 0x1518 frames it stays gone on map re-entry.
+    app.world_frame = 100 + 0x1518 - 1;
+    app.rebuild_world_objects();
+    assert!(!app.active_world_objects.iter().any(|o| o.cell() == cell));
+    // At the cooldown boundary it reappears with a newly allocated instance.
+    app.world_frame = 100 + 0x1518;
+    app.rebuild_world_objects();
+    let respawned = app
+        .active_world_objects
+        .iter()
+        .find(|o| o.cell() == cell)
+        .expect("herb respawned after 5400 frames");
+    assert_eq!(respawned.sprite, 160);
+    assert_ne!(app.world_object_sources[source_index].items[0], item);
+    let info = app
+        .world
+        .res
+        .item_info(app.world_object_sources[source_index].items[0])
+        .unwrap();
+    assert_eq!((info.class, info.subtype), (9, 1));
+}
+
 #[test]
 fn cursor_class_mapping_matches_original_jump_table() {
     use super::cursor::cursor_for_class;
@@ -624,3 +763,138 @@ fn selected_companion_receives_the_world_click_move() {
     assert_ne!(app.party[0].motion.cell, start, "companion moved on the click command");
 }
 
+
+#[test]
+fn tab_toggles_every_selected_party_member() {
+    let Some(mut app) = build_party_move_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.open_dialog(539, 97);
+    app.dialog_click_option(0); // 1771 -> 1774
+    app.dialog_click_option(0); // recruit (op 0x123)
+    assert_eq!(app.party.len(), 1);
+    assert!(app.party_selected[0] && app.party_selected[1]);
+
+    let leader_before = app.player.flags_b & crate::anim::FLAG_BATTLE;
+    let sig_before = app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE;
+    app.key_down(KEY_TAB);
+    assert_eq!(
+        app.player.flags_b & crate::anim::FLAG_BATTLE,
+        leader_before ^ crate::anim::FLAG_BATTLE
+    );
+    assert_eq!(
+        app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE,
+        sig_before ^ crate::anim::FLAG_BATTLE
+    );
+    let battle = crate::anim::battle_from_flags(app.party[0].entity.flags_b);
+    let expected = if app.party[0].motion.walking {
+        crate::anim::walk_action(battle)
+    } else {
+        crate::anim::idle_action(battle)
+    } as u8;
+    assert_eq!(app.party[0].motion.action, expected);
+
+    // The toggle is exact and reversible for both selected units.
+    app.key_down(KEY_TAB);
+    assert_eq!(
+        app.player.flags_b & crate::anim::FLAG_BATTLE,
+        leader_before
+    );
+    assert_eq!(
+        app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE,
+        sig_before
+    );
+}
+
+#[test]
+fn tab_toggles_a_solo_selected_companion_not_the_leader() {
+    let Some(mut app) = build_party_move_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.open_dialog(539, 97);
+    app.dialog_click_option(0);
+    app.dialog_click_option(0);
+    assert_eq!(app.party.len(), 1);
+
+    // Clicking Sigmarr's portrait without Shift clears the leader and selects
+    // only the companion (`FUN_00424D8C`).
+    app.party_selected = [false; crate::hud::PARTY_CELLS];
+    app.party_selected[1] = true;
+
+    let leader_before = app.player.flags_b & crate::anim::FLAG_BATTLE;
+    let sig_before = app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE;
+    app.key_down(KEY_TAB);
+    assert_eq!(
+        app.player.flags_b & crate::anim::FLAG_BATTLE,
+        leader_before,
+        "unselected leader must not change"
+    );
+    assert_eq!(
+        app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE,
+        sig_before ^ crate::anim::FLAG_BATTLE,
+        "selected companion must change"
+    );
+    let battle = crate::anim::battle_from_flags(app.party[0].entity.flags_b);
+    let expected = if app.party[0].motion.walking {
+        crate::anim::walk_action(battle)
+    } else {
+        crate::anim::idle_action(battle)
+    } as u8;
+    assert_eq!(app.party[0].motion.action, expected);
+}
+
+#[test]
+fn tab_stance_direction_comes_from_first_selected_unit() {
+    let Some(mut app) = build_party_move_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.open_dialog(539, 97);
+    app.dialog_click_option(0);
+    app.dialog_click_option(0);
+    assert_eq!(app.party.len(), 1);
+
+    // First selected (leader) is peaceful; Sigmarr is already in battle.
+    app.player.flags_b &= !crate::anim::FLAG_BATTLE;
+    app.party[0].entity.flags_b |= crate::anim::FLAG_BATTLE;
+    app.key_down(KEY_TAB);
+    assert_eq!(
+        app.player.flags_b & crate::anim::FLAG_BATTLE,
+        crate::anim::FLAG_BATTLE,
+        "leader enters battle"
+    );
+    assert_eq!(
+        app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE,
+        crate::anim::FLAG_BATTLE,
+        "companion already in battle is left unchanged"
+    );
+}
+
+#[test]
+fn tab_skips_dead_companions() {
+    let Some(mut app) = build_party_move_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.open_dialog(539, 97);
+    app.dialog_click_option(0);
+    app.dialog_click_option(0);
+    assert_eq!(app.party.len(), 1);
+
+    // Original `FUN_00421554` skips action rows 3/9 and `+0x04 & 0x80`.
+    app.party[0].motion.action = crate::anim::ACT_PEACE_DEATH as u8;
+    let sig_before = app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE;
+    app.key_down(KEY_TAB);
+    assert_eq!(
+        app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE,
+        sig_before,
+        "dead companion is skipped"
+    );
+    assert_eq!(
+        app.player.flags_b & crate::anim::FLAG_BATTLE,
+        crate::anim::FLAG_BATTLE,
+        "living selected leader still toggles"
+    );
+}

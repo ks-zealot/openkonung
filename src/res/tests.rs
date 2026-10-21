@@ -121,8 +121,9 @@ fn human_frame_from_base_applies_equipment_overlays() {
     res.set_save_game(&save);
     // Гилли (Game.1 entity 277): visual_index 1, palette 30, equipment
     // [0,0,288,289,0,0] = Нож + Кольчуга (overlays 4 and 8).
-    let bare = res.human_frame_from_base(&[0u16; 6], 1, 30, 0, 0, 0);
-    let dressed = res.human_frame_from_base(&[0, 0, 288, 289, 0, 0], 1, 30, 0, 0, 0);
+    let bare = res.human_frame_from_base(&[0u16; 6], 0, false, 1, 30, 6, 0, 0);
+    let dressed =
+        res.human_frame_from_base(&[0, 0, 288, 289, 0, 0], 0, false, 1, 30, 6, 0, 0);
     assert!(bare.0.w > 0 && dressed.0.w > 0, "frames must decode");
     assert_ne!(
         bare.0.data, dressed.0.data,
@@ -166,4 +167,161 @@ fn monster_anchor_uses_row_dir_frame_index() {
     let off = 0x1728 + 0x480; // row 1, dir 0, fi 0
     let expected = (super::i16(blk, off + 4), super::i16(blk, off + 6));
     assert_eq!(res.monster_anchor(0, 1, 0, 0), expected);
+}
+
+#[test]
+fn battle_overlay_order_tables_match_original_dgroup() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let Ok(konung) = std::fs::read(dir.join("konung.res")) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let word = |va: u32| -> usize {
+        let o = 0x36200 + (va as usize - 0x450000);
+        i32::from_le_bytes([konung[o], konung[o + 1], konung[o + 2], konung[o + 3]]) as usize
+    };
+
+    for dir in 0..8 {
+        for slot in 0..6 {
+            let va = 0x4631FC + ((dir * 6 + slot) * 4) as u32;
+            assert_eq!(
+                super::HUMAN_DRAW_ORDER_PEACE[dir][slot],
+                word(va),
+                "peace dir {dir} slot {slot}"
+            );
+        }
+    }
+    for (name, base, table) in [
+        (
+            "battle A",
+            0x462BFCu32,
+            &super::HUMAN_DRAW_ORDER_BATTLE_A,
+        ),
+        (
+            "battle B",
+            0x462EFCu32,
+            &super::HUMAN_DRAW_ORDER_BATTLE_B,
+        ),
+    ] {
+        for bucket in 0..4 {
+            for dir in 0..8 {
+                for slot in 0..6 {
+                    let index = (bucket * 8 + dir) * 6 + slot;
+                    let va = base + (index * 4) as u32;
+                    assert_eq!(
+                        table[bucket][dir][slot],
+                        word(va),
+                        "{name} bucket {bucket} dir {dir} slot {slot}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn overlay_plan_matches_fun_00427e9c() {
+    use super::{battle_overlay_bucket, overlay_plan};
+
+    assert_eq!(battle_overlay_bucket(0), 0);
+    assert_eq!(battle_overlay_bucket(1), 3);
+    assert_eq!(battle_overlay_bucket(2), 0);
+    assert_eq!(battle_overlay_bucket(3), 0);
+    assert_eq!(battle_overlay_bucket(4), 1);
+    assert_eq!(battle_overlay_bucket(5), 2);
+
+    let (order, variant) = overlay_plan(false, 2, 0, 5);
+    assert_eq!(order, &super::HUMAN_DRAW_ORDER_PEACE[5]);
+    assert!(variant.iter().all(|v| !*v));
+
+    // Active slot 2 in battle: order A, slots 2 and 5 get the +1 variant.
+    let (order, variant) = overlay_plan(true, 2, 0, 5);
+    assert_eq!(order, &super::HUMAN_DRAW_ORDER_BATTLE_A[0][5]);
+    assert!(variant[2] && variant[5]);
+    assert_eq!(variant.iter().filter(|v| **v).count(), 2);
+
+    // Active slot 1, action 1 (bucket 3): order B, only slot 1 gets +1.
+    let (order, variant) = overlay_plan(true, 1, 1, 3);
+    assert_eq!(order, &super::HUMAN_DRAW_ORDER_BATTLE_B[3][3]);
+    assert!(variant[1] && !variant[5]);
+
+    // Active slot 1, action 5 (bucket 2): order A, no slot-1 variant, slot 5 +1.
+    let (order, variant) = overlay_plan(true, 1, 5, 3);
+    assert_eq!(order, &super::HUMAN_DRAW_ORDER_BATTLE_A[2][3]);
+    assert!(!variant[1] && variant[5]);
+}
+
+#[test]
+fn battle_stance_uses_active_weapon_variant_and_paper_doll() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |n: &str| std::fs::read(dir.join(n)).ok();
+    let (Some(game), Some(graph), Some(objects), Some(exe), Some(konung), Some(save)) = (
+        read("Game.res"),
+        read("GRAPH.RES"),
+        read("Objects.res"),
+        read("CLIENT.EXE"),
+        read("konung.res"),
+        read("Game.1"),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let mut res = Res::new(game, graph, objects, exe);
+    res.load_items_and_fonts(&konung);
+    res.set_save_game(&save);
+
+    // Dragomir (Game.1 entity 0): visual 1, palette 33, knife id 1 in slot 2,
+    // active weapon slot 2. In battle the knife must switch from overlay 4
+    // (sheathed) to overlay 5 (in hand).
+    let equipment = [0u16, 0, 1, 0, 0, 0];
+    let no_variant = res.human_frame_from_base(&equipment, 0, true, 1, 33, 0, 5, 0);
+    let held = res.human_frame_from_base(&equipment, 2, true, 1, 33, 0, 5, 0);
+    assert!(no_variant.0.w > 0 && held.0.w > 0);
+    assert_ne!(
+        no_variant.0.data, held.0.data,
+        "the active weapon slot must select the battle overlay variant"
+    );
+
+    let doll = res
+        .paper_doll_frame(&equipment, 2, true, 1, 33, 0, 5, 0)
+        .expect("paper doll frame");
+    assert_eq!((doll.w, doll.h), (super::PAPER_DOLL_W, super::PAPER_DOLL_H));
+    assert!(doll.data.chunks(4).any(|p| p[3] != 0));
+    let doll_no_variant = res
+        .paper_doll_frame(&equipment, 0, true, 1, 33, 0, 5, 0)
+        .expect("paper doll frame");
+    assert_ne!(doll.data, doll_no_variant.data);
+}
+
+#[test]
+fn paper_doll_peace_frame_is_nonempty() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |n: &str| std::fs::read(dir.join(n)).ok();
+    let (Some(game), Some(graph), Some(objects), Some(exe), Some(konung), Some(save)) = (
+        read("Game.res"),
+        read("GRAPH.RES"),
+        read("Objects.res"),
+        read("CLIENT.EXE"),
+        read("konung.res"),
+        read("Game.1"),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let mut res = Res::new(game, graph, objects, exe);
+    res.load_items_and_fonts(&konung);
+    res.set_save_game(&save);
+    let equipment = [0u16, 0, 1, 0, 0, 0];
+    for action in [0usize, 6] {
+        for direction in 0..8u8 {
+            let doll = res
+                .paper_doll_frame(&equipment, 2, action == 0, 1, 33, action, direction as usize, 0)
+                .expect("doll");
+            let opaque = doll.data.chunks(4).filter(|p| p[3] != 0).count();
+            assert!(
+                opaque > 100,
+                "action {action} dir {direction} produced only {opaque} opaque pixels"
+            );
+        }
+    }
 }

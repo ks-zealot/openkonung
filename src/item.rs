@@ -86,6 +86,11 @@ pub struct ItemInfo {
     /// Combat rating (`u16` at `0x459B7C + subtype*0x40`); summed as armor over
     /// equipment slots 3..=5 and used as the weapon base for the attack value.
     pub rating: u16,
+    /// World/ground sprite id (`FUN_00438CC8`). The original loader resolves
+    /// this from the icon/weight table at `+4` of the class record, except
+    /// class 12 (stackable arrows) = `0x99` and classes 10/other = `0xA3`.
+    /// Class 9 subtypes 1/2 (Земляной орех / Белый корень) are `0xA0`/`0xA8`.
+    pub world_sprite: u16,
     /// `equipped_visual` (`i16` at the prototype record `+0x3E`): the 0..=23
     /// GRAPH human-overlay block index the actor renderer composites for an
     /// equipped item. `-1` means no overlay (and for classes `6..=11`, which
@@ -137,6 +142,13 @@ impl ItemDb {
         }
         let icon = rd_u16(&self.konung, o + 2) as u16;
         let weight = rd_u16(&self.konung, o) as u16;
+        // `FUN_00438CC8`: per-class world sprite; class 10 and unknown classes
+        // fall through to the generic loot icon `0xA3`, class 12 is hardcoded.
+        let world_sprite = match class {
+            0..=9 | 11 => rd_u16(&self.konung, o + 4) as u16,
+            12 => 0x99,
+            _ => 0xA3,
+        };
         // Combat value lives only in the stride-0x40 (classes 0..=5|12) record.
         let rating = if matches!(class, 0..=5 | 12) {
             let rating_o = va_to_file(ARMOR_TABLE_VA) + subtype as usize * ARMOR_STRIDE;
@@ -174,6 +186,7 @@ impl ItemDb {
             icon,
             weight,
             rating,
+            world_sprite,
             equipped_visual,
             name,
         })

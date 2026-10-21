@@ -2,7 +2,12 @@
 
 use super::*;
 
-pub const HUMAN_DRAW_ORDER: [[usize; 6]; 8] = [
+/// Peaceful-stance overlay draw order, indexed by facing.
+///
+/// `konung.res` DGROUP VA `0x4631FC` (`FUN_00427e9c` peace branch). The battle
+/// stance uses separate tables below because the active weapon is drawn in the
+/// hand rather than sheathed.
+pub const HUMAN_DRAW_ORDER_PEACE: [[usize; 6]; 8] = [
     [3, 2, 4, 1, 0, 5],
     [3, 2, 4, 0, 1, 5],
     [3, 2, 4, 0, 1, 5],
@@ -12,6 +17,153 @@ pub const HUMAN_DRAW_ORDER: [[usize; 6]; 8] = [
     [3, 2, 5, 4, 1, 0],
     [3, 2, 4, 5, 1, 0],
 ];
+
+/// Battle-stance overlay order A (`konung.res` DGROUP VA `0x462BFC`):
+/// `[action_bucket][facing][draw_index] = equipment_slot`.
+///
+/// Used when `Entity+0x12 != 1` or the action bucket is `2` (action `5`).
+pub const HUMAN_DRAW_ORDER_BATTLE_A: [[[usize; 6]; 8]; 4] = [
+    [
+        [3, 2, 0, 4, 5, 1],
+        [3, 5, 2, 4, 0, 1],
+        [3, 5, 4, 0, 2, 1],
+        [3, 5, 4, 1, 0, 2],
+        [3, 4, 1, 0, 2, 5],
+        [3, 4, 1, 0, 2, 5],
+        [3, 1, 4, 0, 2, 5],
+        [3, 0, 2, 1, 4, 5],
+    ],
+    [
+        [3, 2, 1, 4, 0, 5],
+        [3, 2, 1, 4, 0, 5],
+        [3, 2, 1, 4, 0, 5],
+        [3, 4, 0, 1, 2, 5],
+        [3, 2, 5, 0, 4, 1],
+        [3, 5, 0, 4, 1, 2],
+        [3, 5, 4, 1, 0, 2],
+        [3, 2, 1, 4, 0, 5],
+    ],
+    [
+        [3, 2, 0, 4, 1, 5],
+        [3, 2, 0, 5, 4, 1],
+        [3, 5, 4, 2, 0, 1],
+        [3, 5, 4, 0, 1, 2],
+        [3, 2, 5, 4, 0, 1],
+        [3, 4, 1, 0, 2, 5],
+        [3, 4, 1, 0, 2, 5],
+        [3, 0, 2, 1, 4, 5],
+    ],
+    [
+        [3, 2, 0, 4, 5, 1],
+        [3, 5, 4, 2, 1, 0],
+        [3, 5, 4, 2, 1, 0],
+        [3, 5, 4, 1, 0, 2],
+        [3, 4, 2, 1, 0, 5],
+        [3, 4, 1, 0, 2, 5],
+        [3, 1, 0, 2, 4, 5],
+        [3, 0, 2, 1, 4, 5],
+    ],
+];
+
+/// Battle-stance overlay order B (`konung.res` DGROUP VA `0x462EFC`), used when
+/// `Entity+0x12 == 1` and the action bucket is not `2`.
+pub const HUMAN_DRAW_ORDER_BATTLE_B: [[[usize; 6]; 8]; 4] = [
+    [
+        [3, 2, 0, 1, 4, 5],
+        [3, 2, 0, 1, 4, 5],
+        [3, 4, 0, 2, 1, 5],
+        [3, 4, 5, 1, 0, 2],
+        [3, 5, 4, 1, 0, 2],
+        [3, 5, 4, 1, 0, 2],
+        [3, 5, 4, 1, 0, 2],
+        [3, 0, 2, 1, 4, 5],
+    ],
+    [
+        [3, 2, 1, 4, 0, 5],
+        [3, 2, 1, 4, 0, 5],
+        [3, 2, 1, 4, 0, 5],
+        [3, 4, 0, 1, 2, 5],
+        [3, 2, 5, 0, 4, 1],
+        [3, 5, 0, 4, 1, 2],
+        [3, 5, 4, 1, 0, 2],
+        [3, 2, 1, 4, 0, 5],
+    ],
+    [
+        [3, 2, 0, 4, 1, 5],
+        [3, 2, 0, 5, 4, 1],
+        [3, 5, 4, 2, 0, 1],
+        [3, 5, 4, 0, 1, 2],
+        [3, 2, 5, 4, 0, 1],
+        [3, 4, 1, 0, 2, 5],
+        [3, 4, 1, 0, 2, 5],
+        [3, 0, 2, 1, 4, 5],
+    ],
+    [
+        [3, 2, 1, 4, 0, 5],
+        [3, 2, 1, 4, 0, 5],
+        [3, 4, 2, 1, 0, 5],
+        [3, 4, 1, 0, 2, 5],
+        [3, 2, 5, 4, 1, 0],
+        [3, 5, 0, 4, 1, 2],
+        [3, 5, 4, 1, 0, 2],
+        [3, 2, 1, 4, 0, 5],
+    ],
+];
+
+/// `FUN_00427e9c` action bucket: walk (`1`) → 3, engage (`5`) → 2, use (`4`)
+/// → 1, everything else (`0`/`2`/`3`) → 0.
+pub fn battle_overlay_bucket(action: usize) -> usize {
+    match action {
+        1 => 3,
+        5 => 2,
+        4 => 1,
+        _ => 0,
+    }
+}
+
+/// Overlay order and the slots whose `equipped_visual` selector is advanced by
+/// one (the "in hand"/alternate GRAPH block) for the current stance.
+///
+/// Mirrors `FUN_00427e9c`:
+/// - peace: fixed direction order, no variants;
+/// - battle, `Entity+0x12 == 1`, bucket != 2: order B, slot 1 variant;
+/// - else: order A, active slot (unless it is 1) and slot 5 variants.
+/// Offscreen paper-doll surface size (`FUN_0042ea6c`: clip `0x9f × 0x13f`,
+/// final visible blit `0xA0 × 0xA0`). The remake only needs the visible square.
+pub const PAPER_DOLL_W: usize = 160;
+pub const PAPER_DOLL_H: usize = 160;
+
+struct HumanLayer {
+    im: Image,
+    x: i32,
+    y: i32,
+}
+
+pub fn overlay_plan(
+    battle: bool,
+    weapon_slot: u8,
+    action: usize,
+    direction: usize,
+) -> (&'static [usize; 6], [bool; 6]) {
+    let dir = direction & 7;
+    if !battle {
+        return (&HUMAN_DRAW_ORDER_PEACE[dir], [false; 6]);
+    }
+    let bucket = battle_overlay_bucket(action);
+    let mut variant = [false; 6];
+    if weapon_slot == 1 && bucket != 2 {
+        variant[1] = true;
+        (&HUMAN_DRAW_ORDER_BATTLE_B[bucket][dir], variant)
+    } else {
+        if weapon_slot != 1 {
+            if let Some(v) = variant.get_mut(weapon_slot as usize) {
+                *v = true;
+            }
+        }
+        variant[5] = true;
+        (&HUMAN_DRAW_ORDER_BATTLE_A[bucket][dir], variant)
+    }
+}
 
 
 pub fn human_frame_count(graph: &[u8], block_pos: usize, action: usize, direction: usize) -> usize {
@@ -108,13 +260,22 @@ impl Res {
             }
         }
 
-        let key = (variant_id as i32, action as i32, direction as i32, fi as i32, palette_id, equipment);
+        let key = (
+            variant_id as i32,
+            action as i32,
+            direction as i32,
+            fi as i32,
+            palette_id,
+            false,
+            0,
+            equipment,
+        );
         if let Some(v) = self.npc_frame_cache.get(&key) {
             return v.clone();
         }
 
         let value = self.compose_human(
-            &equipment, &self.game, base_pos, action, direction, fi, palette_id, count,
+            &equipment, 0, false, &self.game, base_pos, action, direction, fi, palette_id, count,
         );
         self.npc_frame_cache.insert(key, value.clone());
         value
@@ -126,9 +287,16 @@ impl Res {
     /// (D8, / 512 = palette id). `equipment` is the entity's `Entity+0x66`
     /// six-slot array; equipped items composite their GRAPH overlay blocks. No
     /// Game.res variant lookup is involved.
+    ///
+    /// `weapon_slot` is `Entity+0x12` (active weapon/equipment slot) and
+    /// `battle` is `Entity+0x03 & 0x04`; together they select the battle
+    /// overlay order and the `equipped_visual + 1` "in hand" variant
+    /// (`FUN_00427e9c`).
     pub fn human_frame_from_base(
         &mut self,
         equipment: &[u16; 6],
+        weapon_slot: u8,
+        battle: bool,
         base_id: usize,
         palette_id: i32,
         action: usize,
@@ -150,13 +318,24 @@ impl Res {
             direction as i32,
             fi as i32,
             palette_id,
+            battle,
+            weapon_slot,
             *equipment,
         );
         if let Some(v) = self.npc_frame_cache.get(&key) {
             return v.clone();
         }
         let value = self.compose_human(
-            equipment, &self.save_game, base_pos, action, direction, fi, palette_id, count,
+            equipment,
+            weapon_slot,
+            battle,
+            &self.save_game,
+            base_pos,
+            action,
+            direction,
+            fi,
+            palette_id,
+            count,
         );
         self.npc_frame_cache.insert(key, value.clone());
         value
@@ -180,12 +359,24 @@ impl Res {
     pub fn actor_frame(
         &mut self,
         equipment: &[u16; 6],
+        weapon_slot: u8,
+        battle: bool,
         archetype: u8,
         visual_index: u8,
         palette_offset: u32,
         facing: u8,
     ) -> Result<(Img, i32, i32), String> {
-        self.actor_frame_state(equipment, archetype, visual_index, palette_offset, facing, 0, 0)
+        self.actor_frame_state(
+            equipment,
+            weapon_slot,
+            battle,
+            archetype,
+            visual_index,
+            palette_offset,
+            facing,
+            0,
+            0,
+        )
     }
 
 
@@ -203,6 +394,8 @@ impl Res {
     pub fn actor_frame_state(
         &mut self,
         equipment: &[u16; 6],
+        weapon_slot: u8,
+        battle: bool,
         archetype: u8,
         visual_index: u8,
         palette_offset: u32,
@@ -240,8 +433,16 @@ impl Res {
                     self.human_base_positions.len()
                 ));
             }
-            let (im, gx, gy, _) =
-                self.human_frame_from_base(equipment, base_id, palette_id, action, facing as usize, anim_frame_index);
+            let (im, gx, gy, _) = self.human_frame_from_base(
+                equipment,
+                weapon_slot,
+                battle,
+                base_id,
+                palette_id,
+                action,
+                facing as usize,
+                anim_frame_index,
+            );
             (im, gx, gy)
         };
 
@@ -323,18 +524,23 @@ impl Res {
     }
 
 
+    /// Build the base body plus every equipped overlay for one frame.
+    ///
+    /// Order and the `equipped_visual + 1` "in hand" variants are selected by
+    /// the original `FUN_00427e9c` rules (`overlay_plan`).
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn compose_human(
+    fn human_layers(
         &self,
         equipment: &[u16; 6],
+        weapon_slot: u8,
+        battle: bool,
         instances: &[u8],
         base_pos: usize,
         action: usize,
         direction: usize,
         fi: usize,
         palette_id: i32,
-        count: usize,
-    ) -> (Img, i32, i32, i32) {
+    ) -> (Vec<HumanLayer>, i32, i32) {
         let pid = palette_id.clamp(0, 255) as usize;
         let base_fid = human_mapped_frame(&self.graph, base_pos, action, direction, fi).0;
         let base_im = render_graph_4d28_frame(&self.graph, base_pos, &self.palettes[pid], base_fid);
@@ -347,22 +553,27 @@ impl Res {
         let anchor_x = if aoff + 4 <= self.graph.len() { i16(&self.graph, aoff) } else { 0 };
         let anchor_y = if aoff + 4 <= self.graph.len() { i16(&self.graph, aoff + 2) } else { 0 };
 
-        struct Layer {
-            im: Image,
-            x: i32,
-            y: i32,
-        }
-        let mut layers: Vec<Layer> = vec![Layer { im: base_im, x: body_x, y: body_y }];
+        let (order, variant) = overlay_plan(battle, weapon_slot, action, direction);
+        let mut layers: Vec<HumanLayer> = vec![HumanLayer {
+            im: base_im,
+            x: body_x,
+            y: body_y,
+        }];
 
-        for &slot in HUMAN_DRAW_ORDER[direction].iter() {
+        for &slot in order.iter() {
             let handle = equipment[slot] as u32;
             if handle == 0 {
                 continue;
             }
-            let selector = match self.overlay_selector(instances, handle as u16) {
+            let mut selector = match self.overlay_selector(instances, handle as u16) {
                 Some(s) => s,
                 None => continue,
             };
+            if variant.get(slot).copied().unwrap_or(false)
+                && selector + 1 < self.human_overlay_positions.len()
+            {
+                selector += 1;
+            }
             let opos = self.human_overlay_positions[selector];
             let ofid = human_mapped_frame(&self.graph, opos, action, direction, fi).0;
             let opid = (self.overlay_palette_offsets[selector] / 512) as usize;
@@ -370,8 +581,30 @@ impl Res {
             let ooff = opos + 0x2F28 + action * 0x300 + direction * 0x60 + fi * 8;
             let ox = if ooff + 8 <= self.graph.len() { anchor_x + i16(&self.graph, ooff + 4) } else { anchor_x };
             let oy = if ooff + 8 <= self.graph.len() { anchor_y + i16(&self.graph, ooff + 6) } else { anchor_y };
-            layers.push(Layer { im: oim, x: ox, y: oy });
+            layers.push(HumanLayer { im: oim, x: ox, y: oy });
         }
+
+        (layers, body_x, body_y)
+    }
+
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn compose_human(
+        &self,
+        equipment: &[u16; 6],
+        weapon_slot: u8,
+        battle: bool,
+        instances: &[u8],
+        base_pos: usize,
+        action: usize,
+        direction: usize,
+        fi: usize,
+        palette_id: i32,
+        count: usize,
+    ) -> (Img, i32, i32, i32) {
+        let (layers, _, _) = self.human_layers(
+            equipment, weapon_slot, battle, instances, base_pos, action, direction, fi, palette_id,
+        );
 
         let mut minx = i32::MAX;
         let mut miny = i32::MAX;
@@ -393,6 +626,80 @@ impl Res {
             blit(&mut canvas.data, cw, ch, &l.im.data, l.im.w, l.im.h, l.x - minx, l.y - miny);
         }
         (Rc::new(canvas), minx, miny, count as i32)
+    }
+
+
+    /// Render the character-sheet paper doll (`FUN_0042ea6c`).
+    ///
+    /// The original renders the live selected entity into a `160x160` region
+    /// with the base sprite's top-left at `(0x3C, 0x14)` and then blits that
+    /// region to the per-resolution position table (`0x46035C`/`0x460360`,
+    /// read by the caller). The same equipment overlay plan as the world sprite
+    /// is used, so all equipped items (including the battle "in hand" variant)
+    /// appear.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paper_doll_frame(
+        &mut self,
+        equipment: &[u16; 6],
+        weapon_slot: u8,
+        battle: bool,
+        base_id: usize,
+        palette_id: i32,
+        action: usize,
+        direction: usize,
+        anim_frame_index: usize,
+    ) -> Option<Img> {
+        if base_id >= self.human_base_positions.len() {
+            return None;
+        }
+        let direction = direction & 7;
+        let base_pos = self.human_base_positions[base_id];
+        let (_, count) =
+            human_mapped_frame(&self.graph, base_pos, action, direction, anim_frame_index);
+        let fi = anim_frame_index % count;
+        let key = (
+            base_id,
+            palette_id,
+            battle,
+            weapon_slot,
+            action,
+            direction,
+            fi,
+            *equipment,
+        );
+        if let Some(v) = self.paper_doll_cache.get(&key) {
+            return Some(v.clone());
+        }
+        let (layers, body_x, body_y) = self.human_layers(
+            equipment,
+            weapon_slot,
+            battle,
+            &self.save_game,
+            base_pos,
+            action,
+            direction,
+            fi,
+            palette_id,
+        );
+        // Original offscreen origin: base body top-left at (0x3C, 0x14).
+        let shift_x = 0x3C - body_x;
+        let shift_y = 0x14 - body_y;
+        let mut canvas = Image::new(PAPER_DOLL_W, PAPER_DOLL_H, [0, 0, 0, 0]);
+        for l in &layers {
+            blit(
+                &mut canvas.data,
+                PAPER_DOLL_W,
+                PAPER_DOLL_H,
+                &l.im.data,
+                l.im.w,
+                l.im.h,
+                l.x + shift_x,
+                l.y + shift_y,
+            );
+        }
+        let value = Rc::new(canvas);
+        self.paper_doll_cache.insert(key, value.clone());
+        Some(value)
     }
 
 

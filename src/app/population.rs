@@ -86,6 +86,8 @@ impl PlayableApp {
                     });
                 match self.world.res.actor_frame_state(
                     &a.entity.equipment,
+                    a.entity.raw_0x12,
+                    crate::anim::battle_from_flags(a.entity.flags_b),
                     a.entity.archetype,
                     a.entity.visual_index,
                     a.entity.palette_offset,
@@ -148,6 +150,8 @@ impl PlayableApp {
                     });
                 if let Ok((im, gx, gy)) = world.res.actor_frame_state(
                     &a.entity.equipment,
+                    a.entity.raw_0x12,
+                    crate::anim::battle_from_flags(a.entity.flags_b),
                     a.entity.archetype,
                     a.entity.visual_index,
                     a.entity.palette_offset,
@@ -169,6 +173,8 @@ impl PlayableApp {
         for m in party.iter() {
             if let Ok((im, gx, gy)) = world.res.actor_frame_state(
                 &m.entity.equipment,
+                m.entity.raw_0x12,
+                crate::anim::battle_from_flags(m.entity.flags_b),
                 m.entity.archetype,
                 m.entity.visual_index,
                 m.entity.palette_offset,

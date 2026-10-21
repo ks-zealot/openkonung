@@ -93,7 +93,9 @@ pub struct Res {
     /// it depends on `(row, direction, frame_index)` and is resolved separately
     /// in `objects.rs::monster_anchor`.
     monster_frame_cache: HashMap<(usize, u32, usize), Img>,
-    npc_frame_cache: HashMap<(i32, i32, i32, i32, i32, [u16; 6]), (Img, i32, i32, i32)>,
+    npc_frame_cache: HashMap<(i32, i32, i32, i32, i32, bool, u8, [u16; 6]), (Img, i32, i32, i32)>,
+    paper_doll_cache:
+        HashMap<(usize, i32, bool, u8, usize, usize, usize, [u16; 6]), Img>,
 }
 
 impl Res {
@@ -138,6 +140,7 @@ impl Res {
             prop_sprite_cache: HashMap::new(),
             monster_frame_cache: HashMap::new(),
             npc_frame_cache: HashMap::new(),
+            paper_doll_cache: HashMap::new(),
         }
     }
 
@@ -235,6 +238,31 @@ impl Res {
     /// item database is not loaded.
     pub fn item_info(&self, id: u16) -> Option<crate::item::ItemInfo> {
         self.item_db.as_ref()?.resolve(&self.save_game, id)
+    }
+
+    /// Clone a 16-byte item instance into the first free instance slot.
+    ///
+    /// Mirrors `FUN_00438884`: scan from instance 1 for a record whose signed
+    /// class byte is negative (the shipped `Game.N` tables use `0xFF`), then
+    /// copy all 16 bytes. Returns the new instance id.
+    pub fn alloc_item_like(&mut self, source: u16) -> Option<u16> {
+        if source == 0 || self.save_game.len() < 8192 * crate::item::ITEM_INSTANCE_SIZE {
+            return None;
+        }
+        let src_off = source as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if src_off + crate::item::ITEM_INSTANCE_SIZE > self.save_game.len() {
+            return None;
+        }
+        let mut item = [0u8; 16];
+        item.copy_from_slice(&self.save_game[src_off..src_off + 16]);
+        for id in 1..8192usize {
+            let o = id * crate::item::ITEM_INSTANCE_SIZE;
+            if (self.save_game[o] as i8) < 0 {
+                self.save_game[o..o + 16].copy_from_slice(&item);
+                return Some(id as u16);
+            }
+        }
+        None
     }
 
     // --- terrain ---

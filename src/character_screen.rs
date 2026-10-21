@@ -16,6 +16,9 @@
 //! - Equipment icons are drawn at **absolute logical screen coordinates** using
 //!   the original per-resolution tables, preserving the storage→visual mapping
 //!   `[3,4,3,0,1,2]` and the slot 0/2 overlap branch.
+//! - The paper doll is `FUN_0042ea6c`: a 160×160 render of the live body frame
+//!   plus every equipped GRAPH overlay, blitted at the original position table
+//!   (`0x46035C`/`0x460360`: 640 → (470,127), 800 → (570,160)).
 //!
 //! Read-only: no equipment/attribute mutation.
 
@@ -24,6 +27,29 @@ use crate::res::{blit, Res};
 
 /// `INTR` index of the character-window background.
 pub const WINDOW_SPRITE: usize = 2;
+
+/// Live animation pose used by the paper doll (`FUN_0042ea6c` draws the
+/// currently selected entity's action/direction/frame).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PaperDollPose {
+    pub action: usize,
+    pub direction: u8,
+    pub frame: usize,
+}
+
+/// Paper-doll top-left in logical screen coordinates. The original reads these
+/// from `konung.res` DGROUP VA `0x46035C` / `0x460360` with stride `0x10`
+/// (selector 0 = 640x480, selector 1 = 800x600).
+const PAPER_DOLL_POS_640: (i32, i32) = (470, 127);
+const PAPER_DOLL_POS_800: (i32, i32) = (570, 160);
+
+pub fn paper_doll_position(logical_w: i32) -> (i32, i32) {
+    if resolution_selector(logical_w) == 0 {
+        PAPER_DOLL_POS_640
+    } else {
+        PAPER_DOLL_POS_800
+    }
+}
 
 /// Resolution selector `0x81D644`: 0 = 640x480, 1 = 800x600.
 #[inline]
@@ -123,7 +149,14 @@ pub fn main_slot_drawn(equipment: &[u16; 6], raw_0x12: u8, slot: usize) -> bool 
 
 /// Draw the character screen over the current frame. The caller guarantees the
 /// protagonist exists and is the only party member.
-pub fn draw(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, player: &PlayerCharacter) {
+pub fn draw(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    res: &mut Res,
+    player: &PlayerCharacter,
+    doll: PaperDollPose,
+) {
     let logical_w = fw as i32;
     let (wx, wy, _ww, _wh) = window_rect(logical_w);
     let sel = resolution_selector(logical_w);
@@ -175,7 +208,39 @@ pub fn draw(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, player: &Play
         }
     }
 
+    // Original paper doll (`FUN_0042ea6c`): live body frame + all equipped
+    // overlays, including the battle "in hand" weapon variant. It is drawn
+    // before the stats text, matching the original sprite/text queue order.
+    draw_paper_doll(frame, fw, fh, res, player, doll, logical_w);
+
     draw_text(frame, fw, fh, res, player, sel);
+}
+
+/// Render the original 160x160 paper doll into the character window.
+fn draw_paper_doll(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    res: &mut Res,
+    player: &PlayerCharacter,
+    pose: PaperDollPose,
+    logical_w: i32,
+) {
+    let battle = crate::anim::battle_from_flags(player.flags_b);
+    let Some(doll) = res.paper_doll_frame(
+        &player.equipment,
+        player.raw_0x12,
+        battle,
+        player.hero.visual_index as usize,
+        player.hero.palette_id(),
+        pose.action,
+        pose.direction as usize,
+        pose.frame,
+    ) else {
+        return;
+    };
+    let (x, y) = paper_doll_position(logical_w);
+    blit(frame, fw, fh, &doll.data, doll.w, doll.h, x, y);
 }
 
 /// Horizontal center used by the original title/class text: the midpoint of the

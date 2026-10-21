@@ -89,6 +89,8 @@ impl PlayableApp {
                         self.selected = Some(lid);
                         self.mode_graph = false;
                         self.target = None;
+                        self.player_interact = false;
+                        self.rebuild_world_objects();
                         self.fit_detail();
                     }
                 }
@@ -120,13 +122,29 @@ impl PlayableApp {
     /// clicked cell is stored on **every** selected unit (selection array
     /// `0x81A814`): the leader and each selected companion path to the same cell.
     fn world_move(&mut self, x: f64, y: f64) {
+        // Left-click move clears `Entity+0x03` bit `0x40` on every selected
+        // unit; ordinary walk-over therefore never collects.
+        self.player_interact = false;
+        self.world_move_command(x, y);
+    }
+
+    fn world_move_command(&mut self, x: f64, y: f64) {
         let Some((tx, ty)) = self.mouse_to_cell(x, y) else {
             return;
         };
+        let interact = self.player_interact;
         if self.party_selected[0] {
             self.set_player_target(tx, ty);
         }
         self.command_selected_companions(tx, ty);
+        // Right-click on the cell already occupied: no walk is issued, but the
+        // interaction still resolves immediately.
+        if interact
+            && (self.player_x.round() as i32, self.player_y.round() as i32) == (tx, ty)
+        {
+            self.try_pickup_here();
+            self.player_interact = false;
+        }
     }
 
 
@@ -149,7 +167,9 @@ impl PlayableApp {
             // Non-dialogue actor (monster/object/non-talkable human): the
             // original orders an attack; unimplemented, so fall through to move.
         }
-        self.world_move(x, y);
+        // Right-click sets the interaction/occupy flag (`+0x03 |= 0x40`).
+        self.player_interact = true;
+        self.world_move_command(x, y);
     }
 
 
@@ -268,12 +288,12 @@ impl PlayableApp {
                     self.selected = None;
                 }
             }
-            // Tab toggles the protagonist's battle stance (`Entity+0x03` bit
-            // `0x04`): peaceful idle/walk (6/7) <-> battle idle/walk (0/1).
+            // Tab runs the original SPACE stance command (`FUN_00421554`) over
+            // the current party selection: every selected, living unit enters
+            // or leaves battle according to the first selected unit's stance.
             KEY_TAB => {
                 if !self.mode_graph {
-                    self.player.flags_b ^= crate::anim::FLAG_BATTLE;
-                    self.anim_time = 0.0;
+                    self.toggle_selected_battle_stance();
                 }
             }
             KEY_D => {

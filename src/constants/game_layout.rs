@@ -23,6 +23,12 @@ pub const SETTLEMENT_COUNT: usize = 20;
 pub const WAYPOINT_OFF: usize = 0x3D0;
 pub const WAYPOINT_STRIDE: usize = 8;
 pub const WAYPOINT_MAX: usize = 8;
+/// Game.N WorldObject table (`KONUNG_SOURCE_OF_TRUTH.md` §14/§28.7).
+/// The original loader (`FUN_0043A870`) reads 500 × 0x40 bytes into
+/// `0x77DEB4`; `FUN_0043ADF0` filters active records by `+0x12` location.
+pub const WORLD_OBJECT_OFF: usize = 0x21900;
+pub const WORLD_OBJECT_STRIDE: usize = 0x40;
+pub const WORLD_OBJECT_COUNT: usize = 500;
 pub const TRANS_OFF: usize = 0x29600;
 pub const TRANS_REC: usize = 17;
 pub const TRANS_COUNT: usize = 250;

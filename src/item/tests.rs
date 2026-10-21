@@ -113,6 +113,18 @@ fn equipped_visual_field() {
 }
 
 #[test]
+fn herb_world_sprites_match_the_original_ground_icons() {
+    let Some((db, _)) = db_and_game() else { return };
+    // `FUN_00438CC8` reads the world-sprite word at +4 of the class record.
+    assert_eq!(db.info(9, 1).unwrap().world_sprite, 160); // Земляной орех
+    assert_eq!(db.info(9, 2).unwrap().world_sprite, 168); // Белый корень
+    // Generic loot and stackable arrows.
+    assert_eq!(db.info(9, 3).unwrap().world_sprite, 163);
+    assert_eq!(db.info(12, 30).unwrap().world_sprite, 0x99);
+    assert_eq!(db.info(10, 0).unwrap().world_sprite, 0xA3);
+}
+
+#[test]
 fn unknown_class_is_none() {
     let Some((db, _)) = db_and_game() else { return };
     // Class 13 has no table in the original selector.

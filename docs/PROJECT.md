@@ -113,7 +113,7 @@ renders 640×480 / 800×600, the game 800×600.
   coordinates. All evidence is in the source-of-truth §3–§11.
 - **Resources (`res`).** GRAPH/OBJECTS archive decoding, indexed RLE +
   palettes, human/monster animation frames and equipment overlays
-  (`compose_human`, `HUMAN_DRAW_ORDER`), terrain/prop sprites, `Game.res` variants.
+  (`compose_human`, `HUMAN_DRAW_ORDER_PEACE`), terrain/prop sprites, `Game.res` variants.
 - **Local maps (`loc`).** `Konung.N` layout: dual-layer base terrain,
   320×160 collision, 1000 GRAPH placements, 1000 prop placements (raw `+0x1E/+0x20`).
 - **Population (`population`, `actors`).** `Game.N` Group/Entity/Settlement

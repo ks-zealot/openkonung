@@ -3,13 +3,16 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::actors::{build_population, find_path, sort_actors, update_population, PopulationBuild, LOGIC_TICK_HZ};
-use crate::coords::{entity_to_local_px_f, local_px_to_entity, step_by_direction};
+use crate::coords::{
+    entity_to_local_px, entity_to_local_px_f, local_px_to_entity, step_by_direction,
+};
 use crate::edges::{Edge, Pair};
 use crate::character::PlayerCharacter;
 use crate::loc::prop_to_local_px;
 use crate::population::{GameTables, Settlement};
 use crate::render::{scale_image, LayerCounts, World, WorldSprite};
 use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
+use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 
 
 mod camera;
@@ -24,6 +27,7 @@ mod population;
 mod portals;
 mod text;
 mod world_draw;
+mod world_items;
 
 use self::portals::*;
 
@@ -158,6 +162,22 @@ pub struct PlayableApp {
     population_debug: bool,
     population_rejected: Vec<String>,
 
+    /// Authored `Game.N +0x21900` WorldObject source records (500 × 0x40).
+    world_object_sources: Vec<WorldObjectSource>,
+    /// Records active on the current map (runtime marker pool `0x785BB4`).
+    active_world_objects: Vec<ActiveWorldObject>,
+    /// Monotonic original-frame counter (60 ms). Used by the herb respawn
+    /// timestamps; unlike `anim_time` it is never reset by animation changes.
+    world_frame: u64,
+    world_frame_accum: f64,
+    /// `Entity+0x03` bit `0x40`: set by a right-click interaction order,
+    /// cleared by a left-click move or on arrival. Pickup only happens when
+    /// this is set (ordinary walk-over does not collect).
+    player_interact: bool,
+    /// Timed feedback text for the original pickup messages.
+    pickup_message: Option<String>,
+    pickup_message_t: f64,
+
     // R2 render-layer diagnostics.
     layer_debug: bool,
     layer_counts: LayerCounts,
@@ -246,6 +266,7 @@ impl PlayableApp {
             .as_ref()
             .map(|q| q.initial_flags())
             .unwrap_or_default();
+        let world_object_sources = crate::world_objects::parse_sources(&world.res.save_game);
         let mut app = PlayableApp {
             world,
             edges,
@@ -279,6 +300,13 @@ impl PlayableApp {
             population_cache: HashMap::new(),
             population_debug: false,
             population_rejected: Vec::new(),
+            world_object_sources,
+            active_world_objects: Vec::new(),
+            world_frame: 0,
+            world_frame_accum: 0.0,
+            player_interact: false,
+            pickup_message: None,
+            pickup_message_t: 0.0,
             layer_debug: false,
             layer_counts: LayerCounts::default(),
             props_drawn: 0,
@@ -313,6 +341,7 @@ impl PlayableApp {
         // sets `selection[0] = leader` after loading the save).
         app.party_selected[0] = true;
         app.rebuild_portal_bindings();
+        app.rebuild_world_objects();
         app.center_camera_on_player(true, 0.0);
         app.fit_graph();
         app
@@ -322,6 +351,13 @@ impl PlayableApp {
 
 
     pub fn step(&mut self, dt: f64) {
+        self.advance_world_frame(dt);
+        if self.pickup_message_t > 0.0 {
+            self.pickup_message_t -= dt.max(0.0);
+            if self.pickup_message_t <= 0.0 {
+                self.pickup_message = None;
+            }
+        }
         if !self.mode_graph {
             self.ensure_population(self.current_map);
             self.update_actors(dt);
