@@ -265,6 +265,90 @@ impl Res {
         None
     }
 
+    /// Full decoded 16-byte item instance, or `None` for id `0`, a missing save,
+    /// or an out-of-range id.
+    pub fn item_instance(&self, id: u16) -> Option<crate::item::ItemInstance> {
+        crate::item::ItemDb::decode_instance(&self.save_game, id)
+    }
+
+    /// `(current, max)` durability of item instance `id`.
+    pub fn item_durability(&self, id: u16) -> Option<(f32, f32)> {
+        let i = self.item_instance(id)?;
+        Some((i.current_durability, i.max_durability))
+    }
+
+    /// Subtract `loss` from the current durability and mark the instance broken
+    /// (`class = 0xFF`) when it reaches zero. Returns `true` when it broke.
+    /// Mirrors the durability writes in `FUN_0041c3cc`.
+    pub fn damage_item_durability(&mut self, id: u16, loss: f32) -> bool {
+        if id == 0 || !loss.is_finite() || loss <= 0.0 {
+            return false;
+        }
+        let Some(inst) = self.item_instance(id) else {
+            return false;
+        };
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        let current = inst.current_durability - loss;
+        self.save_game[o + 4..o + 8].copy_from_slice(&current.to_le_bytes());
+        if current <= 0.0 {
+            self.save_game[o] = 0xFF;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Decrement the instance `+0x0C` counter used by the weapon wear path
+    /// (`FUN_0041c3cc`); returns the remaining value.
+    pub fn decrement_item_charge(&mut self, id: u16) -> Option<u16> {
+        if id == 0 {
+            return None;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 0x10 > self.save_game.len() {
+            return None;
+        }
+        let v = crate::res::u16(&self.save_game, o + 0x0C) as u16;
+        let next = v.saturating_sub(1);
+        self.save_game[o + 0x0C..o + 0x0E].copy_from_slice(&next.to_le_bytes());
+        Some(next)
+    }
+
+    /// Allocate a fresh item instance in the first free slot (`FUN_00438884`
+    /// shape) and fill the verified instance fields.
+    #[allow(clippy::too_many_arguments)]
+    pub fn alloc_item_instance(
+        &mut self,
+        class: u8,
+        subtype: u8,
+        condition: i8,
+        modifier_index: i8,
+        durability: f32,
+        poison: u16,
+        flags: u16,
+    ) -> Option<u16> {
+        if self.save_game.len() < 8192 * crate::item::ITEM_INSTANCE_SIZE {
+            return None;
+        }
+        for id in 1..8192usize {
+            let o = id * crate::item::ITEM_INSTANCE_SIZE;
+            if (self.save_game[o] as i8) < 0 {
+                let rec = &mut self.save_game[o..o + 16];
+                rec.fill(0);
+                rec[0] = class;
+                rec[1] = condition as u8;
+                rec[2] = modifier_index as u8;
+                rec[3] = subtype;
+                rec[4..8].copy_from_slice(&durability.to_le_bytes());
+                rec[8..12].copy_from_slice(&durability.to_le_bytes());
+                rec[12..14].copy_from_slice(&poison.to_le_bytes());
+                rec[14..16].copy_from_slice(&flags.to_le_bytes());
+                return Some(id as u16);
+            }
+        }
+        None
+    }
+
     // --- terrain ---
 
 

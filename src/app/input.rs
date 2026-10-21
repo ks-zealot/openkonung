@@ -122,9 +122,17 @@ impl PlayableApp {
     /// clicked cell is stored on **every** selected unit (selection array
     /// `0x81A814`): the leader and each selected companion path to the same cell.
     fn world_move(&mut self, x: f64, y: f64) {
+        if self.player.dead {
+            return;
+        }
         // Left-click move clears `Entity+0x03` bit `0x40` on every selected
-        // unit; ordinary walk-over therefore never collects.
+        // unit; ordinary walk-over therefore never collects. A new move order
+        // also replaces any pending melee target.
         self.player_interact = false;
+        self.player_attack_target = None;
+        for m in self.party.iter_mut() {
+            m.motion.combat_target = None;
+        }
         self.world_move_command(x, y);
     }
 
@@ -151,23 +159,36 @@ impl PlayableApp {
     /// A right-click in the world (original `FUN_0042260C` right-button branch,
     /// `_DAT_0081D5B0 & 2`, command code 0): open a dialogue for a **human**
     /// actor (`archetype & 0x40 == 0`) whose `dialogue_id != 0xFF`; otherwise
-    /// move. The original also issues an attack/order to the party for other
-    /// actors; that path is not implemented, so those clicks move instead.
+    /// issue a melee attack order to the selected units that are already in
+    /// battle stance. If no unit is in battle stance, nothing is ordered and no
+    /// move is issued (matching the original loop / early return).
     fn world_interact(&mut self, x: f64, y: f64) {
+        if self.player.dead {
+            return;
+        }
         let Some((vx, vy)) = self.window_to_virtual(x, y) else {
             return;
         };
         let (vx, vy) = (vx.round() as i32, vy.round() as i32);
         if let Some((entity, archetype, dialogue_id)) = self.actor_at(vx, vy) {
-            // Human visual family (`archetype & 0x40 == 0`) with a dialogue id.
-            if archetype & 0x40 == 0 && dialogue_id != 0xFF {
+            // Human visual family (`archetype & 0x40 == 0`) with a dialogue id
+            // and the leader not in battle stance (`FUN_0042260C` dialogue gate).
+            if archetype & 0x40 == 0
+                && dialogue_id != 0xFF
+                && !crate::anim::battle_from_flags(self.player.flags_b)
+            {
                 self.open_dialog(entity, dialogue_id);
                 return;
             }
-            // Non-dialogue actor (monster/object/non-talkable human): the
-            // original orders an attack; unimplemented, so fall through to move.
+            // Same-group actor (recruited companion): do not order an attack.
+            if self.party.iter().any(|m| m.entity.index == entity) {
+                return;
+            }
+            // Non-dialogue actor (monster/object/non-talkable human).
+            self.issue_attack_order(entity);
+            return;
         }
-        // Right-click sets the interaction/occupy flag (`+0x03 |= 0x40`).
+        // Right-click empty ground sets the interaction/occupy flag and moves.
         self.player_interact = true;
         self.world_move_command(x, y);
     }

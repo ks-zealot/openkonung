@@ -135,6 +135,9 @@ impl PlayableApp {
 
 
     pub(super) fn update_player(&mut self, dt: f64) {
+        if self.player.dead {
+            return;
+        }
         self.anim_time += dt;
         self.teleport_cooldown = (self.teleport_cooldown - dt).max(0.0);
 
@@ -271,12 +274,24 @@ impl PlayableApp {
     /// variant fallback. One walk cycle == one cell step (`FUN_00413de4`).
     pub(super) fn player_frame(&mut self, moving: bool) -> Result<(Img, i32, i32), String> {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
-        let action = if moving {
-            crate::anim::walk_action(battle)
+        let (action, fi) = if self.player.dead {
+            (
+                crate::anim::death_action(battle),
+                self.player_death_frame as usize,
+            )
+        } else if !moving && !self.player_active && self.player_attack_target.is_some() {
+            (
+                crate::anim::attack_action(battle),
+                self.player_attack_frame as usize,
+            )
         } else {
-            crate::anim::idle_action(battle)
+            let action = if moving {
+                crate::anim::walk_action(battle)
+            } else {
+                crate::anim::idle_action(battle)
+            };
+            (action, self.player_frame_index(moving, action))
         };
-        let fi = self.player_frame_index(moving, action);
         self.world.res.actor_frame_state(
             &self.player.equipment,
             self.player.raw_0x12,

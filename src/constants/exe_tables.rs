@@ -23,6 +23,16 @@ pub const NAME4_VA: u32 = 0x46091C;
 pub const ARMOR_TABLE_VA: u32 = 0x459B7C;
 /// Stride of the `0x459B7C` combat-value table.
 pub const ARMOR_STRIDE: usize = 64;
+/// Prototype durability (`u16@+0x2E`) and reach (`u16@+0x34`) of the
+/// stride-`0x40` item record.
+pub const ITEM_DURABILITY_OFF: usize = 0x2E;
+pub const ITEM_RANGE_OFF: usize = 0x34;
+/// Weapon-vs-creature modifier table (`FUN_0041aea8`); 18 records of `0x40`
+/// bytes: `+0x00 u16 value`, `+0x02 u16 target_archetype`, `+0x14` CP866 name
+/// suffix.
+pub const ITEM_MODIFIER_TABLE_VA: u32 = 0x462798;
+pub const ITEM_MODIFIER_STRIDE: usize = 0x40;
+pub const ITEM_MODIFIER_COUNT: usize = 18;
 pub const SMALL_FONT_OFF: usize = 0x171E34;
 pub const LARGE_FONT_OFF: usize = 0x16193C;
 /// Highlight/selected variant of the small font (VA `0x58B8F0`), used by the

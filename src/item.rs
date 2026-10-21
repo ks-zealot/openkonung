@@ -50,6 +50,11 @@ use crate::constants::exe_tables::NAME4_VA;
 
 use crate::constants::exe_tables::ARMOR_TABLE_VA;
 use crate::constants::exe_tables::ARMOR_STRIDE;
+use crate::constants::exe_tables::ITEM_DURABILITY_OFF;
+use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
+use crate::constants::exe_tables::ITEM_MODIFIER_STRIDE;
+use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
+use crate::constants::exe_tables::ITEM_RANGE_OFF;
 
 /// Table `(icon_base_va, stride, name_base_va)` for an item class.
 fn table_for(class: u8) -> Option<(u32, usize, u32)> {
@@ -66,11 +71,25 @@ fn va_to_file(va: u32) -> usize {
     (ITEM_DGROUP_FILE as i64 + (va as i64 - ITEM_DGROUP_VA as i64)) as usize
 }
 
-/// The class/subtype decoded from an item-instance record.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+fn rd_f32(b: &[u8], o: usize) -> f32 {
+    f32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
+
+/// One 16-byte item-instance record (`Game.N` offset 0).
+///
+/// `+0x02` is the byte the original `FUN_0041aea8` reads as the weapon
+/// modifier-table index (`0..=17`, `-1` = none). The `+0x01` byte is retained
+/// separately; it is not the damage modifier.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemInstance {
     pub class: u8,
+    pub condition: i8,
+    pub modifier_index: i8,
     pub subtype: u8,
+    pub current_durability: f32,
+    pub max_durability: f32,
+    pub poison: u16,
+    pub flags: u16,
 }
 
 /// A fully resolved item: instance type plus its original icon, weight, combat
@@ -86,6 +105,10 @@ pub struct ItemInfo {
     /// Combat rating (`u16` at `0x459B7C + subtype*0x40`); summed as armor over
     /// equipment slots 3..=5 and used as the weapon base for the attack value.
     pub rating: u16,
+    /// Prototype durability (`u16@+0x2E`, stride-`0x40` records only).
+    pub durability: u16,
+    /// Prototype reach (`u16@+0x34`, stride-`0x40` records only).
+    pub range: u16,
     /// World/ground sprite id (`FUN_00438CC8`). The original loader resolves
     /// this from the icon/weight table at `+4` of the class record, except
     /// class 12 (stackable arrows) = `0x99` and classes 10/other = `0xA3`.
@@ -126,9 +149,16 @@ impl ItemDb {
         if o + ITEM_INSTANCE_SIZE > game.len() {
             return None;
         }
+        let ptr = &game[o..o + ITEM_INSTANCE_SIZE];
         Some(ItemInstance {
-            class: game[o],
-            subtype: game[o + 3],
+            class: ptr[0],
+            condition: ptr[1] as i8,
+            modifier_index: ptr[2] as i8,
+            subtype: ptr[3],
+            current_durability: rd_f32(ptr, 4),
+            max_durability: rd_f32(ptr, 8),
+            poison: rd_u16(ptr, 12) as u16,
+            flags: rd_u16(ptr, 14) as u16,
         })
     }
 
@@ -160,6 +190,14 @@ impl ItemDb {
         } else {
             0
         };
+        let (durability, range) = if stride == 64 {
+            (
+                rd_u16(&self.konung, o + ITEM_DURABILITY_OFF) as u16,
+                rd_u16(&self.konung, o + ITEM_RANGE_OFF) as u16,
+            )
+        } else {
+            (0, 0)
+        };
         // The name is a separate parallel table, read at +0.
         let no = va_to_file(name_va) + subtype as usize * stride;
         if no + stride > self.konung.len() {
@@ -186,6 +224,8 @@ impl ItemDb {
             icon,
             weight,
             rating,
+            durability,
+            range,
             world_sprite,
             equipped_visual,
             name,
@@ -197,6 +237,42 @@ impl ItemDb {
     pub fn resolve(&self, game: &[u8], id: u16) -> Option<ItemInfo> {
         let inst = Self::decode_instance(game, id)?;
         self.info(inst.class, inst.subtype)
+    }
+
+    /// Damage value of weapon modifier `index` against `target_archetype`
+    /// (`FUN_0041aea8`: table `0x462798`, stride `0x40`). `None` when the index
+    /// is absent or the record targets a different archetype.
+    pub fn modifier_damage(&self, index: i8, target_archetype: u8) -> Option<u16> {
+        if index < 0 || index as usize >= ITEM_MODIFIER_COUNT {
+            return None;
+        }
+        let o = va_to_file(ITEM_MODIFIER_TABLE_VA) + index as usize * ITEM_MODIFIER_STRIDE;
+        if o + 4 > self.konung.len() {
+            return None;
+        }
+        if rd_u16(&self.konung, o + 2) as u16 != target_archetype as u16 {
+            return None;
+        }
+        Some(rd_u16(&self.konung, o) as u16)
+    }
+
+    /// CP866 name suffix of weapon modifier `index` (e.g. `", на муравьев"`).
+    pub fn modifier_name(&self, index: i8) -> Option<String> {
+        if index < 0 || index as usize >= ITEM_MODIFIER_COUNT {
+            return None;
+        }
+        let o = va_to_file(ITEM_MODIFIER_TABLE_VA)
+            + index as usize * ITEM_MODIFIER_STRIDE
+            + 0x14;
+        if o + 0x2C > self.konung.len() {
+            return None;
+        }
+        let raw = &self.konung[o..o + 0x2C];
+        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+        if end == 0 {
+            return None;
+        }
+        Some(decode_cp866(&raw[..end]))
     }
 }
 

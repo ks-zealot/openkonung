@@ -46,8 +46,9 @@ pub struct Group {
 /// authored values and are **never** derived, averaged or regenerated for
 /// existing entities.
 ///
-/// `raw_0x11` and `raw_0x52` have **UNKNOWN** semantics and are retained only as
-/// inputs to the future population-growth constructor (VA 0x420A8C, §6).
+/// `raw_0x11` has **UNKNOWN** semantics and is retained as an input to the
+/// future population-growth constructor (VA 0x420A8C). `raw_0x52` is the venom
+/// value copied into the corpse-loot stinger instance (`FUN_00418480`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EntityStats {
     /// `+0x11` u8 — raw field, semantics UNKNOWN (growth-constructor input).
@@ -78,7 +79,7 @@ pub struct EntityStats {
     pub base_armor: u16,
     /// `+0x50` u16 — periodic damage.
     pub periodic_damage: u16,
-    /// `+0x52` u16 — raw field, semantics UNKNOWN (growth-constructor input).
+    /// `+0x52` u16 - venom value used by corpse loot (`FUN_00418480`).
     pub raw_0x52: u16,
     /// `+0x54` u16 — dexterity base.
     pub dexterity_base: u16,

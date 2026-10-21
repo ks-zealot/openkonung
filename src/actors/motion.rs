@@ -48,6 +48,14 @@ pub struct ActorMotion {
     /// groups) uses `FUN_00412E00`, which **idles in place** while the group
     /// activity byte `Group+0x1D == 0`. Non-citizens therefore never wander.
     pub citizen: bool,
+    /// Current melee target. `None` for ordinary citizens/wanderers.
+    pub combat_target: Option<crate::combat::CombatTarget>,
+    /// Attack-cycle length (`Res::action_cycle_frames` for the attack row).
+    pub attack_frames: u8,
+    /// Death-cycle length (`Res::action_cycle_frames` for the death row).
+    pub death_frames: u8,
+    /// Death state: the death row has been entered and the final frame is held.
+    pub dead: bool,
 }
 
 
@@ -102,7 +110,7 @@ pub fn sort_actors(actors: &mut [RuntimeActor]) {
 /// the draw cell (`render_cell`) from the CURRENT cell, face and step one
 /// collision cell, then reset the walk frame. The stored `cell` therefore leads
 /// the drawn sprite by one step.
-fn begin_actor_segment(
+pub(crate) fn begin_actor_segment(
     m: &mut ActorMotion,
     occupied: &mut HashSet<(i32, i32)>,
     collision: &[u16],
@@ -178,10 +186,18 @@ pub fn update_population(
         })
         .collect();
 
-    let mut occupied: HashSet<(i32, i32)> = build.motion.values().map(|m| m.cell).collect();
+    let mut occupied: HashSet<(i32, i32)> = build
+        .motion
+        .values()
+        .filter(|m| !m.dead)
+        .map(|m| m.cell)
+        .collect();
 
     for _ in 0..ticks {
         for &(eid, arch, flags, kind, flags_b, citizen) in &meta {
+            if build.motion.get(&eid).is_some_and(|m| m.dead) {
+                continue;
+            }
             // Only citizen groups (group class `& 0x80`, `& 0x40 == 0`) run the
             // waypoint/wander AI. Object/enemy groups (`class & 0x40`) idle in
             // place (`FUN_00412E00`, `+0x1D == 0`) and must not wander.
@@ -376,10 +392,17 @@ pub fn update_followers(
         return;
     }
     let ticks = ticks.min(10);
-    let mut occupied: HashSet<(i32, i32)> = members.iter().map(|m| m.motion.cell).collect();
+    let mut occupied: HashSet<(i32, i32)> = members
+        .iter()
+        .filter(|m| !m.motion.dead)
+        .map(|m| m.motion.cell)
+        .collect();
     occupied.insert(leader);
     for _ in 0..ticks {
         for m in members.iter_mut() {
+            if m.motion.dead || m.motion.combat_target.is_some() {
+                continue;
+            }
             let battle = crate::anim::battle_from_flags(m.entity.flags_b);
             if !m.motion.walking {
                 if follow_distance(m.motion.cell, leader) >= FOLLOW_DISTANCE {

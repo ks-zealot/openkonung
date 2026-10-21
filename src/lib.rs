@@ -40,6 +40,7 @@ pub mod anim;
 pub mod app;
 pub mod character;
 pub mod character_screen;
+pub mod combat;
 pub mod constants;
 pub mod coords;
 pub mod dialog;

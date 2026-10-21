@@ -16,6 +16,7 @@ use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 
 
 mod camera;
+mod combat;
 mod cursor;
 mod debug_overlay;
 mod dialogue_exec;
@@ -237,6 +238,30 @@ pub struct PlayableApp {
     /// cursor (see `app::cursor`, `res::cursor`) is blitted here. `(-1,-1)` means
     /// off-screen / not shown.
     cursor_virtual: (f64, f64),
+
+    // --- melee combat (`combat.rs`) ---
+    /// Fixed-rate accumulator for the combat/DOT tick.
+    pub(super) combat_step_t: f64,
+    /// Original LCG stream used by hit/dodge/loot rolls.
+    pub(super) combat_rng: crate::combat::OriginalRng,
+    /// Logic-frame counter; the DOT pass runs on `& 0xF == 0` (every 16 frames).
+    pub(super) combat_frame: u64,
+    /// Protagonist melee target (`None` = not fighting).
+    pub(super) player_attack_target: Option<crate::combat::CombatTarget>,
+    /// Current frame inside the protagonist attack cycle.
+    pub(super) player_attack_frame: u8,
+    /// Protagonist attack-cycle length for the current stance.
+    pub(super) player_attack_frames: u8,
+    /// Protagonist death-cycle length/frame (final frame is held).
+    pub(super) player_death_frames: u8,
+    pub(super) player_death_frame: u8,
+    /// Timed combat feedback text (diagnostic HUD line).
+    pub(super) combat_message: Option<String>,
+    pub(super) combat_message_t: f64,
+    /// Diagnostic-only target retained after the order completes (smoke test).
+    pub(super) combat_test_target: Option<usize>,
+    pub(super) combat_attacks: u64,
+    pub(super) combat_hits: u64,
 }
 
 impl PlayableApp {
@@ -336,6 +361,19 @@ impl PlayableApp {
             shift_down: false,
             party_step_t: 0.0,
             cursor_virtual: (-1.0, -1.0),
+            combat_step_t: 0.0,
+            combat_rng: crate::combat::OriginalRng::new(0x4B4F_4E55),
+            combat_frame: 0,
+            player_attack_target: None,
+            player_attack_frame: 0,
+            player_attack_frames: 1,
+            player_death_frames: 1,
+            player_death_frame: 0,
+            combat_message: None,
+            combat_message_t: 0.0,
+            combat_test_target: None,
+            combat_attacks: 0,
+            combat_hits: 0,
         };
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
         // sets `selection[0] = leader` after loading the save).
@@ -363,6 +401,7 @@ impl PlayableApp {
             self.update_actors(dt);
             self.update_player(dt);
             self.update_party(dt);
+            self.update_combat(dt);
             if self.camera_follow {
                 self.center_camera_on_player(false, dt);
             }

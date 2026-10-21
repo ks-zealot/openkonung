@@ -135,6 +135,13 @@ impl PlayableApp {
         } = self;
         if let Some(pop) = population_cache.get(&loc) {
             for a in &pop.actors {
+                if pop
+                    .motion
+                    .get(&a.source_entity_id())
+                    .is_some_and(|m| m.dead)
+                {
+                    continue;
+                }
                 let (facing, cell, action, frame) = pop
                     .motion
                     .get(&a.source_entity_id())
@@ -171,6 +178,9 @@ impl PlayableApp {
         // Recruited companions are no longer world NPCs but remain clickable at
         // their followed position (party-mode dialogue, `0x15E`).
         for m in party.iter() {
+            if m.motion.dead {
+                continue;
+            }
             if let Ok((im, gx, gy)) = world.res.actor_frame_state(
                 &m.entity.equipment,
                 m.entity.raw_0x12,

@@ -156,6 +156,99 @@ impl PlayableApp {
         self.finish_world_object(source_index);
     }
 
+    /// Spawn the original corpse marker (`FUN_00418480`) at the dead actor's
+    /// cell. The record is a runtime `WorldObjectSource`, so the existing
+    /// right-click pickup path consumes it like an authored pile.
+    pub(super) fn spawn_corpse_loot(
+        &mut self,
+        entity: &crate::population::Entity,
+        cell: (i32, i32),
+        killer_level: u8,
+        bonus: i32,
+    ) {
+        let plan = {
+            let res = &self.world.res;
+            let Some(db) = res.item_db.as_ref() else {
+                return;
+            };
+            crate::combat::loot::plan_corpse_loot(
+                db,
+                &mut self.combat_rng,
+                entity.stats.money,
+                &entity.inventory,
+                entity.stats.raw_0x52,
+                killer_level,
+                bonus,
+                self.player.identification,
+            )
+        };
+        if plan.is_empty() {
+            return;
+        }
+        let mut ids = plan.existing;
+        for spec in plan.generated {
+            if ids.len() >= WORLD_OBJECT_ITEM_SLOTS {
+                break;
+            }
+            if let Some(id) = self.world.res.alloc_item_instance(
+                spec.class,
+                spec.subtype,
+                spec.condition,
+                spec.modifier,
+                spec.durability,
+                spec.poison,
+                spec.flags,
+            ) {
+                ids.push(id);
+            }
+        }
+        let mut items = [0u16; WORLD_OBJECT_ITEM_SLOTS];
+        for (i, id) in ids.iter().take(WORLD_OBJECT_ITEM_SLOTS).enumerate() {
+            items[i] = *id;
+        }
+        let money = plan.money.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        if items.iter().all(|&id| id == 0) && money == 0 {
+            return;
+        }
+        let x = cell.0.clamp(0, u16::MAX as i32) as u16;
+        let y = cell.1.clamp(0, u16::MAX as i32) as u16;
+        let loc = self.current_map as u16;
+        // `FUN_00418480` merges into an existing marker on the same cell.
+        if let Some(existing) = self
+            .world_object_sources
+            .iter_mut()
+            .find(|s| s.loc == loc && s.x == x && s.y == y)
+        {
+            existing.money = existing
+                .money
+                .saturating_add(money);
+            let mut slot = 0usize;
+            for id in items.iter().copied().filter(|&id| id != 0) {
+                while slot < WORLD_OBJECT_ITEM_SLOTS && existing.items[slot] != 0 {
+                    slot += 1;
+                }
+                if slot >= WORLD_OBJECT_ITEM_SLOTS {
+                    break;
+                }
+                existing.items[slot] = id;
+            }
+            self.rebuild_world_objects();
+            return;
+        }
+        let index = self.world_object_sources.len();
+        self.world_object_sources.push(WorldObjectSource {
+            index,
+            t0: 0,
+            t4: 0,
+            x,
+            y,
+            money,
+            loc,
+            items,
+        });
+        self.rebuild_world_objects();
+    }
+
     /// Original `FUN_0041093C` source handling after the pile is emptied.
     fn finish_world_object(&mut self, source_index: usize) {
         let Some(source) = self.world_object_sources.get(source_index) else {
