@@ -156,3 +156,105 @@ fn role2_and_role4_restock_produce_stock() {
         "role 4 should craft equipment"
     );
 }
+
+fn settlement_ti(app: &PlayableApp) -> usize {
+    let si = app
+        .settlements
+        .iter()
+        .position(|s| s.loc_id as u32 == app.current_map)
+        .expect("current settlement");
+    app.settlement_trade
+        .iter()
+        .position(|t| t.index == si)
+        .expect("settlement trade")
+}
+
+#[test]
+fn role3_is_buy_only() {
+    let Some(mut app) = trade_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.tick_settlement_trade(200);
+    let ti = settlement_ti(&app);
+    assert!(
+        app.settlement_trade[ti].stock3.iter().all(|&id| id == 0),
+        "role 3 must never be restocked"
+    );
+
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(0, 1, 0, -1, 100.0, 0, 0)
+        .expect("item");
+    app.player.inventory[0] = item;
+    app.start_trade(279);
+    let before = app.player.money;
+    app.trade_click_cell(ROW_PLAYER, 0);
+    app.trade_confirm();
+    assert!(app.player.money > before);
+    assert_eq!(app.world.res.item_class(item), Some(0xFF));
+    assert!(app.settlement_trade[ti].stock3.iter().all(|&id| id == 0));
+}
+
+#[test]
+fn role4_distributes_full_stock_to_a_group_member() {
+    let Some(mut app) = trade_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(12, 0x1E, 0, -1, 0.0, 0, 0)
+        .expect("item");
+    app.world.res.set_item_quantity(item, 30);
+    let ti = settlement_ti(&app);
+    for slot in app.settlement_trade[ti].stock4.iter_mut() {
+        *slot = item;
+    }
+    if let Some(tables) = app.tables.as_mut() {
+        tables.entities[277].special_equipment = 0;
+    }
+    app.tick_settlement_trade(1);
+    assert_eq!(app.settlement_trade[ti].stock4[0], 0);
+    let special = app.tables.as_ref().unwrap().entities[277].special_equipment;
+    assert_eq!(special, item);
+}
+
+#[test]
+fn role4_distribution_replaces_lower_subtype_gear() {
+    let Some(mut app) = trade_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let filler = app
+        .world
+        .res
+        .alloc_item_instance(12, 0x1E, 0, -1, 0.0, 0, 0)
+        .expect("filler");
+    let new = app
+        .world
+        .res
+        .alloc_item_instance(2, 9, 0, -1, 100.0, 0, 0)
+        .expect("new");
+    let old = app
+        .world
+        .res
+        .alloc_item_instance(2, 1, 0, -1, 100.0, 0, 0)
+        .expect("old");
+    let ti = settlement_ti(&app);
+    for slot in app.settlement_trade[ti].stock4.iter_mut() {
+        *slot = new;
+    }
+    if let Some(tables) = app.tables.as_mut() {
+        for member in 277..289 {
+            tables.entities[member].special_equipment = filler;
+        }
+        tables.entities[278].equipment[2] = old;
+    }
+    app.tick_settlement_trade(1);
+    assert_eq!(app.settlement_trade[ti].stock4[3], 0);
+    assert_eq!(app.tables.as_ref().unwrap().entities[278].equipment[2], new);
+    assert_eq!(app.world.res.item_class(old), Some(0xFF));
+}
