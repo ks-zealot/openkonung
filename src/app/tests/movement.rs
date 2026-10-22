@@ -1,6 +1,5 @@
 //! Player movement/route-commit tests.
 
-
 use super::common::*;
 
 #[test]
@@ -21,8 +20,15 @@ fn click_commits_the_first_step_at_segment_start() {
     // `FUN_0041435C` commits the segment's cell at its START: the logical cell is
     // already the destination, the draw cell is the pre-step (source) cell.
     assert!(app.player_active, "walk segment in flight");
-    assert_eq!((app.player_x as i32, app.player_y as i32), goal, "committed cell");
-    assert!(app.player_path.is_empty(), "single-step queue consumed at start");
+    assert_eq!(
+        (app.player_x as i32, app.player_y as i32),
+        goal,
+        "committed cell"
+    );
+    assert!(
+        app.player_path.is_empty(),
+        "single-step queue consumed at start"
+    );
     assert_eq!(
         (app.player_render_x as i32, app.player_render_y as i32),
         start,
@@ -68,7 +74,11 @@ fn mid_walk_click_replans_from_the_committed_cell() {
         committed,
         "new segment draws from the committed cell"
     );
-    assert_eq!((app.player_x as i32, app.player_y as i32), start, "continues to goal");
+    assert_eq!(
+        (app.player_x as i32, app.player_y as i32),
+        start,
+        "continues to goal"
+    );
 
     // The final segment completes to idle parked on the committed cell.
     app.update_player(period);

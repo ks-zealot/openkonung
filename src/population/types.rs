@@ -12,7 +12,6 @@ pub struct Rect {
     pub y2: u16,
 }
 
-
 /// `Group[200]`, stride `0x20` (`KONUNG_SOURCE_OF_TRUTH.md` §4).
 ///
 /// `index` is the source group id and is preserved. The record is interleaved;
@@ -38,7 +37,6 @@ pub struct Group {
     /// `+0x1E` u8 — group archetype/class/flags; `0` marks inactive (§4.2).
     pub class_1e: u8,
 }
-
 
 /// Authoritative character/gameplay fields of an `Entity` record, parsed
 /// verbatim from `Game.N` (`KONUNG_SOURCE_OF_TRUTH.md` §0 label:
@@ -99,8 +97,19 @@ pub struct EntityStats {
     pub endurance_base: u16,
     /// `+0x64` u16 — endurance current.
     pub endurance_current: u16,
+    /// `+0xBC` u16 — saved dexterity current (temporary-effect backup).
+    pub saved_dexterity: u16,
+    /// `+0xBE` u16 — saved charisma current.
+    pub saved_charisma: u16,
+    /// `+0xC0` u16 — saved strength current.
+    pub saved_strength: u16,
+    /// `+0xC2` u16 — saved endurance current.
+    pub saved_endurance: u16,
+    /// `+0xCA` u16 — temporary-effect id / period.
+    pub temp_effect_id: u16,
+    /// `+0xCE` u16 — temporary-effect timer in logic frames.
+    pub temp_effect_timer: u16,
 }
-
 
 /// `Entity[2000]`, stride `0x100` (`KONUNG_SOURCE_OF_TRUTH.md` §5).
 ///
@@ -153,13 +162,11 @@ pub struct Entity {
     pub palette_offset: u32,
 }
 
-
 /// Both parsed tables.
 pub struct GameTables {
     pub groups: Vec<Group>,
     pub entities: Vec<Entity>,
 }
-
 
 /// One settlement waypoint (`FUN_004168a4` / `FUN_0041182c`).
 ///
@@ -173,7 +180,6 @@ pub struct Waypoint {
     pub x: u16,
     pub y: u16,
 }
-
 
 /// One `Settlement` record (`Game.N`, stride `0x4B5`); `loc_id` is byte `+3`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -199,7 +205,6 @@ pub struct SettlementTarget {
     pub timer: u16,
 }
 
-
 /// Diagnostic report for one group selected for a location.
 #[derive(Clone, Debug)]
 pub struct GroupReport {
@@ -212,14 +217,18 @@ pub struct GroupReport {
     pub entities: Vec<Entity>,
 }
 
-
 /// A group refused to map to a valid Entity range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RangeError {
-    StartOutOfRange { start: usize },
-    EndOutOfRange { start: usize, count: usize, end: usize },
+    StartOutOfRange {
+        start: usize,
+    },
+    EndOutOfRange {
+        start: usize,
+        count: usize,
+        end: usize,
+    },
 }
-
 
 impl Group {
     /// Group 0 is reserved/special in the original setup path, which iterates
@@ -229,12 +238,10 @@ impl Group {
         self.index == 0
     }
 
-
     /// `+0x1E != 0` — the original setup path skips zero-class groups (§4.2).
     pub fn is_active_class(&self) -> bool {
         self.class_1e != 0
     }
-
 
     /// Contiguous Entity index range `first_entity .. first_entity+entity_count`,
     /// validated against the 2000-entry Entity table (§4.1).
@@ -250,7 +257,6 @@ impl Group {
         }
         Ok(start..end)
     }
-
 }
 impl Entity {
     /// Diagnostic player-style state block, keyed by source entity id (task §7).
@@ -288,7 +294,6 @@ impl Entity {
             inv.join(", "),
         )
     }
-
 }
 impl GameTables {
     /// Entity by source id, if the id is inside the 2000-entry table.
@@ -296,10 +301,8 @@ impl GameTables {
         self.entities.get(index)
     }
 
-
     /// Group by source id, if the id is inside the 200-entry table.
     pub fn group(&self, index: usize) -> Option<&Group> {
         self.groups.get(index)
     }
-
 }

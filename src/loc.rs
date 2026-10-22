@@ -19,30 +19,30 @@ use crate::coords::{RUNTIME_H, RUNTIME_W};
 use crate::res::{i32v, u16, u32, GRID_ODD_SHIFT, GRID_X_STEP, GRID_Y_STEP, TERRAIN_TILE_W};
 
 pub use crate::constants::coords::TERRAIN_COL_STEP;
-pub use crate::constants::coords::TERRAIN_ROW_STEP;
 pub use crate::constants::coords::TERRAIN_ODD_OFFSET;
+pub use crate::constants::coords::TERRAIN_ROW_STEP;
 
-pub use crate::constants::coords::LOCAL_TERRAIN_W;
-pub use crate::constants::coords::LOCAL_TERRAIN_H;
 pub use crate::constants::coords::LOCAL_ORIGIN_X;
+pub use crate::constants::coords::LOCAL_TERRAIN_H;
+pub use crate::constants::coords::LOCAL_TERRAIN_W;
 /// Pixel surface implied by the corrected base-terrain lattice (renderer
 /// surface only; not a runtime-world bound). Origin is 0.
 pub const LOCAL_PIXEL_W: i32 =
     (LOCAL_TERRAIN_W - 1) * TERRAIN_COL_STEP + TERRAIN_ODD_OFFSET + TERRAIN_TILE_W;
 pub use crate::constants::coords::LOCAL_PIXEL_H;
 
+pub use crate::constants::konung_layout::COLLISION_BYTES;
+pub use crate::constants::konung_layout::COLLISION_OFF;
+pub use crate::constants::konung_layout::PLACEMENTS_OFF;
+pub use crate::constants::konung_layout::PLACEMENT_MAX;
+pub use crate::constants::konung_layout::PLACEMENT_SIZE;
 pub use crate::constants::konung_layout::TERRAIN_OFF;
 pub use crate::constants::konung_layout::TERRAIN_SIZE;
-pub use crate::constants::konung_layout::COLLISION_OFF;
-pub use crate::constants::konung_layout::COLLISION_BYTES;
-pub use crate::constants::konung_layout::PLACEMENTS_OFF;
-pub use crate::constants::konung_layout::PLACEMENT_SIZE;
-pub use crate::constants::konung_layout::PLACEMENT_MAX;
 // GRAPH.RES placement layer: 1000 records x 16 bytes, sitting between the
 // metadata block and the OBJECTS.RES placement table.
 pub use crate::constants::konung_layout::GRAPH_PLACEMENTS_OFF;
-pub use crate::constants::konung_layout::GRAPH_PLACEMENT_SIZE;
 pub use crate::constants::konung_layout::GRAPH_PLACEMENT_MAX;
+pub use crate::constants::konung_layout::GRAPH_PLACEMENT_SIZE;
 pub use crate::constants::konung_layout::KONUNG_SIZE;
 pub use crate::constants::konung_layout::TELEPORT_IDS;
 
@@ -74,7 +74,10 @@ pub fn prop_to_local_px(grid_x: i32, grid_y: i32) -> (i32, i32) {
 /// (source §7.1/§23.5). Each byte is `0 => no tile`, else `resource index =
 /// byte - 1`. Returns `(layer0_low, layer1_high)`.
 pub fn terrain_layers(record: u16) -> (Option<usize>, Option<usize>) {
-    (layer_resource((record & 0x00FF) as u8), layer_resource((record >> 8) as u8))
+    (
+        layer_resource((record & 0x00FF) as u8),
+        layer_resource((record >> 8) as u8),
+    )
 }
 
 fn layer_resource(b: u8) -> Option<usize> {
@@ -282,8 +285,18 @@ pub fn group_gates(props: &[Prop]) -> Vec<Gate> {
     if tp.is_empty() {
         return Vec::new();
     }
-    let max_x = tp.iter().map(|p| p.grid_x).max().unwrap_or(0).max(LOCAL_TERRAIN_W - 1);
-    let max_y = tp.iter().map(|p| p.grid_y).max().unwrap_or(0).max(LOCAL_TERRAIN_H - 1);
+    let max_x = tp
+        .iter()
+        .map(|p| p.grid_x)
+        .max()
+        .unwrap_or(0)
+        .max(LOCAL_TERRAIN_W - 1);
+    let max_y = tp
+        .iter()
+        .map(|p| p.grid_y)
+        .max()
+        .unwrap_or(0)
+        .max(LOCAL_TERRAIN_H - 1);
 
     let mut unused: Vec<usize> = (0..tp.len()).collect();
     let mut groups = Vec::new();
@@ -324,8 +337,18 @@ pub fn group_gates(props: &[Prop]) -> Vec<Gate> {
 
 pub fn make_location(loc_id: u32, data: Vec<u8>) -> Result<Location, String> {
     let props = parse_props(&data);
-    let max_x = props.iter().map(|p| p.grid_x).max().unwrap_or(0).max(LOCAL_TERRAIN_W - 1);
-    let max_y = props.iter().map(|p| p.grid_y).max().unwrap_or(0).max(LOCAL_TERRAIN_H - 1);
+    let max_x = props
+        .iter()
+        .map(|p| p.grid_x)
+        .max()
+        .unwrap_or(0)
+        .max(LOCAL_TERRAIN_W - 1);
+    let max_y = props
+        .iter()
+        .map(|p| p.grid_y)
+        .max()
+        .unwrap_or(0)
+        .max(LOCAL_TERRAIN_H - 1);
     let gates = group_gates(&props);
     let graph_placements = parse_graph_placements(&data);
     let collision = parse_collision(&data).map_err(|e| format!("Konung.{}: {}", loc_id, e))?;

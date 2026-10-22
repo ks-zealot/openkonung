@@ -4,7 +4,6 @@ use super::super::*;
 
 pub static mut DEBUG_PLAYER_STATE: Option<Vec<u8>> = None;
 
-
 /// Format the active game's [`PlayerCharacter::debug_block`] into a static
 /// buffer. Returns 1 when a game exists, 0 otherwise. Diagnostic only.
 #[no_mangle]
@@ -21,7 +20,6 @@ pub extern "C" fn debug_player_state() -> u32 {
     }
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_player_state_ptr() -> *const u8 {
     match unsafe { &*addr_of!(DEBUG_PLAYER_STATE) } {
@@ -29,7 +27,6 @@ pub extern "C" fn debug_player_state_ptr() -> *const u8 {
         None => std::ptr::null(),
     }
 }
-
 
 #[no_mangle]
 pub extern "C" fn debug_player_state_len() -> u32 {

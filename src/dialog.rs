@@ -386,7 +386,16 @@ pub fn draw(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, state: &Dialo
     }
     let band = res.intr_sprite(BAND_SPRITE);
     if let Some(b) = &band {
-        blit(frame, fw, fh, &b.data, b.w, b.h, lay.band_pos.0, lay.band_pos.1);
+        blit(
+            frame,
+            fw,
+            fh,
+            &b.data,
+            b.w,
+            b.h,
+            lay.band_pos.0,
+            lay.band_pos.1,
+        );
     }
 
     let small = res.fonts.small.as_ref();

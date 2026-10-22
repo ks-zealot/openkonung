@@ -132,7 +132,6 @@ pub fn update_followers(
     }
 }
 
-
 /// Issue a move command to one companion toward `goal`, mirroring the original
 /// left-click command 0 (`FUN_0042260C`), which writes the clicked cell to
 /// `Entity+0x0C/+0x0E` on **every** unit in the selection array `0x81A814`.

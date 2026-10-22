@@ -60,7 +60,11 @@ fn main() {
 
     let mut res = Res::new(game, graph, objects, exe);
     let variant = res
-        .find_fallback_human(if variant_arg >= 0 { Some(variant_arg as usize) } else { None })
+        .find_fallback_human(if variant_arg >= 0 {
+            Some(variant_arg as usize)
+        } else {
+            None
+        })
         .expect("fallback human");
 
     let p0: Vec<u8> = res.palettes[0].iter().flatten().copied().collect();
@@ -78,10 +82,25 @@ fn main() {
     }
 
     let (ps, gx, gy) = res.prop_sprite(30, 0, 0);
-    println!("prop30={:016x} {}x{} off={},{}", fnv(&ps.data), ps.w, ps.h, gx, gy);
+    println!(
+        "prop30={:016x} {}x{} off={},{}",
+        fnv(&ps.data),
+        ps.w,
+        ps.h,
+        gx,
+        gy
+    );
 
     let (h, hx, hy, hc) = res.human_frame_state(variant, 0, 0, 0, None);
-    println!("human_a0_d0_f0={:016x} {}x{} off={},{} count={}", fnv(&h.data), h.w, h.h, hx, hy, hc);
+    println!(
+        "human_a0_d0_f0={:016x} {}x{} off={},{} count={}",
+        fnv(&h.data),
+        h.w,
+        h.h,
+        hx,
+        hy,
+        hc
+    );
 
     // locations
     let mut konungs: Vec<(u32, Vec<u8>)> = Vec::new();
@@ -123,15 +142,16 @@ fn main() {
 
     // Phase B: typed Group/Entity save-state tables + population enumeration.
     // Diagnostics only; no actor rendering and no coordinate conversion.
-    let game_tables = read(base.join(format!("Game.{}", profile))).and_then(|gb| {
-        match population::parse_tables(&gb) {
+    let game_tables =
+        read(base.join(format!("Game.{}", profile))).and_then(|gb| match population::parse_tables(
+            &gb,
+        ) {
             Ok(t) => Some(t),
             Err(e) => {
                 println!("population parse error: {}", e);
                 None
             }
-        }
-    });
+        });
 
     if let (Some(tables), Some(id)) = (&game_tables, entity_arg) {
         match tables.entities.get(id) {
@@ -141,7 +161,11 @@ fn main() {
     }
 
     if let Some(tables) = &game_tables {
-        println!("groups={} entities={}", tables.groups.len(), tables.entities.len());
+        println!(
+            "groups={} entities={}",
+            tables.groups.len(),
+            tables.entities.len()
+        );
         let max_end = tables
             .groups
             .iter()

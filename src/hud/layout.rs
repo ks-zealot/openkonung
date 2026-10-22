@@ -15,7 +15,6 @@ pub const HUD_SPRITE: usize = 3;
 /// `INTR` index of the empty inventory-slot background.
 pub const INVENTORY_SLOT_SPRITE: usize = 17;
 
-
 /// An axis-aligned rectangle in logical framebuffer coordinates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
@@ -24,7 +23,6 @@ pub struct Rect {
     pub w: i32,
     pub h: i32,
 }
-
 
 /// HP-indicator bar geometry (`FUN_0042C730` bar branch).
 ///
@@ -37,7 +35,6 @@ pub struct HpBar {
     pub dx: i32,
     pub dy: i32,
 }
-
 
 /// Recovered party-panel portrait origins (`konung.res` table `0x45AF10`),
 /// row-major slots 0..10. The table stores `{x640,y640,x800,y800}` per slot;
@@ -69,14 +66,12 @@ const PARTY_ORIGINS_800: [(i32, i32); PARTY_CELLS] = [
     (74, 273),
 ];
 
-
 /// Slot step used by the original executable: `slot_width - 1`
 /// (global `0x81D724`, computed at VA `0x42C4B5`).
 #[inline]
 pub fn slot_step(slot_width: u16) -> i32 {
     slot_width as i32 - 1
 }
-
 
 /// Resolved HUD geometry for one logical resolution.
 #[derive(Clone, Debug)]
@@ -111,7 +106,6 @@ pub struct HudLayout {
     pub party_origins: [(i32, i32); PARTY_CELLS],
 }
 
-
 /// Select the layout for a logical framebuffer width (`<=640` -> 640 variant).
 pub fn layout(logical_w: i32) -> HudLayout {
     if logical_w <= 640 {
@@ -121,7 +115,6 @@ pub fn layout(logical_w: i32) -> HudLayout {
     }
 }
 
-
 /// 800x600 HUD layout (executable globals + measured `INTR[3]` grid).
 pub fn layout_800() -> HudLayout {
     HudLayout {
@@ -130,24 +123,37 @@ pub fn layout_800() -> HudLayout {
         hud_id: HUD_SPRITE,
         slot_id: INVENTORY_SLOT_SPRITE,
         // left=140, right=799, strip bottom=555; slot cell 70x70 => region 660x70.
-        inventory_region: Rect { x: 140, y: 486, w: 660, h: 70 },
+        inventory_region: Rect {
+            x: 140,
+            y: 486,
+            w: 660,
+            h: 70,
+        },
         // Origin = left-1 + arrow_w(INTR[18].w=20) + remainder/2;
         // count = (span+2 - 2*20)/69 = 621/69 = 9 (VA 0x42C4EE-0x42C544).
         inventory_origin: (159, 486),
         visible_slots: 9,
         slot_step: 69,
-        inventory_bar: Rect { x: 140, y: 555, w: 660, h: 45 },
+        inventory_bar: Rect {
+            x: 140,
+            y: 555,
+            w: 660,
+            h: 45,
+        },
         // Arrow caps at x=left-1=139 and x=right-20+1=780, y=486.
         arrows: [(18, 139, 486), (20, 780, 486)],
         auto_pos: (644, 379),
         // Measured from INTR800[3]: columns x=2/70 (cell 68 wide),
         // rows y=2/70/137/205/272 (cell 68 tall).
         party_cells: build_party_cells(&[2, 70], &[2, 70, 137, 205, 272], 68, 68),
-        hp_bar: HpBar { height: 40, dx: 6, dy: 10 },
+        hp_bar: HpBar {
+            height: 40,
+            dx: 6,
+            dy: 10,
+        },
         party_origins: PARTY_ORIGINS_800,
     }
 }
-
 
 /// 640x480 HUD layout (executable globals + measured `INTR[3]` grid).
 pub fn layout_640() -> HudLayout {
@@ -157,23 +163,36 @@ pub fn layout_640() -> HudLayout {
         hud_id: HUD_SPRITE,
         slot_id: INVENTORY_SLOT_SPRITE,
         // left=112, right=639, strip bottom=444.
-        inventory_region: Rect { x: 112, y: 375, w: 528, h: 70 },
+        inventory_region: Rect {
+            x: 112,
+            y: 375,
+            w: 528,
+            h: 70,
+        },
         // count = (span+2 - 2*20)/69 = 489/69 = 7; origin = 111+20+3 = 134.
         inventory_origin: (134, 375),
         visible_slots: 7,
         slot_step: 69,
-        inventory_bar: Rect { x: 112, y: 444, w: 528, h: 36 },
+        inventory_bar: Rect {
+            x: 112,
+            y: 444,
+            w: 528,
+            h: 36,
+        },
         // Arrow caps at x=left-1=111 and x=right-20+1=620, y=375.
         arrows: [(18, 111, 375), (20, 620, 375)],
         auto_pos: (515, 303),
         // Measured from INTR640[3]: columns x=2/55 (cell 53 wide),
         // rows y=1/55/109/163/217 (cell 54 tall).
         party_cells: build_party_cells(&[2, 55], &[1, 55, 109, 163, 217], 53, 54),
-        hp_bar: HpBar { height: 32, dx: 4, dy: 8 },
+        hp_bar: HpBar {
+            height: 32,
+            dx: 4,
+            dy: 8,
+        },
         party_origins: PARTY_ORIGINS_640,
     }
 }
-
 
 pub fn build_party_cells(
     col_x: &[i32; PARTY_COLS],
@@ -181,7 +200,12 @@ pub fn build_party_cells(
     cell_w: i32,
     cell_h: i32,
 ) -> [Rect; PARTY_CELLS] {
-    let mut cells = [Rect { x: 0, y: 0, w: 0, h: 0 }; PARTY_CELLS];
+    let mut cells = [Rect {
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+    }; PARTY_CELLS];
     // Row-major: cell = row * PARTY_COLS + col.
     for row in 0..PARTY_ROWS {
         for col in 0..PARTY_COLS {
@@ -195,7 +219,6 @@ pub fn build_party_cells(
     }
     cells
 }
-
 
 /// The visible inventory cell rectangles, for `(layout, slot width)`.
 pub fn inventory_slot_rect(layout: &HudLayout, slot: usize, slot_w: u16) -> Option<Rect> {
@@ -211,7 +234,6 @@ pub fn inventory_slot_rect(layout: &HudLayout, slot: usize, slot_w: u16) -> Opti
     })
 }
 
-
 impl Rect {
     pub fn right(&self) -> i32 {
         self.x + self.w
@@ -224,7 +246,6 @@ impl Rect {
     pub fn contains(&self, px: i32, py: i32) -> bool {
         px >= self.x && px < self.right() && py >= self.y && py < self.bottom()
     }
-
 }
 impl HudLayout {
     /// The visible inventory slot rectangles (empty-cell backgrounds).
@@ -240,12 +261,10 @@ impl HudLayout {
             .collect()
     }
 
-
     /// Party portrait cell for a given flat cell index (0..10).
     pub fn party_cell(&self, index: usize) -> Option<Rect> {
         self.party_cells.get(index).copied()
     }
-
 
     /// Portrait / selection-marker / HP-bar draw origin for a flat party slot
     /// (0..10), from the recovered table `0x45AF10`.
@@ -253,10 +272,8 @@ impl HudLayout {
         self.party_origins.get(index).copied()
     }
 
-
     /// Rectangle of one visible inventory cell, or `None` if out of range.
     pub fn inventory_slot_rect(&self, slot: usize, slot_w: u16) -> Option<Rect> {
         inventory_slot_rect(self, slot, slot_w)
     }
-
 }

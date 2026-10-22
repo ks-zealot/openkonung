@@ -136,8 +136,14 @@ fn terrain_lattice_exact_cases() {
 fn surface_dimensions_double_vs_half_scale() {
     // Old half-scale surface was 4725 x 2608; corrected lattice roughly
     // doubles both dimensions.
-    assert!(LOCAL_PIXEL_W > 9000 && LOCAL_PIXEL_W < 9600, "W={LOCAL_PIXEL_W}");
-    assert!(LOCAL_PIXEL_H > 5000 && LOCAL_PIXEL_H < 5300, "H={LOCAL_PIXEL_H}");
+    assert!(
+        LOCAL_PIXEL_W > 9000 && LOCAL_PIXEL_W < 9600,
+        "W={LOCAL_PIXEL_W}"
+    );
+    assert!(
+        LOCAL_PIXEL_H > 5000 && LOCAL_PIXEL_H < 5300,
+        "H={LOCAL_PIXEL_H}"
+    );
     // Entity maxima still fit inside the surface (source §3 / CHECK F).
     let (mx, _) = crate::coords::entity_to_local_px(0, 159);
     let (_, my) = crate::coords::entity_to_local_px(319, 0);

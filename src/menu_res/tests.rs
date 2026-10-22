@@ -119,7 +119,10 @@ fn rejects_truncated_payload() {
     let mut data = record(4, 1, &[vec![0x81, 0x01, 0x00, 0x7C, 0x00]]);
     data.truncate(data.len() - 2);
     let e = MenuRes::parse(&data).unwrap_err();
-    assert!(e.message.contains("payload") || e.message.contains("row"), "{e}");
+    assert!(
+        e.message.contains("payload") || e.message.contains("row"),
+        "{e}"
+    );
 }
 
 fn install_dir() -> std::path::PathBuf {

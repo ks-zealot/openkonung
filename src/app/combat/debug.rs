@@ -7,11 +7,10 @@
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
 
-
 use super::super::*;
 use crate::combat::{self, CombatStats, CombatTarget};
-use crate::coords::neighbors;
 use crate::constants::combat::*;
+use crate::coords::neighbors;
 
 impl PlayableApp {
     /// Diagnostic seed override for the smoke test.
@@ -188,8 +187,12 @@ impl PlayableApp {
         self.player.equipment[1] = RANGED_TEST_BOW_ITEM;
         self.player.raw_0x12 = 1;
         self.player.special_equipment = RANGED_TEST_AMMO_ITEM;
-        self.world.res.set_item_quantity(RANGED_TEST_AMMO_ITEM, RANGED_TEST_AMMO_QUANTITY);
-        self.world.res.set_item_durability(RANGED_TEST_BOW_ITEM, RANGED_TEST_BOW_DURABILITY);
+        self.world
+            .res
+            .set_item_quantity(RANGED_TEST_AMMO_ITEM, RANGED_TEST_AMMO_QUANTITY);
+        self.world
+            .res
+            .set_item_durability(RANGED_TEST_BOW_ITEM, RANGED_TEST_BOW_DURABILITY);
         self.player.flags_b |= crate::anim::FLAG_BATTLE;
         self.party_selected[0] = true;
         if self.issue_attack_order(id) {
@@ -268,9 +271,13 @@ impl PlayableApp {
         self.player.equipment[1] = RANGED_TEST_BOW_ITEM;
         self.player.raw_0x12 = 1;
         self.player.special_equipment = RANGED_TEST_AMMO_ITEM;
-        self.world.res.set_item_quantity(RANGED_TEST_AMMO_ITEM, RANGED_TEST_AMMO_QUANTITY);
+        self.world
+            .res
+            .set_item_quantity(RANGED_TEST_AMMO_ITEM, RANGED_TEST_AMMO_QUANTITY);
         self.world.res.set_item_modifier(RANGED_TEST_AMMO_ITEM, 0);
-        self.world.res.set_item_durability(RANGED_TEST_BOW_ITEM, RANGED_TEST_BOW_DURABILITY);
+        self.world
+            .res
+            .set_item_durability(RANGED_TEST_BOW_ITEM, RANGED_TEST_BOW_DURABILITY);
         self.player.flags_b |= crate::anim::FLAG_BATTLE;
         self.party_selected[0] = true;
         self.combat_test_prop = Some(prop_index);

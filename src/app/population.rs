@@ -22,7 +22,9 @@ impl PlayableApp {
         if !self.party.is_empty() {
             let party_ids: std::collections::HashSet<usize> =
                 self.party.iter().map(|m| m.entity.index).collect();
-            build.actors.retain(|a| !party_ids.contains(&a.source_entity_id()));
+            build
+                .actors
+                .retain(|a| !party_ids.contains(&a.source_entity_id()));
             build.motion.retain(|k, _| !party_ids.contains(k));
         }
         // Per-actor cycle lengths (original `Entity+0xD7`): one collision cell
@@ -57,7 +59,6 @@ impl PlayableApp {
         sort_actors(&mut build.actors);
         self.population_cache.insert(loc_id, build);
     }
-
 
     /// Resolve every already-positioned non-player actor (live action/frame from
     /// [`ActorMotion`], same Entity projection as the protagonist) into `out` for
@@ -117,7 +118,6 @@ impl PlayableApp {
         rejected
     }
 
-
     /// The non-player actor whose drawn sprite covers virtual `(mx, my)`, as
     /// `(source entity id, archetype, dialogue_id)`. Uses the same projection and
     /// frame as [`Self::collect_actor_sprites`]; the front-most hit wins. `None`
@@ -170,7 +170,11 @@ impl PlayableApp {
                     let x = iox + lx.round() as i32 + gx;
                     let y = ioy + ly.round() as i32 + gy;
                     if mx >= x && mx < x + im.w as i32 && my >= y && my < y + im.h as i32 {
-                        best = Some((a.source_entity_id(), a.entity.archetype, a.entity.dialogue_id));
+                        best = Some((
+                            a.source_entity_id(),
+                            a.entity.archetype,
+                            a.entity.dialogue_id,
+                        ));
                     }
                 }
             }
@@ -206,9 +210,9 @@ impl PlayableApp {
         best
     }
 
-
     /// Diagnostic: full authored state of a source `Entity` by id (task §7).
-    pub fn entity_debug_block(&self, id: usize) -> Option<String> {        self.tables
+    pub fn entity_debug_block(&self, id: usize) -> Option<String> {
+        self.tables
             .as_ref()?
             .entities
             .get(id)
@@ -216,6 +220,4 @@ impl PlayableApp {
     }
 
     // --- window mapping ---
-
-
 }

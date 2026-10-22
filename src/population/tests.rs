@@ -57,8 +57,24 @@ fn group_field_offsets_are_exact() {
     let g = &groups[5];
     assert_eq!(g.index, 5);
     assert_eq!(g.first_entity, 0x1234);
-    assert_eq!(g.rect_a, Rect { x1: 0xA001, x2: 0xA002, y1: 0xA003, y2: 0xA004 });
-    assert_eq!(g.rect_b, Rect { x1: 0xB001, x2: 0xB002, y1: 0xB003, y2: 0xB004 });
+    assert_eq!(
+        g.rect_a,
+        Rect {
+            x1: 0xA001,
+            x2: 0xA002,
+            y1: 0xA003,
+            y2: 0xA004
+        }
+    );
+    assert_eq!(
+        g.rect_b,
+        Rect {
+            x1: 0xB001,
+            x2: 0xB002,
+            y1: 0xB003,
+            y2: 0xB004
+        }
+    );
     assert_eq!(g.count_18, 0x18);
     assert_eq!(g.capacity, 0x19);
     assert_eq!(g.loc_id, 0x1B);
@@ -116,16 +132,34 @@ fn entity_range_boundaries() {
     assert_eq!(g.entity_range().unwrap(), ENTITY_COUNT..ENTITY_COUNT);
 
     // Last valid range.
-    let g = Group { first_entity: 1999, entity_count: 1, ..empty_group(1) };
+    let g = Group {
+        first_entity: 1999,
+        entity_count: 1,
+        ..empty_group(1)
+    };
     assert_eq!(g.entity_range().unwrap(), 1999..2000);
 
     // One past the end is not.
-    let g = Group { first_entity: 1999, entity_count: 2, ..empty_group(1) };
-    assert!(matches!(g.entity_range(), Err(RangeError::EndOutOfRange { .. })));
+    let g = Group {
+        first_entity: 1999,
+        entity_count: 2,
+        ..empty_group(1)
+    };
+    assert!(matches!(
+        g.entity_range(),
+        Err(RangeError::EndOutOfRange { .. })
+    ));
 
     // Start beyond the table.
-    let g = Group { first_entity: 2001, entity_count: 0, ..empty_group(1) };
-    assert!(matches!(g.entity_range(), Err(RangeError::StartOutOfRange { .. })));
+    let g = Group {
+        first_entity: 2001,
+        entity_count: 0,
+        ..empty_group(1)
+    };
+    assert!(matches!(
+        g.entity_range(),
+        Err(RangeError::StartOutOfRange { .. })
+    ));
 }
 
 fn empty_group(index: usize) -> Group {
@@ -227,7 +261,11 @@ fn truncated_buffers_error() {
 fn last_entity_is_readable() {
     let mut data = empty_game();
     set_u16(&mut data, ENTITY_OFF + 1999 * ENTITY_STRIDE + 0x08, 0xBEEF);
-    set_u32(&mut data, ENTITY_OFF + 1999 * ENTITY_STRIDE + 0xD8, 0xCAFE_F00D);
+    set_u32(
+        &mut data,
+        ENTITY_OFF + 1999 * ENTITY_STRIDE + 0xD8,
+        0xCAFE_F00D,
+    );
     let entities = parse_entities(&data).unwrap();
     let e = &entities[1999];
     assert_eq!(e.x, 0xBEEF);
@@ -276,8 +314,14 @@ fn entity_stats_equipment_inventory_offsets() {
     assert_eq!(s.level, 7);
     assert_eq!(s.money, 1234);
     assert_eq!((s.available_xp, s.invested_xp), (55, 66));
-    assert_eq!((s.melee_mastery, s.trade, s.archery_mastery), (100, 32, 100));
-    assert_eq!((s.building, s.healing, s.identification, s.smithing), (1, 50, 20, 10));
+    assert_eq!(
+        (s.melee_mastery, s.trade, s.archery_mastery),
+        (100, 32, 100)
+    );
+    assert_eq!(
+        (s.building, s.healing, s.identification, s.smithing),
+        (1, 50, 20, 10)
+    );
     assert_eq!((s.base_armor, s.periodic_damage, s.raw_0x52), (10, 5, 0x52));
     assert_eq!((s.dexterity_base, s.dexterity_current), (10, 10));
     assert_eq!((s.charisma_base, s.charisma_current), (10, 10));
@@ -320,10 +364,16 @@ fn real_game1_entity_277_and_539_regression() {
     assert_eq!((e.x, e.y), (74, 39));
     assert_eq!(e.archetype, 5);
     assert_eq!(e.stats.level, 1);
-    assert_eq!((e.stats.dexterity_base, e.stats.dexterity_current), (10, 10));
+    assert_eq!(
+        (e.stats.dexterity_base, e.stats.dexterity_current),
+        (10, 10)
+    );
     assert_eq!((e.stats.charisma_base, e.stats.charisma_current), (10, 10));
     assert_eq!((e.stats.strength_base, e.stats.strength_current), (15, 15));
-    assert_eq!((e.stats.endurance_base, e.stats.endurance_current), (10, 10));
+    assert_eq!(
+        (e.stats.endurance_base, e.stats.endurance_current),
+        (10, 10)
+    );
     assert_eq!(e.stats.hp_internal, 1600);
     assert_eq!(e.stats.melee_mastery, 100);
     assert_eq!(e.stats.archery_mastery, 100);
@@ -332,10 +382,16 @@ fn real_game1_entity_277_and_539_regression() {
 
     let e = &t.entities[539];
     assert_eq!(e.stats.level, 3);
-    assert_eq!((e.stats.dexterity_base, e.stats.dexterity_current), (28, 28));
+    assert_eq!(
+        (e.stats.dexterity_base, e.stats.dexterity_current),
+        (28, 28)
+    );
     assert_eq!((e.stats.charisma_base, e.stats.charisma_current), (25, 25));
     assert_eq!((e.stats.strength_base, e.stats.strength_current), (29, 29));
-    assert_eq!((e.stats.endurance_base, e.stats.endurance_current), (25, 25));
+    assert_eq!(
+        (e.stats.endurance_base, e.stats.endurance_current),
+        (25, 25)
+    );
     assert_eq!(e.stats.melee_mastery, 700);
     assert_eq!(e.stats.archery_mastery, 700);
     assert_eq!(e.stats.building, 5);
@@ -374,7 +430,10 @@ fn real_game1_settlement_waypoints_are_homes() {
     };
     let settlements = parse_settlements(&data).unwrap();
     assert_eq!(settlements.len(), SETTLEMENT_COUNT);
-    let s = settlements.iter().find(|s| s.loc_id == 4).expect("loc 4 settlement");
+    let s = settlements
+        .iter()
+        .find(|s| s.loc_id == 4)
+        .expect("loc 4 settlement");
     // Owners 0x0115..=0x0118 (277..280) map to their authored positions.
     let by_owner = |o: u16| s.waypoints.iter().find(|w| w.owner == o).copied();
     assert_eq!(by_owner(277).map(|w| (w.x, w.y)), Some((74, 39)));

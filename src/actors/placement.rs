@@ -9,13 +9,11 @@ pub struct RawSpawnCoord {
     pub y: i32,
 }
 
-
 /// Runtime placement failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlacementError {
     NoCandidateAfterAttempts { attempts: u8 },
 }
-
 
 /// Deterministic RNG (xorshift64). No thread/browser randomness is used, so
 /// placement is reproducible for a given location.
@@ -23,7 +21,6 @@ pub enum PlacementError {
 pub struct DeterministicRng {
     state: u64,
 }
-
 
 impl DeterministicRng {
     pub fn new(seed: u64) -> Self {
@@ -40,19 +37,16 @@ impl DeterministicRng {
     }
 }
 
-
 impl Default for DeterministicRng {
     fn default() -> Self {
         DeterministicRng { state: 1 }
     }
 }
 
-
 /// One deterministic RNG stream per location/session.
 pub fn location_rng(loc_id: u8) -> DeterministicRng {
     DeterministicRng::new(0x9E37_79B9_7F4A_7C15 ^ (loc_id as u64).wrapping_mul(0x1000_0000_01B3))
 }
-
 
 /// Center/half-extents of spawn rectangle A (`KONUNG_SOURCE_OF_TRUTH.md` §6.2),
 /// using signed truncation:
@@ -70,7 +64,6 @@ pub fn spawn_center_half(rect: &Rect) -> (i32, i32, i32, i32) {
     )
 }
 
-
 pub fn axis_delta(half: i32, rng: &mut DeterministicRng) -> i32 {
     if half < 2 {
         return 0;
@@ -83,7 +76,6 @@ pub fn axis_delta(half: i32, rng: &mut DeterministicRng) -> i32 {
     }
 }
 
-
 /// Generate one candidate from the group's first spawn rectangle (A), i.e.
 /// `+08/+0C/+10/+14`. Rectangle B (`+0A/+0E/+12/+16`) is **not** used.
 pub fn generate_spawn_candidate(group: &Group, rng: &mut DeterministicRng) -> RawSpawnCoord {
@@ -93,7 +85,6 @@ pub fn generate_spawn_candidate(group: &Group, rng: &mut DeterministicRng) -> Ra
         y: cy + axis_delta(hh, rng),
     }
 }
-
 
 /// Original placement acceptance test (`KONUNG_SOURCE_OF_TRUTH.md` §3/§16/§23.4):
 /// the candidate is a runtime/entity/collision coordinate; it is accepted only
@@ -105,7 +96,6 @@ pub fn validate_spawn_candidate(x: i32, y: i32, collision: &[u16]) -> bool {
     let idx = x as usize * 160 + y as usize;
     idx < collision.len() && (collision[idx] & 0x0FFF) == 0
 }
-
 
 /// Placement loop with an injected acceptance predicate. Keeps the original
 /// maximum of 100 attempts and never falls back to the rectangle center.
@@ -125,7 +115,6 @@ pub fn place_with<F: FnMut(RawSpawnCoord) -> bool>(
     })
 }
 
-
 /// Place one entity using the original collision acceptance test.
 pub fn place_entity(
     group: &Group,
@@ -141,7 +130,6 @@ pub fn place_entity(
 // Citizen AI / movement (`FUN_004168a4`, `FUN_00413a84`, `FUN_004142d4`, ...)
 // ---------------------------------------------------------------------------
 
-
 /// A `(0,0)` entity that could not be placed after [`MAX_ATTEMPTS`] attempts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FailedPlacement {
@@ -150,7 +138,6 @@ pub struct FailedPlacement {
     pub spawn_rect: Rect,
     pub attempts: u8,
 }
-
 
 /// Result of building one location's population.
 #[derive(Clone, Debug, Default)]
@@ -177,7 +164,6 @@ pub struct PopulationBuild {
     /// Sub-tick accumulator for the [`LOGIC_TICK_HZ`] fixed step.
     pub(super) tick_accum: f64,
 }
-
 
 /// Select, and (for `(0,0)` records) place, the current location's population.
 /// Pure: `tables` is never mutated. Deterministic per location. Runtime
@@ -272,15 +258,12 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
     out
 }
 
-
 impl PopulationBuild {
     pub fn persisted_position_actors(&self) -> usize {
         self.actors.iter().filter(|a| !a.is_runtime()).count()
     }
 
-
     pub fn runtime_positioned(&self) -> usize {
         self.actors.iter().filter(|a| a.is_runtime()).count()
     }
-
 }

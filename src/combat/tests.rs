@@ -279,10 +279,7 @@ fn bow_lifetime_and_ranged_damage_match_the_original() {
     // No modifier: rating * rating.
     assert_eq!(ranged_damage(&db, &bow, 0x55), (112 * 112, 0));
     // Modifier 1 matches ants: 5000 * 112.
-    let modified = BowShot {
-        modifier: 1,
-        ..bow
-    };
+    let modified = BowShot { modifier: 1, ..bow };
     assert_eq!(ranged_damage(&db, &modified, 0x55), (5000 * 112, 0));
     assert_eq!(ranged_damage(&db, &modified, 0x41), (112 * 112, 0));
 }
@@ -365,7 +362,10 @@ fn arrow_carrying_mob_inventory_reaches_the_corpse_plan() {
         0,
         0,
     );
-    assert!(plan.existing.contains(&102), "30-arrow stack must be lootable");
+    assert!(
+        plan.existing.contains(&102),
+        "30-arrow stack must be lootable"
+    );
 }
 
 #[test]
@@ -402,8 +402,17 @@ fn player_stats_view_maps_the_authored_fields() {
         raw_0x12: 2,
         flags_b: 0,
         dead: false,
+        temp_effect_timer: 0,
+        temp_effect_id: 0,
+        saved_dexterity: 0,
+        saved_charisma: 0,
+        saved_strength: 0,
+        saved_endurance: 0,
     };
     let s = CombatStats::from_player(&p);
-    assert_eq!((s.hp, s.strength, s.dexterity, s.endurance), (1600, 15, 10, 10));
+    assert_eq!(
+        (s.hp, s.strength, s.dexterity, s.endurance),
+        (1600, 15, 10, 10)
+    );
     assert_eq!(s.periodic_damage, 3);
 }

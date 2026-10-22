@@ -1,4 +1,4 @@
-﻿//! Centralised diagnostic-tooling constants (extracted from `abi/debug.rs`).
+//! Centralised diagnostic-tooling constants (extracted from `abi/debug.rs`).
 
 /// HUD preview checkerboard cell size in pixels.
 pub const HUD_PREVIEW_CHECKER_CELL: usize = 16;
@@ -14,4 +14,3 @@ pub const HUD_PREVIEW_800: (u32, u32) = (800, 600);
 
 /// INTR variant selector value for the 640 profile (anything else = 800).
 pub const INTR_VARIANT_640: u32 = 640;
-

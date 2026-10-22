@@ -10,7 +10,6 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
     p
 }
 
-
 #[no_mangle]
 pub extern "C" fn dealloc(ptr: *mut u8, len: u32) {
     if ptr.is_null() {
@@ -25,7 +24,6 @@ pub extern "C" fn dealloc(ptr: *mut u8, len: u32) {
 // Resource loading
 // --------------------------------------------------------------------------
 
-
 #[inline]
 pub unsafe fn take_bytes(ptr: *mut u8, len: u32) -> Vec<u8> {
     std::slice::from_raw_parts(ptr, len as usize).to_vec()
@@ -34,5 +32,3 @@ pub unsafe fn take_bytes(ptr: *mut u8, len: u32) -> Vec<u8> {
 // --------------------------------------------------------------------------
 // Memory
 // --------------------------------------------------------------------------
-
-

@@ -6,17 +6,25 @@ impl PlayableApp {
     /// Route to an acceptable (passable) point using the original pathfinder
     /// (`FUN_0043DA1F`). Returns `None` when the goal is blocked, out of bounds
     /// or unreachable — the original issues no movement command then.
-    pub(super) fn compute_player_path(&self, start: (i32, i32), goal: (i32, i32)) -> Option<Vec<u8>> {
+    pub(super) fn compute_player_path(
+        &self,
+        start: (i32, i32),
+        goal: (i32, i32),
+    ) -> Option<Vec<u8>> {
         let l = self.world.loc(self.current_map)?;
         find_path(
             &l.collision,
             &HashSet::new(),
             start,
             goal,
-            (0, 0, crate::coords::RUNTIME_W - 1, crate::coords::RUNTIME_H - 1),
+            (
+                0,
+                0,
+                crate::coords::RUNTIME_W - 1,
+                crate::coords::RUNTIME_H - 1,
+            ),
         )
     }
-
 
     /// Begin the next walk segment exactly like the original `FUN_0041435C`:
     /// take the draw projection (`+0xE8`) from the CURRENT cell at entry, then
@@ -29,15 +37,17 @@ impl PlayableApp {
         self.player_render_x = self.player_x;
         self.player_render_y = self.player_y;
         self.player_dir = dir as i32;
-        let (nx, ny) =
-            step_by_direction(self.player_x.round() as i32, self.player_y.round() as i32, dir);
+        let (nx, ny) = step_by_direction(
+            self.player_x.round() as i32,
+            self.player_y.round() as i32,
+            dir,
+        );
         self.player_x = nx as f64;
         self.player_y = ny as f64;
         self.player_path.remove(0);
         self.player_step_t = 0.0;
         self.player_active = true;
     }
-
 
     /// The runtime/entity cell under a window-space pointer, or `None` when the
     /// pointer is outside the play view.
@@ -83,7 +93,6 @@ impl PlayableApp {
 
     // --- update ---
 
-
     /// Advance the current location's non-player actors (citizen wander) at the
     /// fixed logic rate. Uses split borrows so the world collision table and the
     /// mutable population cache are accessed simultaneously.
@@ -98,11 +107,13 @@ impl PlayableApp {
         let Some(pop) = population_cache.get_mut(&loc) else {
             return;
         };
-        let collision = world.loc(loc).map(|l| l.collision.as_slice()).unwrap_or(&[]);
+        let collision = world
+            .loc(loc)
+            .map(|l| l.collision.as_slice())
+            .unwrap_or(&[]);
         let settlement = settlements.iter().find(|s| s.loc_id as u32 == loc);
         update_population(pop, collision, settlement, dt);
     }
-
 
     /// Seconds per player cell step: one collision cell per completed
     /// walk-animation cycle (`FUN_0041435c` state 1/7 + `FUN_00413de4`). Cycle
@@ -110,7 +121,6 @@ impl PlayableApp {
     pub(super) fn player_cell_period(&self) -> f64 {
         (self.player_walk_frames() / LOGIC_TICK_HZ).max(1.0 / LOGIC_TICK_HZ)
     }
-
 
     pub(super) fn player_walk_frames(&self) -> f64 {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
@@ -132,7 +142,6 @@ impl PlayableApp {
             None => 8.0,
         }
     }
-
 
     pub(super) fn update_player(&mut self, dt: f64) {
         if self.player.dead {
@@ -165,8 +174,7 @@ impl PlayableApp {
                     self.player_render_y = self.player_y;
                     if let Some((tx, ty)) = self.target {
                         let goal = (tx.round() as i32, ty.round() as i32);
-                        let cur =
-                            (self.player_x.round() as i32, self.player_y.round() as i32);
+                        let cur = (self.player_x.round() as i32, self.player_y.round() as i32);
                         if cur == goal {
                             // Right-click interaction arrival: `FUN_00421B50`
                             // only calls the pickup handler when `+0x03 & 0x40`
@@ -262,7 +270,6 @@ impl PlayableApp {
         }
     }
 
-
     /// Resolve the protagonist through the canonical Entity visual path with
     /// movement animation. The active action is the original stance pair
     /// (`FUN_004142D4`/`FUN_00414A34`): walk `1`/`7` while moving, idle `0`/`6`
@@ -280,10 +287,7 @@ impl PlayableApp {
                 self.player_death_frame as usize,
             )
         } else if !moving && !self.player_active && self.player_attack_ranged {
-            (
-                crate::anim::ACT_RANGED,
-                self.player_ranged_frame as usize,
-            )
+            (crate::anim::ACT_RANGED, self.player_ranged_frame as usize)
         } else if !moving && !self.player_active && self.player_attack_target.is_some() {
             (
                 crate::anim::attack_action(battle),
@@ -309,7 +313,6 @@ impl PlayableApp {
             fi,
         )
     }
-
 
     /// Protagonist sprite frame for `action`, driven by the original 60 ms
     /// fixed step (`actors::LOGIC_TICK_HZ`): the walk cycle is the cell-step
@@ -339,6 +342,4 @@ impl PlayableApp {
     }
 
     // --- labels ---
-
-
 }

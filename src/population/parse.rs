@@ -42,7 +42,6 @@ pub fn parse_groups(data: &[u8]) -> Result<Vec<Group>, String> {
     Ok(groups)
 }
 
-
 /// Parse the Entity table. Fails loudly on a truncated file.
 pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
     if data.len() < ENTITY_END {
@@ -82,6 +81,12 @@ pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
             strength_current: u16(b, 0x60) as u16,
             endurance_base: u16(b, 0x62) as u16,
             endurance_current: u16(b, 0x64) as u16,
+            saved_dexterity: u16(b, 0xBC) as u16,
+            saved_charisma: u16(b, 0xBE) as u16,
+            saved_strength: u16(b, 0xC0) as u16,
+            saved_endurance: u16(b, 0xC2) as u16,
+            temp_effect_id: u16(b, 0xCA) as u16,
+            temp_effect_timer: u16(b, 0xCE) as u16,
         };
         let mut equipment = [0u16; 6];
         for (i, slot) in equipment.iter_mut().enumerate() {
@@ -121,14 +126,12 @@ pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
     Ok(entities)
 }
 
-
 /// Parse both Group and Entity tables.
 pub fn parse_tables(data: &[u8]) -> Result<GameTables, String> {
     let groups = parse_groups(data)?;
     let entities = parse_entities(data)?;
     Ok(GameTables { groups, entities })
 }
-
 
 /// Enumerate every group whose `loc_id` matches, preserving source group/entity
 /// ids and listing every entity in `first_entity .. first_entity+entity_count`.
@@ -155,7 +158,6 @@ pub fn diagnose_location(tables: &GameTables, loc_id: u8) -> Vec<GroupReport> {
     out
 }
 
-
 /// Entities selected by the original location setup semantics: group index >= 1
 /// and `Group +0x1E != 0` (`KONUNG_SOURCE_OF_TRUTH.md` §4.2). Group 0 is
 /// reserved and excluded. Invalid ranges contribute nothing.
@@ -174,7 +176,6 @@ pub fn active_entities(tables: &GameTables, loc_id: u8) -> Vec<Entity> {
 }
 
 // --- Settlement / citizen waypoint table (`KONUNG_SOURCE_OF_TRUTH.md` §14) ---
-
 
 /// Parse the `Settlement[20]` table and its per-record waypoint lists. The
 /// waypoint list ends at the first all-zero 8-byte entry.
@@ -222,7 +223,12 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
             if facing == 0 && owner == 0 && x == 0 && y == 0 {
                 break;
             }
-            waypoints.push(Waypoint { facing, owner, x, y });
+            waypoints.push(Waypoint {
+                facing,
+                owner,
+                x,
+                y,
+            });
         }
         out.push(Settlement {
             index,
@@ -235,5 +241,3 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
     }
     Ok(out)
 }
-
-

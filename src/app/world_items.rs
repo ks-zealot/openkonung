@@ -40,12 +40,7 @@ impl PlayableApp {
             if source.loc as u32 != loc || !source.active_at(now) || source.money < 0 {
                 continue;
             }
-            let items: Vec<u16> = source
-                .items
-                .iter()
-                .copied()
-                .filter(|&id| id != 0)
-                .collect();
+            let items: Vec<u16> = source.items.iter().copied().filter(|&id| id != 0).collect();
             if items.is_empty() && source.money == 0 {
                 continue;
             }
@@ -66,10 +61,7 @@ impl PlayableApp {
     /// Run the original pickup/interaction handler for the protagonist when
     /// the arrival cell contains an active WorldObject.
     pub(super) fn try_pickup_here(&mut self) {
-        let cell = (
-            self.player_x.round() as i32,
-            self.player_y.round() as i32,
-        );
+        let cell = (self.player_x.round() as i32, self.player_y.round() as i32);
         let Some(index) = self
             .active_world_objects
             .iter()
@@ -94,8 +86,7 @@ impl PlayableApp {
             return;
         }
 
-        let threshold =
-            10_000u32 + (self.player.endurance_base as u32 * 1000) / 3;
+        let threshold = 10_000u32 + (self.player.endurance_base as u32 * 1000) / 3;
         let mut weight = self.carried_weight();
         let mut transferred = 0usize;
 
@@ -104,27 +95,36 @@ impl PlayableApp {
                 Some(id) if id != 0 => id,
                 _ => break,
             };
-            // `0x4111a2`: 32 inventory slots, `0` = empty.
-            if !self.player.inventory.contains(&0) {
-                self.set_pickup_message("Мешок у тебя не резиновый!");
-                break;
-            }
-            let item_weight = self
-                .world
-                .res
-                .item_info(item)
-                .map(|i| i.weight as u32)
-                .unwrap_or(0);
+            let item_weight = crate::inventory::item_weight(&self.world.res, item);
             // `0x4111f3..0x411216`: strict `threshold < weight` failure.
             if threshold < weight.saturating_add(item_weight) {
                 self.set_pickup_message("Превышен вес");
                 break;
             }
-            // Insert at slot 0 and shift the rest up (`0x41125b..0x41129e`).
-            for i in (0..self.player.inventory.len() - 1).rev() {
-                self.player.inventory[i + 1] = self.player.inventory[i];
+            // Class-12 ammo merges into an existing stack; everything else is
+            // inserted at slot 0 and shifts the rest up (`0x41125b..0x41129e`).
+            let stacked;
+            {
+                let PlayableApp { world, player, .. } = self;
+                let mut slots = crate::inventory::SlotsMut {
+                    equipment: &mut player.equipment,
+                    inventory: &mut player.inventory,
+                    additional: &mut player.additional_equipment,
+                    special: &mut player.special_equipment,
+                };
+                stacked = crate::inventory::try_stack_ammo(&mut world.res, &mut slots, item);
             }
-            self.player.inventory[0] = item;
+            if !stacked {
+                // `0x4111a2`: 32 inventory slots, `0` = empty.
+                if !self.player.inventory.contains(&0) {
+                    self.set_pickup_message("Мешок у тебя не резиновый!");
+                    break;
+                }
+                for i in (0..self.player.inventory.len() - 1).rev() {
+                    self.player.inventory[i + 1] = self.player.inventory[i];
+                }
+                self.player.inventory[0] = item;
+            }
             weight += item_weight;
             transferred += 1;
             // Pop the item from the runtime pile (`memmove +0x14..`).
@@ -140,10 +140,7 @@ impl PlayableApp {
 
         // Refresh the ground sprite after a partial transfer.
         if !self.active_world_objects[index].items.is_empty() {
-            let first = self.active_world_objects[index]
-                .items
-                .first()
-                .copied();
+            let first = self.active_world_objects[index].items.first().copied();
             let info = first.and_then(|id| self.world.res.item_info(id));
             let obj = &mut self.active_world_objects[index];
             obj.sprite = world_object_sprite(info, &obj.items, obj.money);
@@ -219,9 +216,7 @@ impl PlayableApp {
             .iter_mut()
             .find(|s| s.loc == loc && s.x == x && s.y == y)
         {
-            existing.money = existing
-                .money
-                .saturating_add(money);
+            existing.money = existing.money.saturating_add(money);
             let mut slot = 0usize;
             for id in items.iter().copied().filter(|&id| id != 0) {
                 while slot < WORLD_OBJECT_ITEM_SLOTS && existing.items[slot] != 0 {
@@ -288,33 +283,22 @@ impl PlayableApp {
         }
     }
 
-    fn set_pickup_message(&mut self, message: &str) {
+    pub(super) fn set_pickup_message(&mut self, message: &str) {
         self.pickup_message = Some(message.to_string());
         self.pickup_message_t = 3.0;
     }
 
     /// `FUN_0041B7E4`: sum of every carried item's weight.
     fn carried_weight(&self) -> u32 {
-        self.player
-            .equipment
-            .iter()
-            .chain(self.player.additional_equipment.iter())
-            .chain(self.player.inventory.iter())
-            .chain(std::iter::once(&self.player.special_equipment))
-            .filter(|&&id| id != 0)
-            .filter_map(|&id| self.world.res.item_info(id))
-            .map(|i| i.weight as u32)
-            .sum()
+        self.slots(crate::inventory::InventoryOwner::Protagonist)
+            .map(|slots| crate::inventory::carried_weight(&self.world.res, &slots))
+            .unwrap_or(0)
     }
 }
 
 /// `FUN_00438CC8`: a record with exactly one item and no money uses that
 /// item's world sprite; anything else uses the generic loot icon.
-fn world_object_sprite(
-    first: Option<crate::item::ItemInfo>,
-    items: &[u16],
-    money: i16,
-) -> u16 {
+fn world_object_sprite(first: Option<crate::item::ItemInfo>, items: &[u16], money: i16) -> u16 {
     if items.len() == 1 && money == 0 {
         first
             .map(|i| i.world_sprite)

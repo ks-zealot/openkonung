@@ -1,6 +1,7 @@
 //! Unit tests for the [`crate::app`] module.
 
 mod common;
+mod inventory;
 mod movement;
 mod party;
 mod portals;

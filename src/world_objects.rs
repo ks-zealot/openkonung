@@ -17,9 +17,7 @@
 //! set to `-frame`. `FUN_0043ADF0` accepts it again once
 //! `now - deactivated >= 0x1518` frames (5400 frames = 324 s at 60 ms).
 
-use crate::constants::game_layout::{
-    WORLD_OBJECT_COUNT, WORLD_OBJECT_OFF, WORLD_OBJECT_STRIDE,
-};
+use crate::constants::game_layout::{WORLD_OBJECT_COUNT, WORLD_OBJECT_OFF, WORLD_OBJECT_STRIDE};
 use crate::res::{i16, u16};
 
 /// Item slots in one WorldObject record.
@@ -181,8 +179,7 @@ mod tests {
         let mut loc4 = 0usize;
         for s in &sources {
             if !s.is_respawning_herb(|id| {
-                crate::item::ItemDb::decode_instance(&game, id)
-                    .map(|i| (i.class, i.subtype))
+                crate::item::ItemDb::decode_instance(&game, id).map(|i| (i.class, i.subtype))
             }) {
                 continue;
             }

@@ -19,10 +19,11 @@
 //! - The paper doll is `FUN_0042ea6c`: a 160×160 render of the live body frame
 //!   plus every equipped GRAPH overlay, blitted at the original position table
 //!   (`0x46035C`/`0x460360`: 640 → (470,127), 800 → (570,160)).
-//!
-//! Read-only: no equipment/attribute mutation.
+//! - The held item is hidden from the equipment slots and previewed at
+//!   `(167,322)` @640 / `(215,393)` @800 (`0x465C44`/`0x465C48`).
 
-use crate::character::{stat_cost, PlayerCharacter, PrimaryStat};
+use crate::character::{stat_cost, CharacterClass, PrimaryStat};
+use crate::inventory::{item_weight, OwnerSnapshot};
 use crate::res::{blit, Res};
 
 /// `INTR` index of the character-window background.
@@ -37,11 +38,32 @@ pub struct PaperDollPose {
     pub frame: usize,
 }
 
+/// Everything the screen needs to render one protagonist or companion.
+#[derive(Clone, Debug, Default)]
+pub struct CharacterSheet {
+    pub name_id: u8,
+    pub class: u8,
+    pub equipment: [u16; 6],
+    pub additional: [u16; 5],
+    pub special: u16,
+    pub inventory: [u16; 32],
+    pub raw_0x12: u8,
+    pub flags_b: u8,
+    pub visual_index: u8,
+    pub palette_id: i32,
+    pub snapshot: OwnerSnapshot,
+    pub pose: PaperDollPose,
+}
+
 /// Paper-doll top-left in logical screen coordinates. The original reads these
 /// from `konung.res` DGROUP VA `0x46035C` / `0x460360` with stride `0x10`
 /// (selector 0 = 640x480, selector 1 = 800x600).
 const PAPER_DOLL_POS_640: (i32, i32) = (470, 127);
 const PAPER_DOLL_POS_800: (i32, i32) = (570, 160);
+
+/// Held-item preview centre (`0x465C44` / `0x465C48`).
+const HELD_POS_640: (i32, i32) = (167, 322);
+const HELD_POS_800: (i32, i32) = (215, 393);
 
 pub fn paper_doll_position(logical_w: i32) -> (i32, i32) {
     if resolution_selector(logical_w) == 0 {
@@ -90,20 +112,8 @@ const MAIN_640: [(i32, i32); 6] = [
 ];
 
 /// Additional-equipment slot centers.
-const ADDITIONAL_800: [(i32, i32); 5] = [
-    (232, 74),
-    (214, 190),
-    (367, 190),
-    (248, 215),
-    (334, 215),
-];
-const ADDITIONAL_640: [(i32, i32); 5] = [
-    (181, 44),
-    (166, 157),
-    (317, 157),
-    (199, 182),
-    (284, 182),
-];
+const ADDITIONAL_800: [(i32, i32); 5] = [(232, 74), (214, 190), (367, 190), (248, 215), (334, 215)];
+const ADDITIONAL_640: [(i32, i32); 5] = [(181, 44), (166, 157), (317, 157), (199, 182), (284, 182)];
 
 /// Special-equipment top-left.
 const SPECIAL_800: (i32, i32) = (295, 232);
@@ -114,7 +124,11 @@ pub fn main_base(sel: usize, slot: usize) -> (i32, i32) {
     table[slot.min(5)]
 }
 pub fn additional_center(sel: usize, slot: usize) -> (i32, i32) {
-    let table = if sel == 0 { &ADDITIONAL_640 } else { &ADDITIONAL_800 };
+    let table = if sel == 0 {
+        &ADDITIONAL_640
+    } else {
+        &ADDITIONAL_800
+    };
     table[slot.min(4)]
 }
 pub fn special_base(sel: usize) -> (i32, i32) {
@@ -123,6 +137,52 @@ pub fn special_base(sel: usize) -> (i32, i32) {
     } else {
         SPECIAL_800
     }
+}
+
+/// One clickable region of the character screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScreenHit {
+    Main(usize),
+    Additional(usize),
+    Special,
+    Inventory(usize),
+    None,
+}
+
+/// Hit-test the character screen (main/additional/special slots and the bottom
+/// inventory strip). The original mode-3 hit tables are not recovered; the cell
+/// rectangles are the recovered draw positions (documented approximation).
+pub fn hit_test(x: i32, y: i32, logical_w: i32, equipment: &[u16; 6], raw_0x12: u8) -> ScreenHit {
+    let sel = resolution_selector(logical_w);
+    for slot in 0..6 {
+        if !main_slot_drawn(equipment, raw_0x12, slot) {
+            continue;
+        }
+        let (bx, by) = main_base(sel, slot);
+        if x >= bx && x < bx + MAIN_CELL && y >= by && y < by + MAIN_CELL {
+            return ScreenHit::Main(slot);
+        }
+    }
+    for slot in 0..5 {
+        let (cx, cy) = additional_center(sel, slot);
+        let half = MAIN_CELL / 2;
+        if x >= cx - half && x < cx + half && y >= cy - half && y < cy + half {
+            return ScreenHit::Additional(slot);
+        }
+    }
+    let (sx, sy) = special_base(sel);
+    if x >= sx && x < sx + MAIN_CELL && y >= sy && y < sy + MAIN_CELL {
+        return ScreenHit::Special;
+    }
+    let l = crate::hud::layout(logical_w);
+    for slot in 0..l.visible_slots {
+        if let Some(r) = l.inventory_slot_rect(slot, 70) {
+            if r.contains(x, y) {
+                return ScreenHit::Inventory(slot);
+            }
+        }
+    }
+    ScreenHit::None
 }
 
 /// Width of the inventory slot cell used by the main-equipment centering:
@@ -147,15 +207,15 @@ pub fn main_slot_drawn(equipment: &[u16; 6], raw_0x12: u8, slot: usize) -> bool 
     }
 }
 
-/// Draw the character screen over the current frame. The caller guarantees the
-/// protagonist exists and is the only party member.
+/// Draw the character screen over the current frame.
 pub fn draw(
     frame: &mut [u8],
     fw: usize,
     fh: usize,
     res: &mut Res,
-    player: &PlayerCharacter,
-    doll: PaperDollPose,
+    sheet: &CharacterSheet,
+    held: Option<u16>,
+    _cursor: (i32, i32),
 ) {
     let logical_w = fw as i32;
     let (wx, wy, _ww, _wh) = window_rect(logical_w);
@@ -168,10 +228,14 @@ pub fn draw(
 
     // Main equipment (6 storage slots).
     for slot in 0..6 {
-        if !main_slot_drawn(&player.equipment, player.raw_0x12, slot) {
+        if !main_slot_drawn(&sheet.equipment, sheet.raw_0x12, slot) {
             continue;
         }
-        let Some(info) = res.item_info(player.equipment[slot]) else {
+        let id = sheet.equipment[slot];
+        if Some(id) == held {
+            continue;
+        }
+        let Some(info) = res.item_info(id) else {
             continue;
         };
         let Some(icon) = res.intr_sprite(info.icon as usize) else {
@@ -184,11 +248,13 @@ pub fn draw(
 
     // Additional equipment (5 slots), centered.
     for slot in 0..5 {
-        let id = player.additional_equipment[slot];
-        if id == 0 {
+        let id = sheet.additional[slot];
+        if id == 0 || Some(id) == held {
             continue;
         }
-        let Some(info) = res.item_info(id) else { continue };
+        let Some(info) = res.item_info(id) else {
+            continue;
+        };
         let Some(icon) = res.intr_sprite(info.icon as usize) else {
             continue;
         };
@@ -199,8 +265,8 @@ pub fn draw(
     }
 
     // Special equipment (top-left direct).
-    if player.special_equipment != 0 {
-        if let Some(info) = res.item_info(player.special_equipment) {
+    if sheet.special != 0 && Some(sheet.special) != held {
+        if let Some(info) = res.item_info(sheet.special) {
             if let Some(icon) = res.intr_sprite(info.icon as usize) {
                 let (x, y) = special_base(sel);
                 blit(frame, fw, fh, &icon.data, icon.w, icon.h, x, y);
@@ -209,11 +275,29 @@ pub fn draw(
     }
 
     // Original paper doll (`FUN_0042ea6c`): live body frame + all equipped
-    // overlays, including the battle "in hand" weapon variant. It is drawn
-    // before the stats text, matching the original sprite/text queue order.
-    draw_paper_doll(frame, fw, fh, res, player, doll, logical_w);
+    // overlays, including the battle "in hand" weapon variant.
+    draw_paper_doll(frame, fw, fh, res, sheet, logical_w);
 
-    draw_text(frame, fw, fh, res, player, sel);
+    // Held item preview (`0x465C44` / `0x465C48`).
+    if let Some(id) = held {
+        if let Some(info) = res.item_info(id) {
+            if let Some(icon) = res.intr_sprite(info.icon as usize) {
+                let (cx, cy) = if sel == 0 { HELD_POS_640 } else { HELD_POS_800 };
+                blit(
+                    frame,
+                    fw,
+                    fh,
+                    &icon.data,
+                    icon.w,
+                    icon.h,
+                    cx - icon.w as i32 / 2,
+                    cy - icon.h as i32 / 2,
+                );
+            }
+        }
+    }
+
+    draw_text(frame, fw, fh, res, sheet, sel);
 }
 
 /// Render the original 160x160 paper doll into the character window.
@@ -222,20 +306,19 @@ fn draw_paper_doll(
     fw: usize,
     fh: usize,
     res: &mut Res,
-    player: &PlayerCharacter,
-    pose: PaperDollPose,
+    sheet: &CharacterSheet,
     logical_w: i32,
 ) {
-    let battle = crate::anim::battle_from_flags(player.flags_b);
+    let battle = crate::anim::battle_from_flags(sheet.flags_b);
     let Some(doll) = res.paper_doll_frame(
-        &player.equipment,
-        player.raw_0x12,
+        &sheet.equipment,
+        sheet.raw_0x12,
         battle,
-        player.hero.visual_index as usize,
-        player.hero.palette_id(),
-        pose.action,
-        pose.direction as usize,
-        pose.frame,
+        sheet.visual_index as usize,
+        sheet.palette_id,
+        sheet.pose.action,
+        sheet.pose.direction as usize,
+        sheet.pose.frame,
     ) else {
         return;
     };
@@ -258,17 +341,15 @@ fn draw_text(
     fw: usize,
     fh: usize,
     res: &mut Res,
-    player: &PlayerCharacter,
+    sheet: &CharacterSheet,
     sel: usize,
 ) {
-    let Some(name) = res.character_name(player.hero.name_id) else {
+    let Some(name) = res.character_name(sheet.name_id) else {
         // Still draw the rest of the screen if the name table is unavailable.
-        return draw_stats(frame, fw, fh, res, player);
+        return draw_stats(frame, fw, fh, res, sheet);
     };
     // The original uses the large font and centers the name/class.
     let center = text_center(fw as i32);
-    // Name y = height*10/640; class y = (delta + 14)*height/640 (VA 0x42D145
-    // and 0x42D207). `sel` selects the row of the class-offset table.
     let height = if fw <= 640 { 480 } else { 600 };
     let name_y = height * 10 / 640;
     let (class_a, class_b) = if sel == 0 { (110, 126) } else { (138, 158) };
@@ -276,13 +357,29 @@ fn draw_text(
 
     if let Some(font) = res.fonts.large.as_ref() {
         let w = font.measure(&name);
-        font.draw(frame, fw, fh, &name, center - w / 2, name_y, Some([235, 235, 210]));
-        if let Some(class) = res.class_name(player.entity_class()) {
+        font.draw(
+            frame,
+            fw,
+            fh,
+            &name,
+            center - w / 2,
+            name_y,
+            Some([235, 235, 210]),
+        );
+        if let Some(class) = res.class_name(sheet.class) {
             let w = font.measure(&class);
-            font.draw(frame, fw, fh, &class, center - w / 2, class_y, Some([235, 235, 210]));
+            font.draw(
+                frame,
+                fw,
+                fh,
+                &class,
+                center - w / 2,
+                class_y,
+                Some([235, 235, 210]),
+            );
         }
     }
-    draw_stats(frame, fw, fh, res, player);
+    draw_stats(frame, fw, fh, res, sheet);
 }
 
 /// Per-value `(x, y)` anchor tables, recovered from the original character-screen
@@ -298,22 +395,58 @@ fn draw_text(
 /// 5 Выносливость     11 Меткость          17 Строительство    23 Золото
 ///                                                             24 Свободный опыт
 /// ```
-///
-/// The records live at `0x465C54` as `{x640,y640,x800,y800}` (`u16` leaps of 16
-/// bytes); index 24 («Свободный опыт») draws x-centered on the `0x465B34` row 0
-/// and reuses this record only for its y.
 const VALUE_640: [(i32, i32); 25] = [
-    (413, 48), (415, 68), (532, 110), (532, 126), (532, 145), (532, 162),
-    (310, 281), (482, 110), (482, 126), (482, 145), (482, 162), (482, 179),
-    (482, 196), (567, 220), (567, 237), (567, 254), (567, 271), (567, 288),
-    (470, 320), (470, 340), (310, 298), (310, 315), (310, 332), (310, 349),
+    (413, 48),
+    (415, 68),
+    (532, 110),
+    (532, 126),
+    (532, 145),
+    (532, 162),
+    (310, 281),
+    (482, 110),
+    (482, 126),
+    (482, 145),
+    (482, 162),
+    (482, 179),
+    (482, 196),
+    (567, 220),
+    (567, 237),
+    (567, 254),
+    (567, 271),
+    (567, 288),
+    (470, 320),
+    (470, 340),
+    (310, 298),
+    (310, 315),
+    (310, 332),
+    (310, 349),
     (575, 50),
 ];
 const VALUE_800: [(i32, i32); 25] = [
-    (519, 63), (519, 86), (665, 138), (665, 158), (665, 181), (665, 203),
-    (388, 352), (602, 138), (602, 158), (602, 181), (602, 203), (602, 224),
-    (602, 245), (715, 275), (715, 296), (715, 318), (715, 339), (715, 360),
-    (588, 400), (588, 425), (388, 373), (388, 394), (388, 415), (388, 436),
+    (519, 63),
+    (519, 86),
+    (665, 138),
+    (665, 158),
+    (665, 181),
+    (665, 203),
+    (388, 352),
+    (602, 138),
+    (602, 158),
+    (602, 181),
+    (602, 203),
+    (602, 224),
+    (602, 245),
+    (715, 275),
+    (715, 296),
+    (715, 318),
+    (715, 339),
+    (715, 360),
+    (588, 400),
+    (588, 425),
+    (388, 373),
+    (388, 394),
+    (388, 415),
+    (388, 436),
     (700, 63),
 ];
 
@@ -322,116 +455,123 @@ const VALUE_800: [(i32, i32); 25] = [
 const TABLE2_640: [(i32, i32); 5] = [(578, 70), (573, 110), (573, 126), (573, 145), (573, 162)];
 const TABLE2_800: [(i32, i32); 5] = [(722, 89), (716, 138), (716, 158), (716, 181), (716, 203)];
 
+fn class_from_entity(class: u8) -> Option<CharacterClass> {
+    match class {
+        2 => Some(CharacterClass::Chief),
+        3 => Some(CharacterClass::Hunter),
+        4 => Some(CharacterClass::Merchant),
+        5 => Some(CharacterClass::Warrior),
+        _ => None,
+    }
+}
+
 /// Draw the dynamic values of the character screen. All coordinates are the
 /// original **absolute** screen anchors and the original **small** font
 /// (`0x58BC34`) is used, matching `FUN_0042cbd0` case 3 exactly.
-fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, player: &PlayerCharacter) {
+fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &CharacterSheet) {
     let Some(font) = res.fonts.small.as_ref() else {
         return;
     };
     let sel = resolution_selector(fw as i32);
     let va = |i: usize| if sel == 0 { VALUE_640[i] } else { VALUE_800[i] };
-    let t2 = |i: usize| if sel == 0 { TABLE2_640[i] } else { TABLE2_800[i] };
+    let t2 = |i: usize| {
+        if sel == 0 {
+            TABLE2_640[i]
+        } else {
+            TABLE2_800[i]
+        }
+    };
+    let s = &sheet.snapshot;
 
-    // Derived values with recovered original formulas.
     // «Текущий вес» = `FUN_0041b7e4`: sum of every carried item's weight.
-    let mut weight: u32 = 0;
-    for &id in player
+    let weight: u32 = sheet
         .equipment
         .iter()
-        .chain(player.additional_equipment.iter())
-        .chain(player.inventory.iter())
-        .chain(std::iter::once(&player.special_equipment))
-    {
-        if let Some(info) = res.item_info(id) {
-            weight += info.weight as u32;
-        }
-    }
-    // «Броня» = `FUN_0041ab7c`: base armor (`+0x4E`) plus the rating of the
-    // equipment slots 3..=5.
-    let mut armor = player.base_armor as u32;
+        .chain(sheet.additional.iter())
+        .chain(sheet.inventory.iter())
+        .chain(std::iter::once(&sheet.special))
+        .map(|&id| item_weight(res, id))
+        .sum();
+    // «Броня» = `FUN_0041ab7c`: base armor (`+0x4E`) plus equipment slots 3..=5.
+    let mut armor = s.base_armor as u32;
     for slot in 3..6 {
-        if let Some(info) = res.item_info(player.equipment[slot]) {
+        if let Some(info) = res.item_info(sheet.equipment[slot]) {
             armor += info.rating as u32;
         }
     }
-    // «Удар» = `FUN_0041aea8` normal path: the active weapon slot (`+0x12` in
-    // {0,2}) item rating. The unresolved x87 rounding term is omitted.
-    let attack = if player.raw_0x12 == 0 || player.raw_0x12 == 2 {
-        res.item_info(player.equipment[player.raw_0x12 as usize])
+    // «Удар» = `FUN_0041aea8` normal path: active weapon slot (`+0x12` in {0,2}).
+    let attack = if s.raw_0x12 == 0 || s.raw_0x12 == 2 {
+        res.item_info(sheet.equipment[s.raw_0x12 as usize])
             .map(|i| i.rating as u32)
             .unwrap_or(0)
     } else {
         0
     };
-    // «Здоровье» = `(hp_internal + 15) / 16`.
-    let health = (player.hp_internal as u32 + 15) / 16;
+    let health = (s.hp_internal as u32 + 15) / 16;
 
     let vals: [String; 25] = [
-        format!("{}", player.invested_xp),
-        format!("{}", player.level),
-        format!("{}", player.charisma_base),
-        format!("{}", player.strength_base),
-        format!("{}", player.dexterity_base),
-        format!("{}", player.endurance_base),
+        format!("{}", s.invested_xp),
+        format!("{}", s.level),
+        format!("{}", s.charisma_base),
+        format!("{}", s.strength_base),
+        format!("{}", s.dexterity_base),
+        format!("{}", s.endurance_base),
         format!("{}", health),
-        format!("{}", player.charisma_current),
-        format!("{}", player.strength_current),
-        format!("{}", player.dexterity_current),
-        format!("{}", player.endurance_current),
-        format!("{}", player.archery_mastery / 100),
-        format!("{}", player.melee_mastery / 100),
-        format!("{}", player.identification),
-        format!("{}", player.trade),
-        format!("{}", player.healing),
-        format!("{}", player.smithing),
-        format!("{}", player.building),
+        format!("{}", s.charisma_current),
+        format!("{}", s.strength_current),
+        format!("{}", s.dexterity_current),
+        format!("{}", s.endurance_current),
+        format!("{}", s.archery_mastery / 100),
+        format!("{}", s.melee_mastery / 100),
+        format!("{}", s.identification),
+        format!("{}", s.trade),
+        format!("{}", s.healing),
+        format!("{}", s.smithing),
+        format!("{}", s.building),
         format!("{:.1}", weight as f64 * 0.001),
-        format!("{:.1}", crate::character::max_load(player.endurance_base)),
-        format!("{}", player.periodic_damage),
+        format!("{:.1}", crate::character::max_load(s.endurance_base)),
+        format!("{}", s.periodic_damage),
         format!("{}", armor),
         format!("{}", attack),
-        format!("{}", player.money),
-        format!("{}", player.available_xp),
+        format!("{}", s.money),
+        format!("{}", s.available_xp),
     ];
 
-    for (i, s) in vals.iter().enumerate() {
+    for (i, text) in vals.iter().enumerate() {
         let color = Some([235, 235, 210]);
         if i == 24 {
-            // «Свободный опыт»: centered on the `0x465B34` row 0, y from this row.
             let (cx, _) = t2(0);
             let (_, y) = va(24);
-            let w = font.measure(s);
-            let _ = font.draw(frame, fw, fh, s, cx - w / 2, y, color);
+            let w = font.measure(text);
+            let _ = font.draw(frame, fw, fh, text, cx - w / 2, y, color);
         } else {
             let (x, y) = va(i);
-            let _ = font.draw(frame, fw, fh, s, x, y, color);
+            let _ = font.draw(frame, fw, fh, text, x, y, color);
         }
     }
 
     // «поднять» column (the 5-slot loop): `FUN_00410b08` returns the tier cost to
-    // raise the stat (`character::stat_cost`, identical to its table) when the
-    // player can afford it, else 0. Slot 0 («Модиф. уровень») is icon-only in the
-    // original and is not rendered here; the per-class requirement tables at
-    // `0x45B0AB` are not applied (unresolved).
-    for (slot, stat, value) in [
-        (1usize, PrimaryStat::Charisma, player.charisma_current),
-        (2, PrimaryStat::Strength, player.strength_current),
-        (3, PrimaryStat::Dexterity, player.dexterity_current),
-        (4, PrimaryStat::Endurance, player.endurance_current),
-    ] {
-        let cost = needed_raise(player.class, stat, value, player.available_xp);
-        if cost != 0 {
-            let (x, y) = t2(slot);
-            let s = format!("{}", cost);
-            let _ = font.draw(frame, fw, fh, &s, x, y, Some([235, 235, 210]));
+    // raise the stat (`character::stat_cost`) when the player can afford it.
+    if let Some(class) = class_from_entity(sheet.class) {
+        for (slot, stat, value) in [
+            (1usize, PrimaryStat::Charisma, s.charisma_current),
+            (2, PrimaryStat::Strength, s.strength_current),
+            (3, PrimaryStat::Dexterity, s.dexterity_current),
+            (4, PrimaryStat::Endurance, s.endurance_current),
+        ] {
+            let cost = needed_raise(class, stat, value, s.available_xp);
+            if cost != 0 {
+                let (x, y) = t2(slot);
+                let text = format!("{}", cost);
+                let _ = font.draw(frame, fw, fh, &text, x, y, Some([235, 235, 210]));
+            }
         }
     }
 }
 
 /// `FUN_00410b08` value for a non-specialized stat request: the cost returned by
 /// the tier table (`character::stat_cost`) when `available_xp` covers it, else 0.
-fn needed_raise(class: crate::character::CharacterClass, stat: PrimaryStat, value: u16, available_xp: u32) -> u32 {
+fn needed_raise(class: CharacterClass, stat: PrimaryStat, value: u16, available_xp: u32) -> u32 {
     let cost = stat_cost(class, stat, value);
     if available_xp >= cost {
         cost

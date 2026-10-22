@@ -13,7 +13,6 @@ pub fn action_name(a: MainMenuAction) -> &'static str {
     }
 }
 
-
 pub fn draw_image(frame: &mut [u8], fw: usize, fh: usize, img: &MenuImage, x: i32, y: i32) {
     blit(
         frame,
@@ -27,14 +26,30 @@ pub fn draw_image(frame: &mut [u8], fw: usize, fh: usize, img: &MenuImage, x: i3
     );
 }
 
-
 pub fn rect_outline(frame: &mut [u8], fw: usize, fh: usize, r: Rect, c: [u8; 4]) {
     fill_rect(frame, fw, fh, r.x as i32, r.y as i32, r.w as i32, 1, c);
-    fill_rect(frame, fw, fh, r.x as i32, r.y as i32 + r.h as i32 - 1, r.w as i32, 1, c);
+    fill_rect(
+        frame,
+        fw,
+        fh,
+        r.x as i32,
+        r.y as i32 + r.h as i32 - 1,
+        r.w as i32,
+        1,
+        c,
+    );
     fill_rect(frame, fw, fh, r.x as i32, r.y as i32, 1, r.h as i32, c);
-    fill_rect(frame, fw, fh, r.x as i32 + r.w as i32 - 1, r.y as i32, 1, r.h as i32, c);
+    fill_rect(
+        frame,
+        fw,
+        fh,
+        r.x as i32 + r.w as i32 - 1,
+        r.y as i32,
+        1,
+        r.h as i32,
+        c,
+    );
 }
-
 
 impl Frontend {
     /// Original Settings screen: `MENU{width}R.RES` image #1. Individual
@@ -52,7 +67,6 @@ impl Frontend {
             0,
         );
     }
-
 
     /// Original Save/Load screen (`SAVE{width}R.RES`): `#0` = "Загрузка игры"
     /// (Load) and `#1` = "Сохранение игры" (Save). Save-slot parsing/
@@ -73,11 +87,17 @@ impl Frontend {
         }
     }
 
-
     pub(super) fn draw_main_menu(&mut self) {
         let fw = self.res.width() as usize;
         let fh = self.res.height() as usize;
-        draw_image(&mut self.frame, fw, fh, &self.menu.images[MENU_IMAGE_A], 0, 0);
+        draw_image(
+            &mut self.frame,
+            fw,
+            fh,
+            &self.menu.images[MENU_IMAGE_A],
+            0,
+            0,
+        );
         for i in main_menu::visible_indices(self.game_active) {
             let def = &MAIN_MENU[i];
             let img = if self.hovered == Some(i) {
@@ -96,7 +116,6 @@ impl Frontend {
             );
         }
     }
-
 
     pub(super) fn draw_new_hero(&mut self) {
         let fw = self.res.width() as usize;
@@ -169,7 +188,6 @@ impl Frontend {
         }
     }
 
-
     /// Draw the dynamic stat/skill values with the original small font at the
     /// recovered `NEWH_DRAW` value-box rects (task R4.2). Labels are baked into
     /// `NEWH#0` and are never redrawn.
@@ -212,7 +230,6 @@ impl Frontend {
             );
         }
     }
-
 
     /// Debug overlay (key `K`): outlines every original hit rectangle and labels
     /// it with its region/button index. Off by default (task §30).
@@ -271,5 +288,4 @@ impl Frontend {
             ),
         });
     }
-
 }

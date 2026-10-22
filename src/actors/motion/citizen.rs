@@ -53,7 +53,10 @@ pub fn update_population(
                 a.entity.flags_a,
                 a.entity.kind,
                 a.entity.flags_b,
-                build.motion.get(&a.source_entity_id()).is_some_and(|m| m.citizen),
+                build
+                    .motion
+                    .get(&a.source_entity_id())
+                    .is_some_and(|m| m.citizen),
             )
         })
         .collect();
@@ -188,7 +191,8 @@ pub fn update_population(
                         m.render_cell = m.cell;
                         if m.target == Some(m.cell) {
                             m.target = None;
-                            m.wait = WANDER_WAIT_MIN + (build.rng.next_u32() % WANDER_WAIT_SPAN) as u16;
+                            m.wait =
+                                WANDER_WAIT_MIN + (build.rng.next_u32() % WANDER_WAIT_SPAN) as u16;
                         }
                     }
                 }

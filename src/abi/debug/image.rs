@@ -8,13 +8,11 @@ use crate::constants::debug::*;
 // Debug: decoded menu images (diagnostic tooling; same decoder as runtime)
 // --------------------------------------------------------------------------
 
-
 pub static mut DEBUG_IMAGE: Option<Vec<u8>> = None;
 
 pub static mut DEBUG_IMAGE_W: u32 = 0;
 
 pub static mut DEBUG_IMAGE_H: u32 = 0;
-
 
 /// Decode `kind` (menu RES family) image `index` into a static RGBA buffer and
 /// return 1 on success. Used by `tools/menu_png.mjs`; not used at runtime.
@@ -52,7 +50,6 @@ pub extern "C" fn debug_decode_menu_image(kind: u32, index: u32) -> u32 {
     1
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_image_ptr() -> *const u8 {
     match unsafe { &*addr_of!(DEBUG_IMAGE) } {
@@ -61,18 +58,15 @@ pub extern "C" fn debug_image_ptr() -> *const u8 {
     }
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_image_w() -> u32 {
     unsafe { DEBUG_IMAGE_W }
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_image_h() -> u32 {
     unsafe { DEBUG_IMAGE_H }
 }
-
 
 /// Decode INTR interface sprite `index` from `variant` (`640` or anything else
 /// = 800) into the shared debug RGBA buffer and return 1 on success. Used by
@@ -114,13 +108,11 @@ pub extern "C" fn debug_decode_intr_image(variant: u32, index: u32) -> u32 {
 // Debug: original mouse-cursor frames (diagnostic tooling; same decoder)
 // --------------------------------------------------------------------------
 
-
 /// Number of original cursor frames (11). Diagnostic only.
 #[no_mangle]
 pub extern "C" fn debug_cursor_count() -> u32 {
     res::CURSOR_COUNT as u32
 }
-
 
 /// Decode original mouse-cursor frame `i` (0..11) from the loaded `GRAPH.RES`
 /// into the shared debug RGBA buffer and return 1 on success. Used by

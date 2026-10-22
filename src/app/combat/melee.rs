@@ -31,15 +31,8 @@ impl PlayableApp {
         let (roll, armor) = {
             let res = &self.world.res;
             let db = res.item_db.as_ref()?;
-            let roll = combat::resolve_melee(
-                db,
-                &res.save_game,
-                &a,
-                af,
-                &d,
-                df,
-                &mut self.combat_rng,
-            );
+            let roll =
+                combat::resolve_melee(db, &res.save_game, &a, af, &d, df, &mut self.combat_rng);
             let armor = combat::armor_total(db, &res.save_game, &d);
             (roll, armor)
         };
@@ -89,5 +82,4 @@ impl PlayableApp {
     pub(super) fn is_adjacent(a: (i32, i32), b: (i32, i32)) -> bool {
         a != b && neighbors(a.0, a.1).iter().any(|&(_, x, y)| (x, y) == b)
     }
-
 }

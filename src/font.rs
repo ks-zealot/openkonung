@@ -35,12 +35,12 @@ use crate::menu_res::rgb555_to_rgba;
 use crate::names::char_to_cp866;
 use crate::res::u16 as rd_u16;
 
-pub use crate::constants::exe_tables::SMALL_FONT_OFF;
-pub use crate::constants::exe_tables::LARGE_FONT_OFF;
 pub use crate::constants::exe_tables::HIGHLIGHT_FONT_OFF;
+pub use crate::constants::exe_tables::LARGE_FONT_OFF;
+pub use crate::constants::exe_tables::SMALL_FONT_OFF;
 
-use crate::constants::exe_tables::FONT_DGROUP_VA;
 use crate::constants::exe_tables::FONT_DGROUP_FILE;
+use crate::constants::exe_tables::FONT_DGROUP_VA;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OriginalFont {

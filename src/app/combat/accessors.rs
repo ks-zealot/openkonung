@@ -7,7 +7,6 @@
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
 
-
 use super::super::*;
 use crate::combat::{self, CombatStats, CombatTarget};
 
@@ -15,8 +14,13 @@ impl PlayableApp {
     pub(super) fn combatant_stats(&self, t: CombatTarget) -> Option<CombatStats> {
         match t {
             CombatTarget::Player => Some(CombatStats::from_player(&self.player)),
-            CombatTarget::Party(i) => self.party.get(i).map(|m| CombatStats::from_entity(&m.entity)),
-            CombatTarget::World(id) => self.combatant_entity(id).map(|e| CombatStats::from_entity(&e)),
+            CombatTarget::Party(i) => self
+                .party
+                .get(i)
+                .map(|m| CombatStats::from_entity(&m.entity)),
+            CombatTarget::World(id) => self
+                .combatant_entity(id)
+                .map(|e| CombatStats::from_entity(&e)),
             CombatTarget::Prop(_) => None,
         }
     }
@@ -52,7 +56,9 @@ impl PlayableApp {
 
     pub(super) fn combatant_cell(&self, t: CombatTarget) -> Option<(i32, i32)> {
         match t {
-            CombatTarget::Player => Some((self.player_x.round() as i32, self.player_y.round() as i32)),
+            CombatTarget::Player => {
+                Some((self.player_x.round() as i32, self.player_y.round() as i32))
+            }
             CombatTarget::Party(i) => self.party.get(i).map(|m| m.motion.cell),
             CombatTarget::World(id) => self
                 .population_cache
@@ -237,12 +243,7 @@ impl PlayableApp {
             if id == 0 {
                 continue;
             }
-            let rating = self
-                .world
-                .res
-                .item_info(id)
-                .map(|i| i.rating)
-                .unwrap_or(0);
+            let rating = self.world.res.item_info(id).map(|i| i.rating).unwrap_or(0);
             if rating == 0 {
                 continue;
             }
@@ -294,5 +295,4 @@ impl PlayableApp {
             CombatTarget::Prop(_) => (0.0, 0.0),
         }
     }
-
 }

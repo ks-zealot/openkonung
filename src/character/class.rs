@@ -10,7 +10,6 @@ pub enum CharacterClass {
     Chief,
 }
 
-
 /// The four primary stat values a class preset initializes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClassPreset {
@@ -20,7 +19,6 @@ pub struct ClassPreset {
     pub endurance: u16,
 }
 
-
 /// The four primary stats (display order: Харизма, Сила, Ловкость, Выносливость).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrimaryStat {
@@ -29,7 +27,6 @@ pub enum PrimaryStat {
     Dexterity,
     Endurance,
 }
-
 
 /// Combat specialization: controls `melee_mastery`, `archery_mastery` and the
 /// derived `building`/`smithing` values.
@@ -42,7 +39,6 @@ pub enum CombatSpecialization {
     Marksmanship,
 }
 
-
 /// Civil specialization: controls `trade`, `healing`, `identification`.
 ///
 /// `KONUNG_SOURCE_OF_TRUTH.md` §0 label: **ORIGINAL-CODE VERIFIED** (New-Hero
@@ -53,7 +49,6 @@ pub enum CivilSpecialization {
     Trade,
     Healing,
 }
-
 
 /// Original primary-stat point cost tiers: `(cost, specialized_threshold,
 /// normal_threshold)`. For a current value `v`, the first row whose applicable
@@ -73,7 +68,6 @@ pub const STAT_TIERS: [(u32, u16, u16); 12] = [
     (200, 100, 80),
 ];
 
-
 /// Cost to raise `stat` by one at `value` (`999` when past the last finite tier).
 pub fn stat_cost(class: CharacterClass, stat: PrimaryStat, value: u16) -> u32 {
     let specialized = class.specialization() == stat;
@@ -86,14 +80,12 @@ pub fn stat_cost(class: CharacterClass, stat: PrimaryStat, value: u16) -> u32 {
     999
 }
 
-
 /// Original maximum-load calculation (`Entity+0x62` = `endurance_base`).
 /// Rendered with one decimal (`%4.1f`).
 pub fn max_load(endurance_base: u16) -> f64 {
     let raw = 10_000 + (endurance_base as i32 * 1000) / 3;
     raw as f64 * 0.001
 }
-
 
 /// Original maximum-party-size calculation (`Entity+0x04` = class,
 /// `Entity+0x58` = `charisma_base`).
@@ -115,7 +107,6 @@ pub fn max_party(class: CharacterClass, charisma: u16) -> u8 {
     i as u8
 }
 
-
 impl CharacterClass {
     /// All classes in enum order.
     pub const ALL: [CharacterClass; 4] = [
@@ -124,7 +115,6 @@ impl CharacterClass {
         CharacterClass::Merchant,
         CharacterClass::Chief,
     ];
-
 
     /// `Entity+0x04` class value.
     pub fn entity_class(self) -> u8 {
@@ -136,7 +126,6 @@ impl CharacterClass {
         }
     }
 
-
     pub fn name(self) -> &'static str {
         match self {
             CharacterClass::Warrior => "Warrior",
@@ -145,7 +134,6 @@ impl CharacterClass {
             CharacterClass::Chief => "Chief",
         }
     }
-
 
     /// Canonical original stat preset.
     pub fn preset(self) -> ClassPreset {
@@ -177,7 +165,6 @@ impl CharacterClass {
         }
     }
 
-
     /// Map a `NEWH_HIT_*` region to its class.
     ///
     /// `KONUNG_SOURCE_OF_TRUTH.md` §0 label: **ORIGINAL-CODE VERIFIED** — the
@@ -200,12 +187,10 @@ impl CharacterClass {
         }
     }
 
-
     /// The `NEWH_HIT_*` region that selects this class: `entity_class + 1`.
     pub fn region(self) -> usize {
         self.entity_class() as usize + 1
     }
-
 
     /// The primary stat this class is specialized in (cheaper to raise).
     ///
@@ -219,7 +204,6 @@ impl CharacterClass {
             CharacterClass::Warrior => PrimaryStat::Strength,
         }
     }
-
 }
 impl PrimaryStat {
     /// Display/`NEWH` order (regions 7..10 and stepper pairs 25..32).
@@ -230,7 +214,6 @@ impl PrimaryStat {
         PrimaryStat::Endurance,
     ];
 
-
     pub fn name(self) -> &'static str {
         match self {
             PrimaryStat::Charisma => "Charisma",
@@ -239,7 +222,6 @@ impl PrimaryStat {
             PrimaryStat::Endurance => "Endurance",
         }
     }
-
 }
 impl CombatSpecialization {
     pub fn name(self) -> &'static str {
@@ -248,7 +230,6 @@ impl CombatSpecialization {
             CombatSpecialization::Marksmanship => "Marksmanship",
         }
     }
-
 }
 impl CivilSpecialization {
     pub fn name(self) -> &'static str {
@@ -258,5 +239,4 @@ impl CivilSpecialization {
             CivilSpecialization::Healing => "Healing",
         }
     }
-
 }

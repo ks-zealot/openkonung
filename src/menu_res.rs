@@ -87,10 +87,7 @@ fn rd_u16(b: &[u8], o: usize) -> u16 {
 }
 
 fn rd_u32(b: &[u8], o: usize) -> u32 {
-    (b[o] as u32)
-        | ((b[o + 1] as u32) << 8)
-        | ((b[o + 2] as u32) << 16)
-        | ((b[o + 3] as u32) << 24)
+    (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24)
 }
 
 /// Exact RGB555 → 8-bit expansion (`bits 10..14` R, `5..9` G, `0..4` B).
@@ -140,9 +137,7 @@ fn decode_row(
                     source,
                     image,
                     row_off + q - 1,
-                    format!(
-                        "transparent run of {count} at x={x} exceeds image width {width}"
-                    ),
+                    format!("transparent run of {count} at x={x} exceeds image width {width}"),
                 ));
             }
             x += count;
@@ -190,7 +185,10 @@ fn decode_row(
             source,
             image,
             row_off + q,
-            format!("row {y} has {} trailing byte(s) after end-of-row", row.len() - q),
+            format!(
+                "row {y} has {} trailing byte(s) after end-of-row",
+                row.len() - q
+            ),
         ));
     }
     Ok(())

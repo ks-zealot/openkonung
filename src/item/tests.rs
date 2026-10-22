@@ -68,14 +68,20 @@ fn real_starting_item_mapping() {
     ];
     for (id, class, subtype, icon) in expected {
         let info = db.resolve(&game, id).unwrap_or_else(|| panic!("item {id}"));
-        assert_eq!((info.class, info.subtype), (class, subtype), "item {id} type");
+        assert_eq!(
+            (info.class, info.subtype),
+            (class, subtype),
+            "item {id} type"
+        );
         assert_eq!(info.icon, icon, "item {id} icon");
     }
 }
 
 #[test]
 fn real_starting_item_names() {
-    let Some((db, game)) = db_and_game() else { return };
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
     let n = |id| db.resolve(&game, id).unwrap().name;
     assert_eq!(n(1), "Нож");
     assert_eq!(n(2), "Правая часть амулета Дракона");
@@ -85,13 +91,11 @@ fn real_starting_item_names() {
 
 #[test]
 fn real_starting_item_weight_and_rating() {
-    let Some((db, game)) = db_and_game() else { return };
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
     // (item id, weight @ icon_base+0x00, combat value @ 0x459B7C + subtype*0x40)
-    let expected = [
-        (1u16, 200u16, 60u16),
-        (2, 100, 0),
-        (3, 500, 0),
-    ];
+    let expected = [(1u16, 200u16, 60u16), (2, 100, 0), (3, 500, 0)];
     for (id, weight, rating) in expected {
         let info = db.resolve(&game, id).unwrap_or_else(|| panic!("item {id}"));
         assert_eq!(info.weight, weight, "item {id} weight");
@@ -101,7 +105,9 @@ fn real_starting_item_weight_and_rating() {
 
 #[test]
 fn equipped_visual_field() {
-    let Some((db, game)) = db_and_game() else { return };
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
     let ov = |id| db.resolve(&game, id).unwrap().equipped_visual;
     // Game.1: id 1 = Нож (class2/sub18), id 288 = Нож, id 289 = Кольчуга.
     assert_eq!(ov(1), 4);
@@ -118,7 +124,7 @@ fn herb_world_sprites_match_the_original_ground_icons() {
     // `FUN_00438CC8` reads the world-sprite word at +4 of the class record.
     assert_eq!(db.info(9, 1).unwrap().world_sprite, 160); // Земляной орех
     assert_eq!(db.info(9, 2).unwrap().world_sprite, 168); // Белый корень
-    // Generic loot and stackable arrows.
+                                                          // Generic loot and stackable arrows.
     assert_eq!(db.info(9, 3).unwrap().world_sprite, 163);
     assert_eq!(db.info(12, 30).unwrap().world_sprite, 0x99);
     assert_eq!(db.info(10, 0).unwrap().world_sprite, 0xA3);

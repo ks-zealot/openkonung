@@ -25,10 +25,8 @@ use crate::res::{blit, Img, Res};
 #[cfg(test)]
 mod tests;
 
-
-mod layout;
 mod compose;
+mod layout;
 
-pub use self::layout::*;
 pub use self::compose::*;
-
+pub use self::layout::*;

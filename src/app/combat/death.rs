@@ -7,7 +7,6 @@
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
 
-
 use super::super::*;
 use crate::combat::CombatTarget;
 
@@ -85,7 +84,9 @@ impl PlayableApp {
                     )
                     .unwrap_or(1)
                     .min(u8::MAX as usize) as u8;
-                let cell = self.combatant_cell(CombatTarget::World(id)).unwrap_or((0, 0));
+                let cell = self
+                    .combatant_cell(CombatTarget::World(id))
+                    .unwrap_or((0, 0));
                 self.spawn_corpse_loot(&entity, cell, killer_level, bonus);
                 if let Some(pop) = self.population_cache.get_mut(&self.current_map) {
                     if let Some(a) = pop.actors.iter_mut().find(|a| a.entity.index == id) {

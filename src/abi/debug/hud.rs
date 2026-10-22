@@ -8,9 +8,7 @@ use crate::constants::debug::*;
 // Debug: isolated HUD preview (diagnostic tooling; same composer as runtime)
 // --------------------------------------------------------------------------
 
-
 pub static mut DEBUG_HUD: Option<(Vec<u8>, u32, u32)> = None;
-
 
 /// Compose the INTR HUD for `variant` (`640`, else 800) over a checkerboard into
 /// a static frame and return 1 on success. Lets `tools/frame_png.mjs` capture the
@@ -47,7 +45,11 @@ pub extern "C" fn debug_render_intr_hud(variant: u32) -> u32 {
     // Checkerboard so transparent HUD regions are visible in the preview.
     for y in 0..fh {
         for x in 0..fw {
-            let c = if ((x / HUD_PREVIEW_CHECKER_CELL) + (y / HUD_PREVIEW_CHECKER_CELL)) & 1 == 0 { HUD_PREVIEW_CHECKER_DARK } else { HUD_PREVIEW_CHECKER_LIGHT };
+            let c = if ((x / HUD_PREVIEW_CHECKER_CELL) + (y / HUD_PREVIEW_CHECKER_CELL)) & 1 == 0 {
+                HUD_PREVIEW_CHECKER_DARK
+            } else {
+                HUD_PREVIEW_CHECKER_LIGHT
+            };
             let i = (y * fw + x) * 4;
             frame[i] = c;
             frame[i + 1] = c;
@@ -65,7 +67,6 @@ pub extern "C" fn debug_render_intr_hud(variant: u32) -> u32 {
     1
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_hud_ptr() -> *const u8 {
     match unsafe { &*addr_of!(DEBUG_HUD) } {
@@ -74,7 +75,6 @@ pub extern "C" fn debug_hud_ptr() -> *const u8 {
     }
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_hud_w() -> u32 {
     match unsafe { &*addr_of!(DEBUG_HUD) } {
@@ -82,7 +82,6 @@ pub extern "C" fn debug_hud_w() -> u32 {
         None => 0,
     }
 }
-
 
 #[no_mangle]
 pub extern "C" fn debug_hud_h() -> u32 {

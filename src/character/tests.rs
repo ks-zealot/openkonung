@@ -20,18 +20,24 @@ fn starting_loadout_is_the_loaded_game_entity_for_each_hero() {
             return;
         };
         let t = crate::population::parse_tables(&data).unwrap();
-        let mut pc = PlayerCharacter::from_build(
-            *h,
-            CharacterBuild::from_class(CharacterClass::Warrior),
-        );
+        let mut pc =
+            PlayerCharacter::from_build(*h, CharacterBuild::from_class(CharacterClass::Warrior));
         pc.attach_starting_items(&t.entities[0]);
         assert_eq!(pc.equipment, [0, 0, 1, 0, 0, 0], "hero {idx} equipment");
-        assert_eq!(&pc.inventory[0..7], &[2, 3, 4, 5, 6, 7, 0], "hero {idx} inventory");
+        assert_eq!(
+            &pc.inventory[0..7],
+            &[2, 3, 4, 5, 6, 7, 0],
+            "hero {idx} inventory"
+        );
         assert_eq!(pc.hp_internal, 1600, "hero {idx} hp");
         assert_eq!(pc.money, 100, "hero {idx} money");
         assert_eq!(pc.raw_0x12, 2, "hero {idx} +0x12");
         assert!(!pc.auto_enabled(), "hero {idx} AUTO off (flags_b & 2 == 0)");
-        assert_eq!(pc.portrait_group(), h.visual_index, "hero {idx} portrait group");
+        assert_eq!(
+            pc.portrait_group(),
+            h.visual_index,
+            "hero {idx} portrait group"
+        );
     }
 }
 
@@ -67,13 +73,25 @@ fn exact_class_presets() {
     assert_eq!(CharacterClass::Chief.entity_class(), 2);
 
     let w = CharacterClass::Warrior.preset();
-    assert_eq!((w.dexterity, w.charisma, w.strength, w.endurance), (3, 3, 15, 10));
+    assert_eq!(
+        (w.dexterity, w.charisma, w.strength, w.endurance),
+        (3, 3, 15, 10)
+    );
     let h = CharacterClass::Hunter.preset();
-    assert_eq!((h.dexterity, h.charisma, h.strength, h.endurance), (15, 3, 3, 10));
+    assert_eq!(
+        (h.dexterity, h.charisma, h.strength, h.endurance),
+        (15, 3, 3, 10)
+    );
     let m = CharacterClass::Merchant.preset();
-    assert_eq!((m.dexterity, m.charisma, m.strength, m.endurance), (3, 25, 7, 7));
+    assert_eq!(
+        (m.dexterity, m.charisma, m.strength, m.endurance),
+        (3, 25, 7, 7)
+    );
     let c = CharacterClass::Chief.preset();
-    assert_eq!((c.dexterity, c.charisma, c.strength, c.endurance), (3, 3, 10, 12));
+    assert_eq!(
+        (c.dexterity, c.charisma, c.strength, c.endurance),
+        (3, 3, 10, 12)
+    );
 }
 
 #[test]
@@ -115,7 +133,10 @@ fn modified_build_survives_without_preset_regeneration() {
     assert_eq!(pc.charisma_current, 24);
     assert_eq!(pc.trade, 11);
     // The class preset (charisma 25) must not have been regenerated.
-    assert_ne!(pc.charisma_current, CharacterClass::Merchant.preset().charisma);
+    assert_ne!(
+        pc.charisma_current,
+        CharacterClass::Merchant.preset().charisma
+    );
 }
 
 #[test]
@@ -123,8 +144,14 @@ fn class_region_mapping() {
     // Original: region = entity_class + 1.
     assert_eq!(CharacterClass::from_region(3), Some(CharacterClass::Chief));
     assert_eq!(CharacterClass::from_region(4), Some(CharacterClass::Hunter));
-    assert_eq!(CharacterClass::from_region(5), Some(CharacterClass::Merchant));
-    assert_eq!(CharacterClass::from_region(6), Some(CharacterClass::Warrior));
+    assert_eq!(
+        CharacterClass::from_region(5),
+        Some(CharacterClass::Merchant)
+    );
+    assert_eq!(
+        CharacterClass::from_region(6),
+        Some(CharacterClass::Warrior)
+    );
     assert_eq!(CharacterClass::from_region(0), None);
     assert_eq!(CharacterClass::from_region(7), None);
     assert_eq!(CharacterClass::Chief.region(), 3);
@@ -132,7 +159,11 @@ fn class_region_mapping() {
     assert_eq!(CharacterClass::Merchant.region(), 5);
     assert_eq!(CharacterClass::Warrior.region(), 6);
     for class in CharacterClass::ALL {
-        assert_eq!(class.region(), class.entity_class() as usize + 1, "{class:?}");
+        assert_eq!(
+            class.region(),
+            class.entity_class() as usize + 1,
+            "{class:?}"
+        );
         assert_eq!(CharacterClass::from_region(class.region()), Some(class));
     }
 }
@@ -165,38 +196,95 @@ fn debug_block_contains_expected_fields() {
 
 #[test]
 fn specialization_mapping() {
-    assert_eq!(CharacterClass::Chief.specialization(), PrimaryStat::Endurance);
-    assert_eq!(CharacterClass::Hunter.specialization(), PrimaryStat::Dexterity);
-    assert_eq!(CharacterClass::Merchant.specialization(), PrimaryStat::Charisma);
-    assert_eq!(CharacterClass::Warrior.specialization(), PrimaryStat::Strength);
+    assert_eq!(
+        CharacterClass::Chief.specialization(),
+        PrimaryStat::Endurance
+    );
+    assert_eq!(
+        CharacterClass::Hunter.specialization(),
+        PrimaryStat::Dexterity
+    );
+    assert_eq!(
+        CharacterClass::Merchant.specialization(),
+        PrimaryStat::Charisma
+    );
+    assert_eq!(
+        CharacterClass::Warrior.specialization(),
+        PrimaryStat::Strength
+    );
 }
 
 #[test]
 fn stat_cost_worked_examples() {
     // The four documented refund/cost examples.
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 14), 5);
-    assert_eq!(stat_cost(CharacterClass::Hunter, PrimaryStat::Dexterity, 14), 5);
-    assert_eq!(stat_cost(CharacterClass::Merchant, PrimaryStat::Charisma, 24), 11);
-    assert_eq!(stat_cost(CharacterClass::Chief, PrimaryStat::Endurance, 11), 2);
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 14),
+        5
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Hunter, PrimaryStat::Dexterity, 14),
+        5
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Merchant, PrimaryStat::Charisma, 24),
+        11
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Chief, PrimaryStat::Endurance, 11),
+        2
+    );
 }
 
 #[test]
 fn stat_cost_tier_boundaries() {
     // Specialized (Warrior/STR): threshold row applies while spec_thr > v.
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 0), 2);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 12), 2);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 13), 5);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 18), 5);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 19), 11);
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 0),
+        2
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 12),
+        2
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 13),
+        5
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 18),
+        5
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 19),
+        11
+    );
     // Non-specialized (Warrior/CHA uses the normal thresholds).
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 8), 2);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 9), 5);
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 8),
+        2
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 9),
+        5
+    );
     // Past the last finite tier -> 999.
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 100), 999);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 80), 999);
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 100),
+        999
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 80),
+        999
+    );
     // The last finite specialized tier (150/95/75).
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 94), 150);
-    assert_eq!(stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 95), 200);
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 94),
+        150
+    );
+    assert_eq!(
+        stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 95),
+        200
+    );
 }
 
 #[test]
@@ -294,7 +382,11 @@ fn civil_specialization_switch() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior);
     b.select_civil(CivilSpecialization::Trade);
     assert_eq!(civil3(&b), (20, 50, 10));
-    assert_eq!(combat4(&b), (100, 0, 1, 10), "combat fields must be untouched");
+    assert_eq!(
+        combat4(&b),
+        (100, 0, 1, 10),
+        "combat fields must be untouched"
+    );
     b.select_civil(CivilSpecialization::Healing);
     assert_eq!(civil3(&b), (10, 100, 10));
     assert_eq!(combat4(&b), (100, 0, 1, 10));

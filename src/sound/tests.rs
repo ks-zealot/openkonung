@@ -60,8 +60,14 @@ fn decodes_shipped_sounds() {
     assert_eq!(a.frame_count(0), Some(66298 / 2));
     // NPC voice ids 0x0C..0x13 must be present and 16-bit aligned.
     for id in 0x0Cu32 as usize..=0x13 {
-        let (_, size) = a.entry(id).unwrap_or_else(|| panic!("voice id {id} missing"));
-        assert_eq!(size % BYTES_PER_FRAME as u32, 0, "id {id} not frame-aligned");
+        let (_, size) = a
+            .entry(id)
+            .unwrap_or_else(|| panic!("voice id {id} missing"));
+        assert_eq!(
+            size % BYTES_PER_FRAME as u32,
+            0,
+            "id {id} not frame-aligned"
+        );
     }
     assert!(a.duration_ms(12, SAMPLE_RATES[0]).unwrap() > 0);
 }

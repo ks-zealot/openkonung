@@ -64,7 +64,11 @@ fn real_game1_group23_owners_stay_non_owners_wander() {
     assert!(moved > 0, "non-owner citizens must wander");
     for id in &movers {
         let m = &b.motion[id];
-        assert!(rect_contains(&m.rect_a, m.cell), "left rect A: {id} {:?}", m.cell);
+        assert!(
+            rect_contains(&m.rect_a, m.cell),
+            "left rect A: {id} {:?}",
+            m.cell
+        );
     }
 }
 
@@ -100,7 +104,10 @@ fn followers_walk_toward_a_distant_leader_and_stop_when_close() {
     for _ in 0..600 {
         update_followers(std::slice::from_mut(&mut member), &collision, leader, 1);
     }
-    assert_ne!(member.motion.cell, start, "companion moved toward the leader");
+    assert_ne!(
+        member.motion.cell, start,
+        "companion moved toward the leader"
+    );
     assert!(
         follow_distance(member.motion.cell, leader) < FOLLOW_DISTANCE,
         "companion arrived within follow distance (cell {:?})",

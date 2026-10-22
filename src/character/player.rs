@@ -57,8 +57,20 @@ pub struct PlayerCharacter {
     /// `Entity+0x04` bit `0x80` — dead/incapacitated. Forces the dead portrait
     /// variant (`FUN_0042C730`, set by the defeat path `FUN_0041D048`).
     pub dead: bool,
-}
 
+    /// `Entity+0xCE` — temporary-effect timer in logic frames.
+    pub temp_effect_timer: u16,
+    /// `Entity+0xCA` — temporary-effect id / period.
+    pub temp_effect_id: u16,
+    /// `Entity+0xBC` — saved dexterity current (temporary-effect backup).
+    pub saved_dexterity: u16,
+    /// `Entity+0xBE` — saved charisma current.
+    pub saved_charisma: u16,
+    /// `Entity+0xC0` — saved strength current.
+    pub saved_strength: u16,
+    /// `Entity+0xC2` — saved endurance current.
+    pub saved_endurance: u16,
+}
 
 impl PlayerCharacter {
     /// Copy a [`CharacterBuild`] once into the runtime player. Base == current
@@ -96,9 +108,14 @@ impl PlayerCharacter {
             raw_0x12: 0,
             flags_b: 0,
             dead: false,
+            temp_effect_timer: 0,
+            temp_effect_id: 0,
+            saved_dexterity: 0,
+            saved_charisma: 0,
+            saved_strength: 0,
+            saved_endurance: 0,
         }
     }
-
 
     /// Copy the authored starting equipment/inventory from the protagonist
     /// `Entity[0]` record. Called once at game start; never re-derived on redraw.
@@ -117,20 +134,23 @@ impl PlayerCharacter {
         // field-restore does not overwrite it).
         self.money = entity.stats.money;
         self.flags_b = entity.flags_b;
+        self.temp_effect_timer = entity.stats.temp_effect_timer;
+        self.temp_effect_id = entity.stats.temp_effect_id;
+        self.saved_dexterity = entity.stats.saved_dexterity;
+        self.saved_charisma = entity.stats.saved_charisma;
+        self.saved_strength = entity.stats.saved_strength;
+        self.saved_endurance = entity.stats.saved_endurance;
     }
-
 
     /// AUTO combat button state: `Entity+0x03 & 0x02`.
     pub fn auto_enabled(&self) -> bool {
         self.flags_b & 0x02 != 0
     }
 
-
     /// `Entity+0xD6` portrait group (the hero's visual index).
     pub fn portrait_group(&self) -> u8 {
         self.hero.visual_index
     }
-
 
     /// `Entity+0x04` status/appearance byte used by the portrait selector:
     /// low 3 bits = appearance, bit `0x80` = dead/special (`FUN_0042C730`).
@@ -138,24 +158,20 @@ impl PlayerCharacter {
         self.entity_class() | if self.dead { 0x80 } else { 0 }
     }
 
-
     /// Iterate the 32 inventory slots exactly as authored (including empty `0`s).
     pub fn inventory(&self) -> &[u16; 32] {
         &self.inventory
     }
-
 
     /// `Entity+0x04` renderer class value.
     pub fn entity_class(&self) -> u8 {
         self.class.entity_class()
     }
 
-
     /// Resource palette id from the hero identity.
     pub fn palette_id(&self) -> i32 {
         self.hero.palette_id()
     }
-
 
     /// Human-readable player state block (diagnostic only, task §9).
     pub fn debug_block(&self) -> String {
@@ -185,5 +201,4 @@ impl PlayerCharacter {
             self.smithing,
         )
     }
-
 }

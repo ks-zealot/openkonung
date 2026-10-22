@@ -18,15 +18,15 @@
 //! Note: the runtime grid is not the rendered terrain surface. Do not clamp
 //! Entity coordinates to terrain dimensions; runtime bounds are 320×160 (§3).
 
-pub use crate::constants::coords::RUNTIME_W;
 pub use crate::constants::coords::RUNTIME_H;
 pub use crate::constants::coords::RUNTIME_MAX_X;
 pub use crate::constants::coords::RUNTIME_MAX_Y;
+pub use crate::constants::coords::RUNTIME_W;
 
 pub use crate::constants::coords::ENTITY_COL_STEP;
 pub use crate::constants::coords::ENTITY_HALF_STEP;
-pub use crate::constants::coords::ENTITY_ROW_STEP;
 pub use crate::constants::coords::ENTITY_ROW_BIAS;
+pub use crate::constants::coords::ENTITY_ROW_STEP;
 
 /// Exact Entity → local-world-pixel projection (source §4/§23.1). This is the
 /// canonical actor/protagonist projection; do not replace it with

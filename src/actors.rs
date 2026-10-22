@@ -31,24 +31,23 @@ use std::fmt;
 use crate::coords::{entity_to_local_px, neighbors, step_by_direction};
 use crate::population::{Entity, GameTables, Group, Rect, Settlement, Waypoint};
 
+mod motion;
+mod pathfind;
 /// Maximum path length in cells. The original stores the direction queue in the
 /// 32-byte `Entity+0x13` field (terminator at `+0x32`), so at most 31 steps are
 /// kept (`FUN_0043DA1F`); longer routes are re-issued from the new position.
-
 mod placement;
-mod pathfind;
-mod motion;
 
-pub use self::placement::*;
-pub use self::pathfind::*;
 pub use self::motion::*;
+pub use self::pathfind::*;
+pub use self::placement::*;
 
 pub use crate::constants::timing::MAX_PATH_STEPS;
 
 pub use crate::constants::timing::MAX_ATTEMPTS;
 
-pub use crate::constants::timing::ORIGINAL_FRAME_MS;
 pub use crate::constants::timing::LOGIC_TICK_HZ;
+pub use crate::constants::timing::ORIGINAL_FRAME_MS;
 
 pub use crate::constants::timing::FALLBACK_WALK_FRAMES;
 

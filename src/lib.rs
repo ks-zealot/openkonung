@@ -12,28 +12,28 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+#[path = "abi/debug.rs"]
+mod debug;
+#[path = "abi/frame.rs"]
+mod frame;
+#[path = "abi/frontend_api.rs"]
+mod frontend_api;
+#[path = "abi/input.rs"]
+mod input;
+#[path = "abi/lifecycle.rs"]
+mod lifecycle;
 #[path = "abi/memory.rs"]
 mod memory;
 #[path = "abi/resource.rs"]
 mod resource;
-#[path = "abi/lifecycle.rs"]
-mod lifecycle;
-#[path = "abi/frame.rs"]
-mod frame;
-#[path = "abi/input.rs"]
-mod input;
-#[path = "abi/frontend_api.rs"]
-mod frontend_api;
-#[path = "abi/debug.rs"]
-mod debug;
 
+pub use self::debug::*;
+pub use self::frame::*;
+pub use self::frontend_api::*;
+pub use self::input::*;
+pub use self::lifecycle::*;
 pub use self::memory::*;
 pub use self::resource::*;
-pub use self::lifecycle::*;
-pub use self::frame::*;
-pub use self::input::*;
-pub use self::frontend_api::*;
-pub use self::debug::*;
 
 pub mod actors;
 pub mod anim;
@@ -50,6 +50,7 @@ pub mod frontend;
 pub mod hero;
 pub mod hud;
 pub mod intr;
+pub mod inventory;
 pub mod item;
 pub mod loc;
 pub mod menu_res;
@@ -126,10 +127,18 @@ pub extern "C" fn debug_character_screen() -> u32 {
 /// Live player runtime x/y (0 when no game). Used to prove state preservation.
 #[no_mangle]
 pub extern "C" fn debug_player_x() -> f32 {
-    runtime_mut().game.as_deref().map(|g| g.player_x as f32).unwrap_or(0.0)
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| g.player_x as f32)
+        .unwrap_or(0.0)
 }
 
 #[no_mangle]
 pub extern "C" fn debug_player_y() -> f32 {
-    runtime_mut().game.as_deref().map(|g| g.player_y as f32).unwrap_or(0.0)
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| g.player_y as f32)
+        .unwrap_or(0.0)
 }

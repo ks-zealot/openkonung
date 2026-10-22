@@ -11,7 +11,14 @@ pub(super) fn rect_contains(rect: &Rect, c: (i32, i32)) -> bool {
     c.0 >= x1 && c.0 <= x2 && c.1 >= y1 && c.1 <= y2
 }
 
-pub(super) fn group(index: usize, first: u16, count: u8, loc: u8, class: u8, rect_a: Rect) -> Group {
+pub(super) fn group(
+    index: usize,
+    first: u16,
+    count: u8,
+    loc: u8,
+    class: u8,
+    rect_a: Rect,
+) -> Group {
     Group {
         index,
         first_entity: first,
@@ -57,4 +64,3 @@ pub(super) fn tables(groups: Vec<Group>, entities: Vec<Entity>) -> GameTables {
 pub(super) fn free_collision() -> Vec<u16> {
     vec![0u16; 320 * 160]
 }
-

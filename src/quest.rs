@@ -393,7 +393,9 @@ impl QuestData {
 
     /// `B7` slot active bit (`0x80` of the first byte).
     pub fn flag_active(&self, index: usize) -> bool {
-        self.flag_byte(index).map(|b| b & 0x80 != 0).unwrap_or(false)
+        self.flag_byte(index)
+            .map(|b| b & 0x80 != 0)
+            .unwrap_or(false)
     }
 
     /// `B7` slot journal text line (`u16 @ +0x02`, a `B6` line index). `None`
@@ -412,7 +414,9 @@ impl QuestData {
     /// `0x80` at runtime (`FUN_00434BB8` / read by `FUN_00434FE8`). Slots whose
     /// file byte already has `0x80` set start "active".
     pub fn initial_flags(&self) -> Vec<u8> {
-        (0..FLAG_SLOTS).map(|i| self.bytes[B7_OFF + i * 4]).collect()
+        (0..FLAG_SLOTS)
+            .map(|i| self.bytes[B7_OFF + i * 4])
+            .collect()
     }
 }
 

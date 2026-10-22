@@ -49,7 +49,11 @@ pub struct WorldSprite {
 
 impl World {
     pub fn new(res: Res, locs: Vec<Location>) -> World {
-        let loc_index = locs.iter().enumerate().map(|(i, l)| (l.loc_id, i)).collect();
+        let loc_index = locs
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (l.loc_id, i))
+            .collect();
         World {
             res,
             locs,
@@ -178,7 +182,11 @@ impl World {
         }
         let img = match self.loc_index.get(&loc_id).map(|&i| &self.locs[i]) {
             Some(loc) => Rc::new(render_thumbnail(&mut self.res, loc, w, h)),
-            None => Rc::new(Image::new(w.max(1) as usize, h.max(1) as usize, [12, 15, 14, 255])),
+            None => Rc::new(Image::new(
+                w.max(1) as usize,
+                h.max(1) as usize,
+                [12, 15, 14, 255],
+            )),
         };
         self.thumb_cache.insert((loc_id, w, h), img.clone());
         img
@@ -329,7 +337,16 @@ pub fn render_thumbnail(res: &mut Res, loc: &Location, w: i32, h: i32) -> Image 
             for r in [low, high].into_iter().flatten() {
                 if let Some(tile) = res.terrain_tile(r) {
                     blit_scaled_nearest(
-                        &mut out.data, out.w, out.h, &tile.data, tile.w, tile.h, dx, dy, dtw, dth,
+                        &mut out.data,
+                        out.w,
+                        out.h,
+                        &tile.data,
+                        tile.w,
+                        tile.h,
+                        dx,
+                        dy,
+                        dtw,
+                        dth,
                     );
                 }
             }
@@ -345,7 +362,16 @@ pub fn render_thumbnail(res: &mut Res, loc: &Location, w: i32, h: i32) -> Image 
         let dx = offx + (lx as f32 * scale).round() as i32;
         let dy = offy + (ly as f32 * scale).round() as i32;
         blit_scaled_nearest(
-            &mut out.data, out.w, out.h, &tile.data, tile.w, tile.h, dx, dy, dtw, dth,
+            &mut out.data,
+            out.w,
+            out.h,
+            &tile.data,
+            tile.w,
+            tile.h,
+            dx,
+            dy,
+            dtw,
+            dth,
         );
     }
 
@@ -357,7 +383,11 @@ pub fn render_thumbnail(res: &mut Res, loc: &Location, w: i32, h: i32) -> Image 
 /// the static-world oracle and deliberately matches the Python oracle's layer
 /// order (terrain low→high, GRAPH, props sorted by projected baseline).
 pub fn render_location_surface(res: &mut Res, loc: &Location) -> Image {
-    let mut surf = Image::new(LOCAL_PIXEL_W as usize, LOCAL_PIXEL_H as usize, [8, 12, 9, 255]);
+    let mut surf = Image::new(
+        LOCAL_PIXEL_W as usize,
+        LOCAL_PIXEL_H as usize,
+        [8, 12, 9, 255],
+    );
     let cells = loc.terrain_cells();
     for row in 0..LOCAL_TERRAIN_H {
         for col in 0..LOCAL_TERRAIN_W {
@@ -369,7 +399,16 @@ pub fn render_location_surface(res: &mut Res, loc: &Location) -> Image {
             let (x, y) = terrain_to_local_px(col, row);
             for r in [low, high].into_iter().flatten() {
                 if let Some(tile) = res.terrain_tile(r) {
-                    blit(&mut surf.data, surf.w, surf.h, &tile.data, tile.w, tile.h, x, y);
+                    blit(
+                        &mut surf.data,
+                        surf.w,
+                        surf.h,
+                        &tile.data,
+                        tile.w,
+                        tile.h,
+                        x,
+                        y,
+                    );
                 }
             }
         }
@@ -378,7 +417,16 @@ pub fn render_location_surface(res: &mut Res, loc: &Location) -> Image {
     for g in &loc.graph_placements {
         let (x, y) = graph_anchor_to_local_px(g.x as i32, g.y as i32);
         if let Some(tile) = res.terrain_tile(g.tile as usize) {
-            blit(&mut surf.data, surf.w, surf.h, &tile.data, tile.w, tile.h, x, y);
+            blit(
+                &mut surf.data,
+                surf.w,
+                surf.h,
+                &tile.data,
+                tile.w,
+                tile.h,
+                x,
+                y,
+            );
         }
     }
 
@@ -393,7 +441,16 @@ pub fn render_location_surface(res: &mut Res, loc: &Location) -> Image {
             Err(_) => continue,
         };
         let (x, y) = prop_to_local_px(p.grid_x, p.grid_y);
-        blit(&mut surf.data, surf.w, surf.h, &sprite.data, sprite.w, sprite.h, x + gx, y + gy);
+        blit(
+            &mut surf.data,
+            surf.w,
+            surf.h,
+            &sprite.data,
+            sprite.w,
+            sprite.h,
+            x + gx,
+            y + gy,
+        );
     }
     surf
 }

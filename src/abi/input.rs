@@ -25,7 +25,6 @@ pub extern "C" fn pointer_down(button: u32, x: f32, y: f32) {
     resolve_input(action);
 }
 
-
 #[no_mangle]
 pub extern "C" fn pointer_up(button: u32, x: f32, y: f32) {
     let _ = (x, y);
@@ -44,7 +43,6 @@ pub extern "C" fn pointer_up(button: u32, x: f32, y: f32) {
     }
 }
 
-
 #[no_mangle]
 pub extern "C" fn pointer_move(x: f32, y: f32) {
     let rt = runtime_mut();
@@ -62,7 +60,6 @@ pub extern "C" fn pointer_move(x: f32, y: f32) {
     }
 }
 
-
 /// Additive party-selection modifier (`Event.shiftKey`); mirrors the original
 /// `_DAT_0081D624` flag read by `FUN_00424D8C`.
 #[no_mangle]
@@ -75,7 +72,6 @@ pub extern "C" fn set_shift(down: u32) {
     }
 }
 
-
 #[no_mangle]
 pub extern "C" fn wheel(delta: f32) {
     let rt = runtime_mut();
@@ -85,7 +81,6 @@ pub extern "C" fn wheel(delta: f32) {
         }
     }
 }
-
 
 #[no_mangle]
 pub extern "C" fn key_down(code: u32) {
@@ -118,5 +113,3 @@ pub extern "C" fn key_down(code: u32) {
     };
     resolve_input(action);
 }
-
-

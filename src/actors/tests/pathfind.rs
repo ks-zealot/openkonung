@@ -21,8 +21,14 @@ fn find_path_routes_around_obstacles() {
     let mut cell = start;
     for &d in &dirs {
         let next = step_by_direction(cell.0, cell.1, d);
-        assert!(!(next.0 == 5 && next.1 < 10), "path crosses the wall at {next:?}");
-        assert!(is_free(&c, next.0, next.1), "path steps onto blocked {next:?}");
+        assert!(
+            !(next.0 == 5 && next.1 < 10),
+            "path crosses the wall at {next:?}"
+        );
+        assert!(
+            is_free(&c, next.0, next.1),
+            "path steps onto blocked {next:?}"
+        );
         cell = next;
     }
     assert_eq!(cell, goal);
@@ -51,4 +57,3 @@ fn dup_column_and_row_walks_keep_constant_direction() {
     assert!(!row.is_empty());
     assert!(row.iter().all(|&d| d == row[0]), "row zigzags: {row:?}");
 }
-

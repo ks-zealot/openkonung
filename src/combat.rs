@@ -228,8 +228,7 @@ pub fn attack_damage(
         let base = db
             .modifier_damage(inst.modifier_index, target_archetype)
             .unwrap_or(info.rating) as i32;
-        let armed_bonus =
-            round_even(s.strength as f64 * s.hp as f64 * HUMAN_ARMED_STR_HP) as i32;
+        let armed_bonus = round_even(s.strength as f64 * s.hp as f64 * HUMAN_ARMED_STR_HP) as i32;
         (base + armed_bonus, inst.poison)
     } else {
         (unarmed, 0)
@@ -259,8 +258,8 @@ pub fn mitigate_damage(s: &CombatStats, incoming: i32, armor: i32) -> u16 {
     let incoming = incoming.max(0) as f64;
     let temp = (incoming * MITIGATE_ATTACK_SCALE - armor as f64).max(0.0);
     let endurance = (s.endurance.max(1)) as f64;
-    let value = MITIGATE_ENDURANCE_SCALE
-        * (1.0 + (incoming * MITIGATE_PIERCE_SCALE + temp) / endurance);
+    let value =
+        MITIGATE_ENDURANCE_SCALE * (1.0 + (incoming * MITIGATE_PIERCE_SCALE + temp) / endurance);
     round_even(value).clamp(0, u16::MAX as i64) as u16
 }
 
@@ -308,10 +307,8 @@ pub fn ranged_damage(db: &ItemDb, bow: &BowShot, target_archetype: u8) -> (i32, 
 /// corpse-loot `bonus` argument.
 pub fn combat_power(db: &ItemDb, save: &[u8], s: &CombatStats) -> i32 {
     let armor = armor_total(db, save, s) as f64;
-    let mut power = armor * 0.1
-        + s.dexterity as f64 * 0.2
-        + s.strength as f64 * 0.3
-        + s.endurance as f64 * 0.3;
+    let mut power =
+        armor * 0.1 + s.dexterity as f64 * 0.2 + s.strength as f64 * 0.3 + s.endurance as f64 * 0.3;
     if !s.is_object_family() {
         power += s.melee_mastery as f64 * 0.002 + s.archery_mastery as f64 * 0.003;
         if let Some(slot) = s.weapon_slot_index() {

@@ -26,11 +26,15 @@ impl PlayableApp {
 
     // --- drawing ---
 
-
     pub(super) fn text(&mut self, x: i32, y: i32, rgb: u32, scale: f32, s: String) {
-        self.texts.push(TextItem { x, y, rgb, scale, s });
+        self.texts.push(TextItem {
+            x,
+            y,
+            rgb,
+            scale,
+            s,
+        });
     }
-
 
     /// Emit `s` word-wrapped so no line exceeds the right screen edge. Returns
     /// the y coordinate just below the last emitted line.
@@ -45,7 +49,6 @@ impl PlayableApp {
         cy
     }
 
-
     /// Emit `s` shifted left/shrunk so its right edge stays on screen (keeps
     /// marker labels attached to their marker when they sit near the right edge).
     pub(super) fn text_clamped(&mut self, x: i32, y: i32, rgb: u32, scale: f32, s: String) {
@@ -54,6 +57,4 @@ impl PlayableApp {
         let y = y.min(VIRTUAL_H - 16).max(0);
         self.text(x, y, rgb, scale, s);
     }
-
-
 }

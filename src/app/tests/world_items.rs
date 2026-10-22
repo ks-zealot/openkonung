@@ -33,10 +33,8 @@ fn herb_world_object_pickup_and_respawn() {
     let loc = make_location(3, konung3).expect("Konung.3");
     let world = World::new(res, vec![loc]);
     let h = *hero(0).unwrap();
-    let player = PlayerCharacter::from_build(
-        h,
-        CharacterBuild::from_class(CharacterClass::Warrior),
-    );
+    let player =
+        PlayerCharacter::from_build(h, CharacterBuild::from_class(CharacterClass::Warrior));
     let mut app = PlayableApp::new(
         world,
         Vec::new(),
@@ -65,8 +63,11 @@ fn herb_world_object_pickup_and_respawn() {
                 return None;
             }
             let info = app.world.res.item_info(s.items[0])?;
-            (info.class == 9 && info.subtype == 1)
-                .then_some((i, s.items[0], (s.x as i32, s.y as i32)))
+            (info.class == 9 && info.subtype == 1).then_some((
+                i,
+                s.items[0],
+                (s.x as i32, s.y as i32),
+            ))
         })
         .expect("location 3 has Earth-nut nodes");
     app.rebuild_world_objects();
@@ -110,7 +111,10 @@ fn herb_world_object_pickup_and_respawn() {
     app.player_x = cell.0 as f64;
     app.player_y = cell.1 as f64;
     app.try_pickup_here();
-    assert_eq!(app.player.inventory[0], item, "collected at inventory slot 0");
+    assert_eq!(
+        app.player.inventory[0], item,
+        "collected at inventory slot 0"
+    );
     assert!(
         !app.active_world_objects.iter().any(|o| o.cell() == cell),
         "runtime marker removed"
@@ -139,4 +143,3 @@ fn herb_world_object_pickup_and_respawn() {
         .unwrap();
     assert_eq!((info.class, info.subtype), (9, 1));
 }
-

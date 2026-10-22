@@ -14,7 +14,6 @@ impl PlayableApp {
             .find(|&i| l.party_cell(i).map(|r| r.contains(mx, my)).unwrap_or(false))
     }
 
-
     /// Party member selection (`FUN_00424D8C`, selection array `0x81A814`).
     ///
     /// Without the additive modifier (`_DAT_0081D624`, Shift) the whole 10-slot
@@ -30,17 +29,20 @@ impl PlayableApp {
         }
     }
 
-
     /// Update the additive-selection modifier (`Event.shiftKey`).
     pub fn set_shift(&mut self, down: bool) {
         self.shift_down = down;
     }
 
-
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
         // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
         if let Some(v) = self.window_to_virtual(x, y) {
             self.cursor_virtual = v;
+        }
+        if button == 1 {
+            self.mouse_left_down = true;
+            self.drag_start = Some((x, y));
+            self.dragging = false;
         }
         // While a dialogue is open it consumes every click: option selection
         // only (left button). It is closed with Escape or by an end option.
@@ -53,8 +55,68 @@ impl PlayableApp {
             return;
         }
         // While the character screen is open it consumes every click: no world
-        // targeting and no click-through. It is closed with Escape only.
+        // targeting and no click-through. Clicks drive the cursor/held-item
+        // inventory model; a portrait click switches the edited member.
         if self.character_screen {
+            if button == 1 {
+                if let Some(cell) = self.party_cell_at(x, y) {
+                    self.select_party_member(cell);
+                    if let Some(owner) = self.owner_for_cell(cell) {
+                        self.set_inventory_owner(owner);
+                    }
+                    return;
+                }
+                if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                    let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                    let equipment = self.owner_equipment(self.inventory_owner);
+                    let raw = self.owner_raw_0x12(self.inventory_owner);
+                    let hit = crate::character_screen::hit_test(vx, vy, VIRTUAL_W, &equipment, raw);
+                    match hit {
+                        crate::character_screen::ScreenHit::Main(slot) => {
+                            let loc = crate::inventory::ItemLocation::Main(slot);
+                            if self.held_item.is_some() {
+                                if !self.try_craft_held_at(self.inventory_owner, loc) {
+                                    self.place_held(loc);
+                                }
+                            } else {
+                                self.lift_item(loc);
+                            }
+                        }
+                        crate::character_screen::ScreenHit::Additional(slot) => {
+                            let loc = crate::inventory::ItemLocation::Additional(slot);
+                            if self.held_item.is_some() {
+                                if !self.try_craft_held_at(self.inventory_owner, loc) {
+                                    self.place_held(loc);
+                                }
+                            } else {
+                                self.lift_item(loc);
+                            }
+                        }
+                        crate::character_screen::ScreenHit::Special => {
+                            let loc = crate::inventory::ItemLocation::Special;
+                            if self.held_item.is_some() {
+                                if !self.try_craft_held_at(self.inventory_owner, loc) {
+                                    self.place_held(loc);
+                                }
+                            } else {
+                                self.lift_item(loc);
+                            }
+                        }
+                        crate::character_screen::ScreenHit::Inventory(slot) => {
+                            let idx = self.inventory_scroll + slot;
+                            let loc = crate::inventory::ItemLocation::Inventory(idx);
+                            if self.held_item.is_some() {
+                                if !self.try_craft_held_at(self.inventory_owner, loc) {
+                                    self.deposit_held();
+                                }
+                            } else {
+                                self.lift_item(loc);
+                            }
+                        }
+                        crate::character_screen::ScreenHit::None => {}
+                    }
+                }
+            }
             return;
         }
         // A left-click on a party-portrait cell selects that member
@@ -63,7 +125,25 @@ impl PlayableApp {
         // this click (original: opened by a command) — use `C` instead.
         if button == 1 && !self.mode_graph {
             if let Some(cell) = self.party_cell_at(x, y) {
-                self.select_party_member(cell);
+                if self.held_item.is_some() {
+                    self.give_held_to_member(cell);
+                } else {
+                    self.select_party_member(cell);
+                }
+                return;
+            }
+            // Inventory strip: lift with an empty cursor, deposit with a held
+            // item. It must never be interpreted as a world move.
+            if let Some(slot) = self.hovered_slot {
+                let idx = self.inventory_scroll + slot;
+                let loc = crate::inventory::ItemLocation::Inventory(idx);
+                if self.held_item.is_some() {
+                    if !self.try_craft_held_at(self.inventory_owner, loc) {
+                        self.deposit_held();
+                    }
+                } else {
+                    self.lift_item(loc);
+                }
                 return;
             }
         }
@@ -94,16 +174,26 @@ impl PlayableApp {
                         self.fit_detail();
                     }
                 }
+            } else if self.held_item.is_some() {
+                // Original command 0: left-clicking the world while carrying an
+                // item drops it at the source owner's cell (`FUN_004138C8`).
+                self.drop_held_on_ground();
             } else {
                 self.world_move(x, y);
             }
             self.drag = false;
             self.last_mouse = (x, y);
         } else if button == 3 {
-            // Right button: world interaction — open a talkable human NPC's
-            // dialogue; otherwise move (original `FUN_0042260C` right-button
-            // branch, `_DAT_0081D5B0 & 2`, command code 0).
+            // Right button: use an inventory item, otherwise world interaction.
             if !self.mode_graph {
+                if let Some(slot) = self.hovered_slot {
+                    if self.held_item.is_none() {
+                        self.right_click_inventory_slot(slot);
+                        self.drag = false;
+                        self.last_mouse = (x, y);
+                        return;
+                    }
+                }
                 self.world_interact(x, y);
                 self.drag = false;
                 self.last_mouse = (x, y);
@@ -114,7 +204,6 @@ impl PlayableApp {
             self.last_mouse = (x, y);
         }
     }
-
 
     /// A left-click in the world: command the selected party to the clicked
     /// cell. Left-click never opens a dialogue — the original opens dialogues on
@@ -149,14 +238,11 @@ impl PlayableApp {
         self.command_selected_companions(tx, ty);
         // Right-click on the cell already occupied: no walk is issued, but the
         // interaction still resolves immediately.
-        if interact
-            && (self.player_x.round() as i32, self.player_y.round() as i32) == (tx, ty)
-        {
+        if interact && (self.player_x.round() as i32, self.player_y.round() as i32) == (tx, ty) {
             self.try_pickup_here();
             self.player_interact = false;
         }
     }
-
 
     /// A right-click in the world (original `FUN_0042260C` right-button branch,
     /// `_DAT_0081D5B0 & 2`, command code 0): open a dialogue for a **human**
@@ -204,7 +290,6 @@ impl PlayableApp {
         self.world_move_command(x, y);
     }
 
-
     /// Select the option under the cursor (if any) and advance the dialogue.
     fn dialog_option_click(&mut self, vx: i32, vy: i32) {
         let Some(index) = self.dialog.as_ref().and_then(|d| d.option_at(vx, vy)) else {
@@ -213,13 +298,19 @@ impl PlayableApp {
         self.dialog_click_option(index);
     }
 
-
     pub fn pointer_up(&mut self, button: u32) {
+        if button == 1 {
+            if self.dragging {
+                self.drop_held_at_cursor();
+            }
+            self.mouse_left_down = false;
+            self.drag_start = None;
+            self.dragging = false;
+        }
         if button == 2 {
             self.drag = false;
         }
     }
-
 
     pub fn pointer_move(&mut self, x: f64, y: f64) {
         // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
@@ -235,6 +326,15 @@ impl PlayableApp {
                 }
             }
             return;
+        }
+        if self.mouse_left_down && self.held_item.is_some() {
+            if let Some((sx, sy)) = self.drag_start {
+                let dx = x - sx;
+                let dy = y - sy;
+                if dx * dx + dy * dy > 16.0 {
+                    self.dragging = true;
+                }
+            }
         }
         if self.drag {
             let dx = x - self.last_mouse.0;
@@ -258,7 +358,6 @@ impl PlayableApp {
         }
     }
 
-
     /// Read-only HUD hover: which visible inventory cell is under the cursor.
     /// Does not touch world targeting, movement or portals.
     pub(super) fn update_hover(&mut self, x: f64, y: f64) {
@@ -275,14 +374,20 @@ impl PlayableApp {
         });
     }
 
-
     pub fn wheel(&mut self, delta: f64) {
         if self.mode_graph {
             let factor = 1.2f64.powf(delta);
             self.graph_zoom = (self.graph_zoom * factor).clamp(0.04, 3.0);
+            return;
+        }
+        if self.hovered_slot.is_some() {
+            let l = crate::hud::layout(VIRTUAL_W);
+            let max = crate::inventory::INVENTORY_SLOTS.saturating_sub(l.visible_slots);
+            let step = if delta > 0.0 { 1 } else { -1 };
+            self.inventory_scroll =
+                (self.inventory_scroll as i32 + step).clamp(0, max as i32) as usize;
         }
     }
-
 
     pub fn key_down(&mut self, code: u32) {
         // Dialogue captures the keyboard: only Escape closes it.
@@ -355,6 +460,9 @@ impl PlayableApp {
                 if !self.mode_graph {
                     self.character_screen = !self.character_screen;
                     self.hovered_slot = None;
+                    if self.character_screen {
+                        self.sweep_all_owners();
+                    }
                 }
             }
             // `V` toggles camera follow (moved off `C`).
@@ -372,5 +480,4 @@ impl PlayableApp {
             _ => {}
         }
     }
-
 }

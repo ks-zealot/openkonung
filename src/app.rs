@@ -2,18 +2,19 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::actors::{build_population, find_path, sort_actors, update_population, PopulationBuild, LOGIC_TICK_HZ};
+use crate::actors::{
+    build_population, find_path, sort_actors, update_population, PopulationBuild, LOGIC_TICK_HZ,
+};
+use crate::character::PlayerCharacter;
 use crate::coords::{
     entity_to_local_px, entity_to_local_px_f, local_px_to_entity, step_by_direction,
 };
 use crate::edges::{Edge, Pair};
-use crate::character::PlayerCharacter;
 use crate::loc::prop_to_local_px;
 use crate::population::{GameTables, Settlement};
 use crate::render::{scale_image, LayerCounts, World, WorldSprite};
 use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
 use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
-
 
 mod camera;
 mod combat;
@@ -22,6 +23,7 @@ mod debug_overlay;
 mod dialogue_exec;
 mod graph;
 mod input;
+mod inventory;
 mod party;
 mod player;
 mod population;
@@ -32,20 +34,20 @@ mod world_items;
 
 use self::portals::*;
 
-pub use crate::constants::render::VIRTUAL_W;
 pub use crate::constants::render::VIRTUAL_H;
+pub use crate::constants::render::VIRTUAL_W;
 
-pub use crate::constants::keys::KEY_ESCAPE;
 pub use crate::constants::keys::KEY_BACKSPACE;
-pub use crate::constants::keys::KEY_TAB;
 pub use crate::constants::keys::KEY_C;
 pub use crate::constants::keys::KEY_D;
+pub use crate::constants::keys::KEY_ESCAPE;
 pub use crate::constants::keys::KEY_F;
 pub use crate::constants::keys::KEY_H;
 pub use crate::constants::keys::KEY_L;
 pub use crate::constants::keys::KEY_P;
 pub use crate::constants::keys::KEY_R;
 pub use crate::constants::keys::KEY_T;
+pub use crate::constants::keys::KEY_TAB;
 pub use crate::constants::keys::KEY_V;
 
 pub struct TextItem {
@@ -232,6 +234,21 @@ pub struct PlayableApp {
     /// Additive-selection modifier (`_DAT_0081D624`, Shift): when held, a
     /// party-portrait click adds the member instead of replacing the set.
     pub shift_down: bool,
+    /// Character whose inventory/equipment the character screen and HUD strip
+    /// currently edit (original `_81D560`: protagonist or a party member).
+    pub inventory_owner: crate::inventory::InventoryOwner,
+    /// Item lifted onto the cursor (`_81D670`).
+    pub held_item: Option<crate::inventory::HeldItem>,
+    /// Visible inventory strip scroll offset (`_81D708`).
+    pub inventory_scroll: usize,
+    /// Fractional logic-frame accumulator for temporary potion effects.
+    temp_effect_accum: f64,
+    /// Left mouse button currently down (for drag detection).
+    mouse_left_down: bool,
+    /// Press position of the current lift, used to start a drag.
+    drag_start: Option<(f64, f64)>,
+    /// A lifted item is being dragged (moved past the click threshold).
+    dragging: bool,
     /// Seconds accumulated toward the next companion follow-logic tick.
     party_step_t: f64,
     /// Virtual-space pointer position (`_DAT_0081D5C0/_D5C4`). The game-drawn
@@ -367,6 +384,13 @@ impl PlayableApp {
             party: Vec::new(),
             quest_flags,
             shift_down: false,
+            inventory_owner: crate::inventory::InventoryOwner::Protagonist,
+            held_item: None,
+            inventory_scroll: 0,
+            temp_effect_accum: 0.0,
+            mouse_left_down: false,
+            drag_start: None,
+            dragging: false,
             party_step_t: 0.0,
             cursor_virtual: (-1.0, -1.0),
             combat_step_t: 0.0,
@@ -392,6 +416,7 @@ impl PlayableApp {
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
         // sets `selection[0] = leader` after loading the save).
         app.party_selected[0] = true;
+        app.sweep_all_owners();
         app.rebuild_portal_bindings();
         app.rebuild_world_objects();
         app.center_camera_on_player(true, 0.0);
@@ -400,7 +425,6 @@ impl PlayableApp {
     }
 
     // --- camera ---
-
 
     pub fn step(&mut self, dt: f64) {
         self.advance_world_frame(dt);
@@ -416,6 +440,7 @@ impl PlayableApp {
             self.update_player(dt);
             self.update_party(dt);
             self.update_combat(dt);
+            self.tick_temp_effects(dt);
             if self.camera_follow {
                 self.center_camera_on_player(false, dt);
             }
@@ -424,8 +449,6 @@ impl PlayableApp {
             self.draw_graph();
         }
     }
-
-
 }
 fn ellipse_outline(
     dst: &mut [u8],
@@ -448,7 +471,16 @@ fn ellipse_outline(
             line(dst, dw, dh, px, py, x, y, c);
         }
         if thickness > 1 {
-            fill_rect(dst, dw, dh, x - thickness / 2, y - thickness / 2, thickness, thickness, c);
+            fill_rect(
+                dst,
+                dw,
+                dh,
+                x - thickness / 2,
+                y - thickness / 2,
+                thickness,
+                thickness,
+                c,
+            );
         }
         prev = Some((x, y));
     }

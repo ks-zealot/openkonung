@@ -36,7 +36,6 @@ pub const KIND_QUEST: u32 = 13;
 /// `SOUNDS.RES` sound archive (see `sound.rs`).
 pub const KIND_SOUNDS: u32 = 14;
 
-
 #[derive(Default)]
 pub struct Loader {
     pub(super) game: Vec<u8>,
@@ -58,14 +57,12 @@ pub struct Loader {
     pub(super) konungs: Vec<(u32, Vec<u8>)>,
 }
 
-
 pub fn loader_mut() -> &'static mut Loader {
     unsafe {
         let slot = addr_of_mut!(LOADER);
         (*slot).get_or_insert_with(Loader::default)
     }
 }
-
 
 #[no_mangle]
 pub extern "C" fn load_resource(kind: u32, ptr: *mut u8, len: u32) {
@@ -92,14 +89,12 @@ pub extern "C" fn load_resource(kind: u32, ptr: *mut u8, len: u32) {
     dealloc(ptr, len);
 }
 
-
 #[no_mangle]
 pub extern "C" fn load_profile(id: u32, ptr: *mut u8, len: u32) {
     let data = unsafe { take_bytes(ptr, len) };
     loader_mut().profiles.insert(id, data);
     dealloc(ptr, len);
 }
-
 
 #[no_mangle]
 pub extern "C" fn load_konung(id: u32, ptr: *mut u8, len: u32) {
@@ -112,7 +107,6 @@ pub extern "C" fn load_konung(id: u32, ptr: *mut u8, len: u32) {
 // Boot
 // --------------------------------------------------------------------------
 
-
 pub struct FrontendAssets {
     pub(super) menu_name: String,
     pub(super) menu: &'static [u8],
@@ -123,7 +117,6 @@ pub struct FrontendAssets {
     /// `konung.res` (embedded original bitmap fonts).
     pub(super) fonts: &'static [u8],
 }
-
 
 pub fn frontend_assets(res: FrontendRes) -> FrontendAssets {
     let l = loader_mut();
@@ -150,7 +143,6 @@ pub fn frontend_assets(res: FrontendRes) -> FrontendAssets {
     }
 }
 
-
 /// Build a [`Frontend`] for one resolution from the loaded menu assets.
 pub fn build_frontend(res: FrontendRes) -> Result<Frontend, String> {
     let a = frontend_assets(res);
@@ -163,8 +155,18 @@ pub fn build_frontend(res: FrontendRes) -> Result<Frontend, String> {
             a.newh.len()
         ));
     }
-    let save = if a.save.is_empty() { None } else { Some((a.save_name.as_str(), a.save)) };
-    Frontend::new(res, &a.menu_name, a.menu, &a.newh_name, a.newh, save, a.fonts)
+    let save = if a.save.is_empty() {
+        None
+    } else {
+        Some((a.save_name.as_str(), a.save))
+    };
+    Frontend::new(
+        res,
+        &a.menu_name,
+        a.menu,
+        &a.newh_name,
+        a.newh,
+        save,
+        a.fonts,
+    )
 }
-
-

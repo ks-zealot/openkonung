@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-
 mod cursor;
 mod exe;
 mod graph;
@@ -13,29 +12,29 @@ mod raster;
 
 pub use self::cursor::*;
 pub use self::exe::*;
-pub use self::human::*;
-pub use self::raster::*;
 use self::graph::parse_graph_layout;
+pub use self::human::*;
 use self::objects::parse_object_index;
+pub use self::raster::*;
 
 pub use crate::constants::coords::MAP_COUNT;
+pub use crate::constants::coords::MAP_H;
 pub use crate::constants::coords::MAP_SIZE;
 pub use crate::constants::coords::MAP_W;
-pub use crate::constants::coords::MAP_H;
 
+pub use crate::constants::coords::GRID_ODD_SHIFT;
 pub use crate::constants::coords::GRID_X_STEP;
 pub use crate::constants::coords::GRID_Y_STEP;
-pub use crate::constants::coords::GRID_ODD_SHIFT;
-pub use crate::constants::coords::TERRAIN_TILE_W;
-pub use crate::constants::coords::TERRAIN_TILE_H;
 pub use crate::constants::coords::MAP_ORIGIN_X;
-pub use crate::constants::coords::MAP_PIXEL_W;
 pub use crate::constants::coords::MAP_PIXEL_H;
+pub use crate::constants::coords::MAP_PIXEL_W;
+pub use crate::constants::coords::TERRAIN_TILE_H;
+pub use crate::constants::coords::TERRAIN_TILE_W;
 
 pub use crate::constants::game_layout::GAME_ITEMS_OFF;
 pub use crate::constants::game_layout::GAME_VARIANTS_OFF;
-pub use crate::constants::game_layout::GAME_VARIANT_SIZE;
 pub use crate::constants::game_layout::GAME_VARIANT_COUNT;
+pub use crate::constants::game_layout::GAME_VARIANT_SIZE;
 
 impl Image {
     pub fn new(w: usize, h: usize, fill: [u8; 4]) -> Image {
@@ -94,8 +93,7 @@ pub struct Res {
     /// in `objects.rs::monster_anchor`.
     monster_frame_cache: HashMap<(usize, u32, usize), Img>,
     npc_frame_cache: HashMap<(i32, i32, i32, i32, i32, bool, u8, [u16; 6]), (Img, i32, i32, i32)>,
-    paper_doll_cache:
-        HashMap<(usize, i32, bool, u8, usize, usize, usize, [u16; 6]), Img>,
+    paper_doll_cache: HashMap<(usize, i32, bool, u8, usize, usize, usize, [u16; 6]), Img>,
 }
 
 impl Res {
@@ -104,8 +102,13 @@ impl Res {
             .unwrap_or_else(|| panic!("unsupported executable size {}", exe.len()));
         let palettes: Vec<[[u8; 3]; 256]> = (0..256).map(|i| palette_rgb(&graph, i)).collect();
 
-        let (terrain_table_pos, terrain_payload_pos, terrain_payload_size, human_base_positions, human_overlay_positions) =
-            parse_graph_layout(&graph);
+        let (
+            terrain_table_pos,
+            terrain_payload_pos,
+            terrain_payload_size,
+            human_base_positions,
+            human_overlay_positions,
+        ) = parse_graph_layout(&graph);
 
         let object_entries = parse_object_index(&objects);
 
@@ -144,24 +147,19 @@ impl Res {
         }
     }
 
-
     pub fn variant(&self, variant_id: usize) -> &[u8] {
         let o = GAME_VARIANTS_OFF + variant_id * GAME_VARIANT_SIZE;
         &self.game[o..o + GAME_VARIANT_SIZE]
     }
 
-
     pub fn object_block(&self, object_id: usize) -> &[u8] {
         match self.object_entries.get(object_id).and_then(|x| *x) {
-            Some((off, size)) if off + size <= self.objects.len() => {
-                &self.objects[off..off + size]
-            }
+            Some((off, size)) if off + size <= self.objects.len() => &self.objects[off..off + size],
             _ => &[],
         }
     }
 
     // --- INTR interface sprites (original UI asset family) ---
-
 
     /// Decode and attach an `INTR{width}R.RES` archive using this resource's
     /// already-loaded GRAPH palettes. Validates the whole archive up front;
@@ -174,7 +172,6 @@ impl Res {
         Ok(count)
     }
 
-
     /// Decoded INTR interface sprite by its original numeric index, or `None`
     /// when no archive is attached or the slot is unused.
     pub fn intr_sprite(&mut self, id: usize) -> Option<Img> {
@@ -182,7 +179,6 @@ impl Res {
     }
 
     // --- dialogue / quest database (`QUEST_R.RES`) ---
-
 
     /// Parse and attach the `QUEST_R.RES` dialogue/quest database. Rejects a
     /// truncated image (never a partially valid database).
@@ -193,13 +189,11 @@ impl Res {
 
     // --- items (loaded Game.N instances + konung.res templates) ---
 
-
     /// Attach the loaded save file (`Game.0/1/2`) whose instance table at offset
     /// 0 resolves the protagonist's inventory/equipment ids.
     pub fn set_save_game(&mut self, save: &[u8]) {
         self.save_game = save.to_vec();
     }
-
 
     /// Parse the original item templates and bitmap fonts from `konung.res`
     /// (the `KIND_NAMES` resource). Idempotent and safe to skip when absent.
@@ -212,7 +206,6 @@ impl Res {
         self.konung = konung.to_vec();
     }
 
-
     /// Original character name by `Entity+0xD4` from `konung.res`.
     pub fn character_name(&self, name_id: u8) -> Option<String> {
         if self.konung.is_empty() {
@@ -221,7 +214,6 @@ impl Res {
         crate::names::character_name(&self.konung, name_id)
     }
 
-
     /// Original class name by `Entity+0x04` from `konung.res`.
     pub fn class_name(&self, entity_class: u8) -> Option<String> {
         if self.konung.is_empty() {
@@ -229,7 +221,6 @@ impl Res {
         }
         crate::names::class_name(&self.konung, entity_class)
     }
-
 
     /// Resolve an item-instance id (from an `Entity` inventory/equipment field)
     /// to its original icon index and CP866 name. The instance is decoded from
@@ -275,6 +266,90 @@ impl Res {
     pub fn item_durability(&self, id: u16) -> Option<(f32, f32)> {
         let i = self.item_instance(id)?;
         Some((i.current_durability, i.max_durability))
+    }
+
+    /// `(class, subtype)` of an item instance.
+    pub fn item_class_subtype(&self, id: u16) -> Option<(u8, u8)> {
+        let i = self.item_instance(id)?;
+        Some((i.class, i.subtype))
+    }
+
+    /// `class` byte of an item instance.
+    pub fn item_class(&self, id: u16) -> Option<u8> {
+        self.item_instance(id).map(|i| i.class)
+    }
+
+    /// Write the instance `class` byte. Used by the broken/consumed paths
+    /// (`class = 0xFF`) and the craft result transformation.
+    pub fn set_item_class(&mut self, id: u16, class: u8) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o] = class;
+        true
+    }
+
+    /// Write the instance `subtype` byte (`+0x03`).
+    pub fn set_item_subtype(&mut self, id: u16, subtype: u8) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 3] = subtype;
+        true
+    }
+
+    /// Current quality / durability value (`+0x04 f32`).
+    pub fn item_quality(&self, id: u16) -> Option<f32> {
+        self.item_instance(id).map(|i| i.current_durability)
+    }
+
+    /// Write only the current quality / durability value (`+0x04 f32`).
+    pub fn set_item_quality(&mut self, id: u16, quality: f32) -> bool {
+        if id == 0 || !quality.is_finite() {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 8 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 4..o + 8].copy_from_slice(&quality.to_le_bytes());
+        true
+    }
+
+    /// Stack-compatibility key: `(class, condition, modifier, subtype, poison,
+    /// flags)`. Two class-12 instances with the same key may be merged.
+    pub fn item_stack_key(&self, id: u16) -> Option<(u8, i8, i8, u8, u16, u16)> {
+        let i = self.item_instance(id)?;
+        Some((
+            i.class,
+            i.condition,
+            i.modifier_index,
+            i.subtype,
+            i.poison,
+            i.flags,
+        ))
+    }
+
+    /// Add to a class-12 stack quantity (`+0x04 u32`) and return the new value.
+    pub fn add_item_quantity(&mut self, id: u16, add: u32) -> Option<u32> {
+        if id == 0 || add == 0 {
+            return None;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 8 > self.save_game.len() {
+            return None;
+        }
+        let q = crate::res::u32(&self.save_game, o + 4).saturating_add(add);
+        self.save_game[o + 4..o + 8].copy_from_slice(&q.to_le_bytes());
+        Some(q)
     }
 
     /// Subtract `loss` from the current durability and mark the instance broken
@@ -424,8 +499,6 @@ impl Res {
     }
 
     // --- terrain ---
-
-
 }
 #[cfg(test)]
 mod tests;

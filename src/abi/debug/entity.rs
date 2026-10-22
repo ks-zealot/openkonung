@@ -4,7 +4,6 @@ use super::super::*;
 
 pub static mut DEBUG_ENTITY_STATE: Option<Vec<u8>> = None;
 
-
 /// Format the active game's source `Entity` with the given id (task §7) into a
 /// static buffer. Returns 1 when a game is active and the id is in range.
 #[no_mangle]
@@ -24,7 +23,6 @@ pub extern "C" fn debug_entity_state(id: u32) -> u32 {
     }
 }
 
-
 #[no_mangle]
 pub extern "C" fn debug_entity_state_ptr() -> *const u8 {
     match unsafe { &*addr_of!(DEBUG_ENTITY_STATE) } {
@@ -32,7 +30,6 @@ pub extern "C" fn debug_entity_state_ptr() -> *const u8 {
         None => std::ptr::null(),
     }
 }
-
 
 #[no_mangle]
 pub extern "C" fn debug_entity_state_len() -> u32 {

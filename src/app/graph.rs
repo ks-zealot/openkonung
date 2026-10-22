@@ -10,7 +10,6 @@ impl PlayableApp {
             .collect()
     }
 
-
     pub(super) fn fit_graph(&mut self) {
         let pos = self.graph_positions();
         if pos.is_empty() {
@@ -20,8 +19,14 @@ impl PlayableApp {
         }
         let minx = pos.values().map(|p| p.0).fold(f64::INFINITY, f64::min);
         let miny = pos.values().map(|p| p.1).fold(f64::INFINITY, f64::min);
-        let maxx = pos.values().map(|p| p.0 + 280.0).fold(f64::NEG_INFINITY, f64::max);
-        let maxy = pos.values().map(|p| p.1 + 180.0).fold(f64::NEG_INFINITY, f64::max);
+        let maxx = pos
+            .values()
+            .map(|p| p.0 + 280.0)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let maxy = pos
+            .values()
+            .map(|p| p.1 + 180.0)
+            .fold(f64::NEG_INFINITY, f64::max);
         let sw = VIRTUAL_W as f64;
         let sh = VIRTUAL_H as f64;
         let margin_x = 70.0;
@@ -39,12 +44,20 @@ impl PlayableApp {
         ];
     }
 
-
     pub(super) fn draw_graph(&mut self) {
         self.texts.clear();
         let fw = VIRTUAL_W as usize;
         let fh = VIRTUAL_H as usize;
-        fill_rect(&mut self.frame, fw, fh, 0, 0, VIRTUAL_W, VIRTUAL_H, [8, 11, 10, 255]);
+        fill_rect(
+            &mut self.frame,
+            fw,
+            fh,
+            0,
+            0,
+            VIRTUAL_W,
+            VIRTUAL_H,
+            [8, 11, 10, 255],
+        );
         let pos = self.graph_positions();
         let z = self.graph_zoom;
         let (px0, py0) = (self.graph_pan[0], self.graph_pan[1]);
@@ -60,7 +73,11 @@ impl PlayableApp {
                     .iter()
                     .filter(|x| self.edges[p.ba].profiles.contains(x))
                     .count();
-                let col = if inter == 3 { [95, 210, 135, 255] } else { [215, 185, 90, 255] };
+                let col = if inter == 3 {
+                    [95, 210, 135, 255]
+                } else {
+                    [215, 185, 90, 255]
+                };
                 line(&mut self.frame, fw, fh, x1, y1, x2, y2, col);
             }
         }
@@ -91,7 +108,16 @@ impl PlayableApp {
                 continue;
             }
             fill_rect(&mut self.frame, fw, fh, rx, ry, rw, rh, [38, 47, 42, 255]);
-            rect_outline(&mut self.frame, fw, fh, rx, ry, rw, rh, [100, 125, 110, 255]);
+            rect_outline(
+                &mut self.frame,
+                fw,
+                fh,
+                rx,
+                ry,
+                rw,
+                rh,
+                [100, 125, 110, 255],
+            );
             if z >= 0.42 {
                 let th = self.world.thumbnail(loc_id, 260, 145);
                 let tw = ((260.0 * z) as i32).max(1);
@@ -113,7 +139,11 @@ impl PlayableApp {
                 .iter()
                 .filter(|e| e.from == loc_id && e.from != e.to)
                 .count();
-            let local = self.self_edges.iter().filter(|&&i| self.edges[i].from == loc_id).count();
+            let local = self
+                .self_edges
+                .iter()
+                .filter(|&&i| self.edges[i].from == loc_id)
+                .count();
             let name = self.label(loc_id);
             self.text_clamped(
                 rx + 6,
@@ -143,6 +173,4 @@ impl PlayableApp {
     }
 
     // --- input ---
-
-
 }

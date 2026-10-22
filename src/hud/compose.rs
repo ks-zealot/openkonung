@@ -10,12 +10,7 @@ use super::*;
 ///   special condition;
 /// - `character + 0x5C` health (u16);
 /// - `character + 0xD6` portrait group.
-pub fn portrait_id(
-    is_main_hero: bool,
-    portrait_group: u8,
-    status: u8,
-    health: u16,
-) -> usize {
+pub fn portrait_id(is_main_hero: bool, portrait_group: u8, status: u8, health: u16) -> usize {
     let group = portrait_group as usize;
     let base = if is_main_hero {
         215 + group * 25
@@ -36,7 +31,6 @@ pub fn portrait_id(
     base + variant
 }
 
-
 /// HP-indicator fill sprite, ported from `FUN_0042C730`'s bar branch:
 /// poisoning (`Entity+0x50 != 0`) wins, else the health tier selects the fill
 /// (`<401` deep-wounded, `<801` wounded, else healthy).
@@ -52,13 +46,11 @@ pub fn hp_bar_id(poisoned: bool, health: u16) -> usize {
     }
 }
 
-
 /// HP-indicator fill height in logical px: `max(1, health * bar_h / 1600)`
 /// (`FUN_0042C730`: `health * H / 0x640`, clamped to at least 1).
 pub fn hp_fill(health: u16, bar_h: i32) -> i32 {
     ((health as i32 * bar_h) / 1600).max(1)
 }
-
 
 /// One party portrait to overlay on the panel: the portrait sprite plus the
 /// original selection marker (`FUN_00411708`) and HP indicator.
@@ -74,14 +66,14 @@ pub struct PartyPortrait {
     pub poisoned: bool,
 }
 
-
 /// One resolved visible inventory cell: `(visible slot index, INTR icon id)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemIcon {
     pub slot: usize,
     pub icon: usize,
+    /// Class-12 stack quantity (shown as a small badge); `None` for non-stacks.
+    pub count: Option<u32>,
 }
-
 
 /// Runtime HUD state: party portraits, the resolved visible inventory icons and
 /// the hovered slot. The inventory itself lives on the protagonist; this is a
@@ -94,7 +86,6 @@ pub struct HudState {
     /// AUTO button `(intr_id, x, y)` to overlay, if any.
     pub auto: Option<(usize, i32, i32)>,
 }
-
 
 /// Composite the HUD onto `frame` using `lookup` to resolve INTR sprites.
 ///
@@ -129,7 +120,16 @@ pub fn compose<F>(
         let step = layout.slot_step;
         for i in 0..layout.visible_slots {
             let x = layout.inventory_origin.0 + i as i32 * step;
-            blit(frame, fw, fh, &slot.data, slot.w, slot.h, x, layout.inventory_origin.1);
+            blit(
+                frame,
+                fw,
+                fh,
+                &slot.data,
+                slot.w,
+                slot.h,
+                x,
+                layout.inventory_origin.1,
+            );
         }
     }
 
@@ -183,7 +183,6 @@ pub fn compose<F>(
     }
 }
 
-
 /// Draw the HUD for the active logical framebuffer over the game world.
 ///
 /// Resolves sprites through [`Res::intr_sprite`] (lazy `Rc` cache), so repeated
@@ -196,6 +195,8 @@ pub fn draw_game_hud(
     inventory: &[u16; 32],
     scroll: usize,
     hovered: Option<usize>,
+    held: Option<u16>,
+    cursor: (i32, i32),
     party: &[PartyPortrait],
     auto_on: bool,
 ) {
@@ -209,14 +210,22 @@ pub fn draw_game_hud(
     let mut items = Vec::new();
     for slot in 0..l.visible_slots {
         let idx = scroll + slot;
-        let Some(&id) = inventory.get(idx) else { continue };
-        if id == 0 {
+        let Some(&id) = inventory.get(idx) else {
+            continue;
+        };
+        if id == 0 || Some(id) == held {
             continue;
         }
         if let Some(info) = res.item_info(id) {
+            let count = if info.class == 12 {
+                res.item_quantity(id)
+            } else {
+                None
+            };
             items.push(ItemIcon {
                 slot,
                 icon: info.icon as usize,
+                count,
             });
         }
     }
@@ -229,11 +238,40 @@ pub fn draw_game_hud(
     };
     let state = HudState {
         party,
-        items,
+        items: items.clone(),
         hovered,
         auto: Some((auto_id, l.auto_pos.0, l.auto_pos.1)),
     };
     compose(frame, fw, fh, &l, &state, |id| res.intr_sprite(id));
+
+    // Class-12 stack count badges.
+    if let Some(font) = res.fonts.small.as_ref() {
+        for item in &items {
+            let Some(count) = item.count else { continue };
+            if count <= 1 {
+                continue;
+            }
+            let Some(cell) = inventory_slot_rect(&l, item.slot, 70) else {
+                continue;
+            };
+            let s = count.to_string();
+            let w = font.measure(&s);
+            let x = cell.x + cell.w - w - 3;
+            let y = cell.y + cell.h - 13;
+            let _ = font.draw(frame, fw, fh, &s, x, y, Some([235, 235, 210]));
+        }
+    }
+
+    // Held item follows the cursor (the original strip hides it while lifted).
+    if let Some(id) = held {
+        if let Some(info) = res.item_info(id) {
+            if let Some(im) = res.intr_sprite(info.icon as usize) {
+                let x = cursor.0 - im.w as i32 / 2;
+                let y = cursor.1 - im.h as i32 / 2;
+                crate::res::blit(frame, fw, fh, &im.data, im.w, im.h, x, y);
+            }
+        }
+    }
 
     // Hovered item label, centered in the bottom bar (documented approximation:
     // the original hover-text routine/coordinates could not be recovered).
@@ -242,19 +280,29 @@ pub fn draw_game_hud(
         return;
     }
     let idx = scroll + slot;
-    let Some(&id) = inventory.get(idx) else { return };
+    let Some(&id) = inventory.get(idx) else {
+        return;
+    };
     if id == 0 {
         return;
     }
-    let Some(info) = res.item_info(id) else { return };
+    let Some(info) = res.item_info(id) else {
+        return;
+    };
     let Some(font) = res.fonts.small.as_ref() else {
         return;
     };
-    let tw = font.measure(&info.name);
+    let label = if info.class == 12 {
+        match res.item_quantity(id) {
+            Some(q) => format!("{} x{}", info.name, q),
+            None => info.name.clone(),
+        }
+    } else {
+        info.name.clone()
+    };
+    let tw = font.measure(&label);
     let bar = l.inventory_bar;
     let x = bar.x + (bar.w - tw).max(0) / 2;
     let y = bar.y + (bar.h - 12).max(0) / 2;
-    font.draw(frame, fw, fh, &info.name, x, y, Some([235, 235, 210]));
+    font.draw(frame, fw, fh, &label, x, y, Some([235, 235, 210]));
 }
-
-

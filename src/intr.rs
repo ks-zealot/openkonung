@@ -110,7 +110,9 @@ impl std::error::Error for IntrError {}
 
 impl IntrError {
     fn new(message: impl Into<String>) -> Self {
-        IntrError { message: message.into() }
+        IntrError {
+            message: message.into(),
+        }
     }
 }
 
@@ -197,7 +199,10 @@ impl IntrArchive {
                         "index {i}: data_offset 0x{data_offset:X} at 0x{abs:X} outside data region (end 0x{region_end:X})"
                     )));
                 }
-                Some(IntrEntry { data_offset, palette_offset })
+                Some(IntrEntry {
+                    data_offset,
+                    palette_offset,
+                })
             };
             entries.push(entry);
         }
@@ -357,7 +362,9 @@ fn validate_row(id: usize, y: usize, width: usize, row: &[u8]) -> Result<(), Int
         }
     }
     if !saw_eol {
-        return Err(IntrError::new(format!("index {id}: row {y} is missing its 0x00 end-of-row token")));
+        return Err(IntrError::new(format!(
+            "index {id}: row {y} is missing its 0x00 end-of-row token"
+        )));
     }
     if q != row.len() {
         return Err(IntrError::new(format!(

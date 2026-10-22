@@ -57,7 +57,10 @@ fn hero_hit_rects_match_task_section_16() {
 #[test]
 fn bottom_regions_match_task_section_20() {
     assert_eq!(NEWH_HIT_640[BOTTOM_REGIONS[0]], Rect::new(65, 427, 100, 33));
-    assert_eq!(NEWH_HIT_640[BOTTOM_REGIONS[1]], Rect::new(175, 427, 100, 33));
+    assert_eq!(
+        NEWH_HIT_640[BOTTOM_REGIONS[1]],
+        Rect::new(175, 427, 100, 33)
+    );
 }
 
 #[test]
@@ -71,15 +74,39 @@ fn newh_tables_have_33_regions() {
 #[test]
 fn points_box_and_steppers_match_recovered_tables() {
     // Region 24 (top ПАРАМЕТРЫ points box).
-    assert_eq!(NEWH_DRAW_640[NEWH_POINTS_REGION], Rect::new(463, 134, 30, 15));
-    assert_eq!(NEWH_DRAW_800[NEWH_POINTS_REGION], Rect::new(543, 164, 34, 15));
+    assert_eq!(
+        NEWH_DRAW_640[NEWH_POINTS_REGION],
+        Rect::new(463, 134, 30, 15)
+    );
+    assert_eq!(
+        NEWH_DRAW_800[NEWH_POINTS_REGION],
+        Rect::new(543, 164, 34, 15)
+    );
     // Steppers: #25/26 CHA, #27/28 STR, #29/30 DEX, #31/32 END.
-    assert_eq!(FrontendRes::R800.newh_stepper(0), (Rect::new(515, 195, 30, 15), Rect::new(575, 195, 30, 15)));
-    assert_eq!(FrontendRes::R800.newh_stepper(1), (Rect::new(515, 218, 30, 15), Rect::new(575, 218, 30, 15)));
-    assert_eq!(FrontendRes::R800.newh_stepper(2), (Rect::new(515, 239, 30, 15), Rect::new(575, 239, 30, 15)));
-    assert_eq!(FrontendRes::R800.newh_stepper(3), (Rect::new(515, 259, 30, 15), Rect::new(575, 259, 30, 15)));
-    assert_eq!(FrontendRes::R640.newh_stepper(0), (Rect::new(435, 160, 30, 15), Rect::new(485, 160, 40, 15)));
-    assert_eq!(FrontendRes::R640.newh_stepper(3), (Rect::new(435, 214, 30, 15), Rect::new(485, 214, 40, 15)));
+    assert_eq!(
+        FrontendRes::R800.newh_stepper(0),
+        (Rect::new(515, 195, 30, 15), Rect::new(575, 195, 30, 15))
+    );
+    assert_eq!(
+        FrontendRes::R800.newh_stepper(1),
+        (Rect::new(515, 218, 30, 15), Rect::new(575, 218, 30, 15))
+    );
+    assert_eq!(
+        FrontendRes::R800.newh_stepper(2),
+        (Rect::new(515, 239, 30, 15), Rect::new(575, 239, 30, 15))
+    );
+    assert_eq!(
+        FrontendRes::R800.newh_stepper(3),
+        (Rect::new(515, 259, 30, 15), Rect::new(575, 259, 30, 15))
+    );
+    assert_eq!(
+        FrontendRes::R640.newh_stepper(0),
+        (Rect::new(435, 160, 30, 15), Rect::new(485, 160, 40, 15))
+    );
+    assert_eq!(
+        FrontendRes::R640.newh_stepper(3),
+        (Rect::new(435, 214, 30, 15), Rect::new(485, 214, 40, 15))
+    );
 }
 
 #[test]

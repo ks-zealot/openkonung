@@ -37,34 +37,33 @@ use std::ops::Range;
 
 use crate::res::{i32v, u16, u32};
 
-/// Exact `Game.N` size (matches `edges::GAME_SIZE`).
-
-mod types;
 mod parse;
+/// Exact `Game.N` size (matches `edges::GAME_SIZE`).
+mod types;
 
-pub use self::types::*;
 pub use self::parse::*;
+pub use self::types::*;
 
 pub use crate::constants::game_layout::GAME_SIZE;
 
+pub use crate::constants::game_layout::GROUP_COUNT;
 pub use crate::constants::game_layout::GROUP_OFF;
 pub use crate::constants::game_layout::GROUP_STRIDE;
-pub use crate::constants::game_layout::GROUP_COUNT;
 
+pub use crate::constants::game_layout::ENTITY_COUNT;
 pub use crate::constants::game_layout::ENTITY_OFF;
 pub use crate::constants::game_layout::ENTITY_STRIDE;
-pub use crate::constants::game_layout::ENTITY_COUNT;
 
 pub use crate::constants::game_layout::ENTITY_END;
 
 // --- Settlement / citizen waypoint table (`KONUNG_SOURCE_OF_TRUTH.md` §14) ---
 
+pub use crate::constants::game_layout::SETTLEMENT_COUNT;
 pub use crate::constants::game_layout::SETTLEMENT_OFF;
 pub use crate::constants::game_layout::SETTLEMENT_STRIDE;
-pub use crate::constants::game_layout::SETTLEMENT_COUNT;
+pub use crate::constants::game_layout::WAYPOINT_MAX;
 pub use crate::constants::game_layout::WAYPOINT_OFF;
 pub use crate::constants::game_layout::WAYPOINT_STRIDE;
-pub use crate::constants::game_layout::WAYPOINT_MAX;
 
 impl fmt::Display for RangeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

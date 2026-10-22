@@ -111,10 +111,9 @@ impl Frontend {
             ));
         }
         let save = match save {
-            Some((name, bytes)) if !bytes.is_empty() => Some(
-                MenuRes::parse_named(name, bytes)
-                    .map_err(|e| e.to_string())?,
-            ),
+            Some((name, bytes)) if !bytes.is_empty() => {
+                Some(MenuRes::parse_named(name, bytes).map_err(|e| e.to_string())?)
+            }
             _ => None,
         };
         if let Some(s) = &save {
@@ -167,10 +166,7 @@ impl Frontend {
 
     /// Selected hero identity (0/1/2), or -1 when none is selected.
     pub fn selected_hero(&self) -> i32 {
-        self.new_hero
-            .selected_hero
-            .map(|h| h as i32)
-            .unwrap_or(-1)
+        self.new_hero.selected_hero.map(|h| h as i32).unwrap_or(-1)
     }
 
     /// Selected class entity value (`Entity+0x04`), or -1 when none is selected.
@@ -186,11 +182,7 @@ impl Frontend {
     pub fn hover_index(&self) -> i32 {
         match self.screen {
             FrontendScreen::MainMenu => self.hovered.map(|h| h as i32).unwrap_or(-1),
-            FrontendScreen::NewHero => self
-                .new_hero
-                .hovered_region
-                .map(|h| h as i32)
-                .unwrap_or(-1),
+            FrontendScreen::NewHero => self.new_hero.hovered_region.map(|h| h as i32).unwrap_or(-1),
             _ => -1,
         }
     }
@@ -320,8 +312,7 @@ impl Frontend {
                             _ => {}
                         }
                     }
-                } else if (layout::NEWH_STEPPER_FIRST_REGION
-                    ..layout::NEWH_STEPPER_FIRST_REGION + 8)
+                } else if (layout::NEWH_STEPPER_FIRST_REGION..layout::NEWH_STEPPER_FIRST_REGION + 8)
                     .contains(&region)
                 {
                     // Stat steppers (regions 25..32): even offset = `-`, odd = `+`.
@@ -399,7 +390,16 @@ impl Frontend {
         self.texts.clear();
         let fw = self.res.width() as usize;
         let fh = self.res.height() as usize;
-        fill_rect(&mut self.frame, fw, fh, 0, 0, fw as i32, fh as i32, [0, 0, 0, 255]);
+        fill_rect(
+            &mut self.frame,
+            fw,
+            fh,
+            0,
+            0,
+            fw as i32,
+            fh as i32,
+            [0, 0, 0, 255],
+        );
         match self.screen {
             FrontendScreen::MainMenu => self.draw_main_menu(),
             FrontendScreen::NewHero => self.draw_new_hero(),
@@ -410,7 +410,6 @@ impl Frontend {
             self.draw_region_debug();
         }
     }
-
 }
 #[cfg(test)]
 mod tests;

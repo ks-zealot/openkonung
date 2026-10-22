@@ -6,9 +6,7 @@ use super::super::*;
 // Debug: sound archive (diagnostic tooling; same decoder as runtime)
 // --------------------------------------------------------------------------
 
-
 pub static mut SOUND_ARCHIVE: Option<crate::sound::SoundArchive> = None;
-
 
 /// Parse the loaded `SOUNDS.RES` into the shared debug archive once. Returns
 /// false when no sound data is loaded or it is malformed.
@@ -32,7 +30,6 @@ fn ensure_sound_archive() -> bool {
     }
 }
 
-
 /// Number of occupied clips in the loaded `SOUNDS.RES`, or 0. Diagnostic only.
 #[no_mangle]
 pub extern "C" fn debug_sound_count() -> u32 {
@@ -42,7 +39,6 @@ pub extern "C" fn debug_sound_count() -> u32 {
         0
     }
 }
-
 
 /// Pointer to clip `id`'s raw s16 mono PCM, or null.
 #[no_mangle]
@@ -59,7 +55,6 @@ pub extern "C" fn debug_sound_clip_ptr(id: u32) -> *const u8 {
     }
 }
 
-
 /// Byte length of clip `id`, or 0.
 #[no_mangle]
 pub extern "C" fn debug_sound_clip_len(id: u32) -> u32 {
@@ -75,18 +70,15 @@ pub extern "C" fn debug_sound_clip_len(id: u32) -> u32 {
     }
 }
 
-
 /// Base playback sample rate of the archive (22050 Hz).
 #[no_mangle]
 pub extern "C" fn debug_sound_rate(_id: u32) -> u32 {
     crate::sound::SAMPLE_RATES[0]
 }
 
-
 // --------------------------------------------------------------------------
 // Sound playback queue (requested ids, drained by the browser shell)
 // --------------------------------------------------------------------------
-
 
 /// Number of sound ids requested by the active game this frame.
 #[no_mangle]
@@ -97,7 +89,6 @@ pub extern "C" fn sound_count() -> u32 {
         .map(|g| g.sounds.len() as u32)
         .unwrap_or(0)
 }
-
 
 /// Requested sound id `i`.
 #[no_mangle]

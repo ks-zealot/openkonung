@@ -171,17 +171,26 @@ fn rejects_truncated_record() {
     let rows = vec![vec![0x01, 0x00, 0x00]];
     let mut a = archive(&[record(1, 1, &rows)], &[0]);
     a.truncate(a.len() - 2); // chop the row payload
-    // Header still claims the full region, so bounds reject it.
+                             // Header still claims the full region, so bounds reject it.
     let e = IntrArchive::load(&a, &graph()).unwrap_err();
     let m = e.message;
-    assert!(m.contains("data region") || m.contains("past the data region"), "{m}");
+    assert!(
+        m.contains("data region") || m.contains("past the data region"),
+        "{m}"
+    );
 }
 
 #[test]
 fn rejects_out_of_range_palette() {
-    let a = archive(&[record(1, 1, &[vec![0x00]])], &[GRAPH_PALETTE_BYTES as u32]);
+    let a = archive(
+        &[record(1, 1, &[vec![0x00]])],
+        &[GRAPH_PALETTE_BYTES as u32],
+    );
     let e = IntrArchive::load(&a, &graph()).unwrap_err();
-    assert!(e.message.contains("outside GRAPH") || e.message.contains("palette_offset"), "{e}");
+    assert!(
+        e.message.contains("outside GRAPH") || e.message.contains("palette_offset"),
+        "{e}"
+    );
 }
 
 #[test]
@@ -302,7 +311,10 @@ fn variants_share_index_and_palette_table() {
         match (a.entry(id), b.entry(id)) {
             (None, None) => {}
             (Some(ea), Some(eb)) => {
-                assert_eq!(ea.palette_offset, eb.palette_offset, "palette mismatch at {id}");
+                assert_eq!(
+                    ea.palette_offset, eb.palette_offset,
+                    "palette mismatch at {id}"
+                );
             }
             _ => panic!("occupancy mismatch at index {id}"),
         }

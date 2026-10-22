@@ -2,13 +2,15 @@
 
 use super::super::*;
 
-
 // Konung.4, Game.1: gates at raw averaged 244/245 grid centers, in gate-index order.
-const K4_GATES: [(f64, f64); 4] =
-    [(123.0, 61.5), (115.5, 5.0), (16.0, 6.5), (66.0, 65.0)];
+const K4_GATES: [(f64, f64); 4] = [(123.0, 61.5), (115.5, 5.0), (16.0, 6.5), (66.0, 65.0)];
 // Outgoing edges in (rec, to) order: rec10 4->5, rec11 4->15, rec12 4->30, rec13 4->32.
-const K4_TRIGGERS: [(i32, i32, i32, i32); 4] =
-    [(63, 64, 63, 64), (119, 61, 119, 61), (112, 4, 112, 4), (12, 5, 12, 5)];
+const K4_TRIGGERS: [(i32, i32, i32, i32); 4] = [
+    (63, 64, 63, 64),
+    (119, 61, 119, 61),
+    (112, 4, 112, 4),
+    (12, 5, 12, 5),
+];
 const K4_RECS: [usize; 4] = [10, 11, 12, 13];
 
 #[test]
@@ -35,7 +37,10 @@ fn threshold_leaves_distant_trigger_unbound() {
     let gates = [(0.0, 0.0)];
     let triggers = [(50, 50, 50, 50)];
     let recs = [7usize];
-    assert_eq!(match_triggers_to_gates(&triggers, &recs, &gates, MAX_GATE_TRIGGER_DIST), vec![None]);
+    assert_eq!(
+        match_triggers_to_gates(&triggers, &recs, &gates, MAX_GATE_TRIGGER_DIST),
+        vec![None]
+    );
 }
 
 #[test]
@@ -67,4 +72,3 @@ fn tie_break_is_deterministic_by_rec_then_gate() {
     // rec3 -> gate0, rec5 -> gate1.
     assert_eq!(a, vec![Some(1), Some(0)]);
 }
-

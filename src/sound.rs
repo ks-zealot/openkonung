@@ -139,7 +139,8 @@ impl SoundArchive {
 
     /// Number of 16-bit mono frames in clip `id`.
     pub fn frame_count(&self, id: usize) -> Option<usize> {
-        self.entry(id).map(|(_, size)| size as usize / BYTES_PER_FRAME)
+        self.entry(id)
+            .map(|(_, size)| size as usize / BYTES_PER_FRAME)
     }
 
     /// Playback duration in milliseconds at the archive's base rate.

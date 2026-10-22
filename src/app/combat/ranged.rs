@@ -7,7 +7,6 @@
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
 
-
 use super::super::*;
 use crate::combat::CombatTarget;
 use crate::constants::combat::*;
@@ -25,15 +24,8 @@ impl PlayableApp {
         }
         if !crate::anim::battle_from_flags(match t {
             CombatTarget::Player => self.player.flags_b,
-            CombatTarget::Party(i) => self
-                .party
-                .get(i)
-                .map(|m| m.entity.flags_b)
-                .unwrap_or(0),
-            CombatTarget::World(id) => self
-                .combatant_entity(id)
-                .map(|e| e.flags_b)
-                .unwrap_or(0),
+            CombatTarget::Party(i) => self.party.get(i).map(|m| m.entity.flags_b).unwrap_or(0),
+            CombatTarget::World(id) => self.combatant_entity(id).map(|e| e.flags_b).unwrap_or(0),
             CombatTarget::Prop(_) => 0,
         }) {
             return false;
@@ -92,9 +84,8 @@ impl PlayableApp {
             };
             let start_cell = self.combatant_render_cell(shooter);
             let (lx, ly) = entity_to_local_px_f(start_cell.0 as f64, start_cell.1 as f64);
-            let (mx, my) = crate::combat::projectile::muzzle_offset(
-                (self.combatant_facing(shooter)) & 7,
-            );
+            let (mx, my) =
+                crate::combat::projectile::muzzle_offset((self.combatant_facing(shooter)) & 7);
             (
                 bow,
                 bow_info.projectile_lifetime,
@@ -103,7 +94,10 @@ impl PlayableApp {
             )
         };
         let (tx, ty) = entity_to_local_px(target_cell.0, target_cell.1);
-        let target = (tx as f32, ty as f32 - crate::combat::projectile::AIM_Y_OFFSET);
+        let target = (
+            tx as f32,
+            ty as f32 - crate::combat::projectile::AIM_Y_OFFSET,
+        );
         let projectile = crate::combat::projectile::spawn(
             shooter,
             start,
@@ -299,9 +293,9 @@ impl PlayableApp {
                     remove = true;
                     break;
                 }
-                let hit = occupants.iter().find(|(t, c, dead)| {
-                    *c == cell && *t != owner && !*dead
-                });
+                let hit = occupants
+                    .iter()
+                    .find(|(t, c, dead)| *c == cell && *t != owner && !*dead);
                 if let Some((target, _, _)) = hit.copied() {
                     self.resolve_projectile_hit(owner, target, bow);
                     remove = true;

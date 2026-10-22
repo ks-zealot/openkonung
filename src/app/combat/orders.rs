@@ -7,7 +7,6 @@
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
 
-
 use super::super::*;
 use crate::combat::CombatTarget;
 use crate::constants::combat::*;
@@ -130,7 +129,12 @@ impl PlayableApp {
             .actors
             .iter()
             .find(|a| a.entity.index == entity_id)
-            .map(|a| (a.source_group_id, a.entity.archetype & OBJECT_ARCHETYPE_BIT != 0))
+            .map(|a| {
+                (
+                    a.source_group_id,
+                    a.entity.archetype & OBJECT_ARCHETYPE_BIT != 0,
+                )
+            })
         else {
             return;
         };

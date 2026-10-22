@@ -9,7 +9,6 @@ pub struct ExeProfile {
     pub overlay_palette_va: u32,
 }
 
-
 pub fn exe_profile(len: usize) -> Option<ExeProfile> {
     match len {
         3796992 => Some(ExeProfile {
@@ -30,11 +29,8 @@ pub fn exe_profile(len: usize) -> Option<ExeProfile> {
     }
 }
 
-
 pub fn exe_va_to_off(va: u32, p: &ExeProfile) -> usize {
     (p.dgroup_raw + (va - p.dgroup_va)) as usize
 }
 
 // --- human animation helpers (free functions over raw graph bytes) ---
-
-

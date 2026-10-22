@@ -86,7 +86,10 @@ fn select_end_link_closes() {
     let fonts = crate::font::Fonts::empty();
     let mut d = DialogState::start(&q, &fonts, 1, 3, 800, &|_| false).unwrap();
     assert_eq!(d.options.len(), 1);
-    assert!(!d.select(&q, &fonts, 0, 800, &|_| false), "end link must close");
+    assert!(
+        !d.select(&q, &fonts, 0, 800, &|_| false),
+        "end link must close"
+    );
 }
 
 #[test]

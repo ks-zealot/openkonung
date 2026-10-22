@@ -18,21 +18,25 @@ fn character_screen_open_close_and_no_world_clickthrough() {
     // screen (original semantics) and never issues a world move.
     assert!(!app.character_screen);
     app.pointer_down(1, 36.0, 36.0);
-    assert!(!app.character_screen, "portrait click must not open the screen");
-    assert!(app.target.is_none(), "portrait click must not move the world");
+    assert!(
+        !app.character_screen,
+        "portrait click must not open the screen"
+    );
+    assert!(
+        app.target.is_none(),
+        "portrait click must not move the world"
+    );
 
     // `C` opens the character screen.
     app.key_down(KEY_C);
     assert!(app.character_screen);
     assert!(app.target.is_none(), "opening must not issue a world move");
 
-    // While open, a world click and an equipment click are consumed.
+    // While open, a world click is consumed.
     app.pointer_down(1, 500.0, 300.0);
     assert!(app.character_screen);
     assert!(app.target.is_none(), "no click-through to the world");
-    app.pointer_down(1, 183.0, 103.0);
-    assert!(app.character_screen);
-    assert!(app.target.is_none());
+    assert!(app.held_item.is_none());
 
     // `C` toggles closed; Escape also closes.
     app.key_down(KEY_C);
@@ -120,7 +124,6 @@ fn tab_toggles_protagonist_battle_stance() {
     );
 }
 
-
 #[test]
 fn wrap_to_px_keeps_every_line_within_width() {
     let s = "OpenKonung v15 | Старый лагерь | hero:Dragomir Game.1 | 800x600 native camera | pal:33 | portals:4 | C follow | H graph | D ids | P pop | L layers | T portals | cell=(72,34)";
@@ -148,4 +151,3 @@ fn text_clamped_width_estimate_is_positive_and_monotonic() {
     assert!(text_px("ab", 1.0) < text_px("abcd", 1.0));
     assert!(text_px("abcd", 1.0) < text_px("abcd", 2.0));
 }
-

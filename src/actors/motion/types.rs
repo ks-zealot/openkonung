@@ -61,7 +61,6 @@ pub struct ActorMotion {
     pub dead: bool,
 }
 
-
 /// How a [`RuntimeActor`] gets its draw position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActorPlacement {
@@ -75,7 +74,6 @@ pub enum ActorPlacement {
         spawn_rect: Rect,
     },
 }
-
 
 /// A renderable non-player entity.
 ///

@@ -44,8 +44,15 @@ fn cursor_block_decodes_16bit_color_and_transparency() {
     let img = crate::res::cursor_image(&g, 0).expect("decodes");
     assert_eq!((img.w, img.h), (2, 1));
     assert_eq!(img.data[3], 0, "skipped pixel is transparent");
-    assert_eq!(&img.data[4..8], &[255, 0, 0, 255], "literal pixel 0x7C00 = red");
-    assert!(crate::res::cursor_image(&g, 1).is_none(), "second block absent");
+    assert_eq!(
+        &img.data[4..8],
+        &[255, 0, 0, 255],
+        "literal pixel 0x7C00 = red"
+    );
+    assert!(
+        crate::res::cursor_image(&g, 1).is_none(),
+        "second block absent"
+    );
 }
 
 #[test]
@@ -91,7 +98,10 @@ fn object_anchor_is_indexed_by_row_dir_frame_not_frame_id() {
     assert_eq!(monster_anchor_offset(1, 0, 0), 0x1728 + 0x480);
     assert_eq!(monster_anchor_offset(0, 1, 0), 0x1728 + 0x90);
     assert_eq!(monster_anchor_offset(0, 0, 1), 0x1728 + 8);
-    assert_eq!(monster_anchor_offset(5, 7, 17), 0x1728 + 5 * 0x480 + 7 * 0x90 + 17 * 8);
+    assert_eq!(
+        monster_anchor_offset(5, 7, 17),
+        0x1728 + 5 * 0x480 + 7 * 0x90 + 17 * 8
+    );
 
     // Regression: a walk frame id (e.g. 132 for row 1 / dir 0) must NOT be used
     // as the table index; that was the "jumping" object-anchor bug.
@@ -122,8 +132,7 @@ fn human_frame_from_base_applies_equipment_overlays() {
     // Гилли (Game.1 entity 277): visual_index 1, palette 30, equipment
     // [0,0,288,289,0,0] = Нож + Кольчуга (overlays 4 and 8).
     let bare = res.human_frame_from_base(&[0u16; 6], 0, false, 1, 30, 6, 0, 0);
-    let dressed =
-        res.human_frame_from_base(&[0, 0, 288, 289, 0, 0], 0, false, 1, 30, 6, 0, 0);
+    let dressed = res.human_frame_from_base(&[0, 0, 288, 289, 0, 0], 0, false, 1, 30, 6, 0, 0);
     assert!(bare.0.w > 0 && dressed.0.w > 0, "frames must decode");
     assert_ne!(
         bare.0.data, dressed.0.data,
@@ -160,7 +169,10 @@ fn monster_anchor_uses_row_dir_frame_index() {
     );
 
     // Idle (row 0) and walk (row 1) are distinct table regions.
-    assert_ne!(res.monster_anchor(0, 0, 0, 0), res.monster_anchor(0, 1, 0, 0));
+    assert_ne!(
+        res.monster_anchor(0, 0, 0, 0),
+        res.monster_anchor(0, 1, 0, 0)
+    );
 
     // The anchor must be the bytes at `0x1728 + row*0x480 + dir*0x90 + fi*8`.
     let blk = res.object_block(0);
@@ -192,16 +204,8 @@ fn battle_overlay_order_tables_match_original_dgroup() {
         }
     }
     for (name, base, table) in [
-        (
-            "battle A",
-            0x462BFCu32,
-            &super::HUMAN_DRAW_ORDER_BATTLE_A,
-        ),
-        (
-            "battle B",
-            0x462EFCu32,
-            &super::HUMAN_DRAW_ORDER_BATTLE_B,
-        ),
+        ("battle A", 0x462BFCu32, &super::HUMAN_DRAW_ORDER_BATTLE_A),
+        ("battle B", 0x462EFCu32, &super::HUMAN_DRAW_ORDER_BATTLE_B),
     ] {
         for bucket in 0..4 {
             for dir in 0..8 {
@@ -315,7 +319,16 @@ fn paper_doll_peace_frame_is_nonempty() {
     for action in [0usize, 6] {
         for direction in 0..8u8 {
             let doll = res
-                .paper_doll_frame(&equipment, 2, action == 0, 1, 33, action, direction as usize, 0)
+                .paper_doll_frame(
+                    &equipment,
+                    2,
+                    action == 0,
+                    1,
+                    33,
+                    action,
+                    direction as usize,
+                    0,
+                )
                 .expect("doll");
             let opaque = doll.data.chunks(4).filter(|p| p[3] != 0).count();
             assert!(

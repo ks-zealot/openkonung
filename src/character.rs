@@ -17,12 +17,10 @@ use crate::hero::HeroTemplate;
 #[cfg(test)]
 mod tests;
 
-
-mod class;
 mod build;
+mod class;
 mod player;
 
-pub use self::class::*;
 pub use self::build::*;
+pub use self::class::*;
 pub use self::player::*;
-

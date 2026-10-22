@@ -11,12 +11,10 @@ pub fn projected_sort_key(a: &RuntimeActor) -> (i64, i64) {
     (ly as i64, lx as i64)
 }
 
-
 /// Back-to-front sort for painter's-algorithm drawing.
 pub fn sort_actors(actors: &mut [RuntimeActor]) {
     actors.sort_by_key(projected_sort_key);
 }
-
 
 /// Begin the next walk segment exactly like the original `FUN_0041435C`: take
 /// the draw cell (`render_cell`) from the CURRENT cell, face and step one

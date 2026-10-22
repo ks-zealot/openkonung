@@ -46,7 +46,10 @@ pub struct QuestContext {
 impl QuestContext {
     /// `B7` slot active bit (`0x80`).
     pub fn flag_active(&self, index: usize) -> bool {
-        self.flags.get(index).map(|b| b & 0x80 != 0).unwrap_or(false)
+        self.flags
+            .get(index)
+            .map(|b| b & 0x80 != 0)
+            .unwrap_or(false)
     }
 }
 
@@ -86,7 +89,10 @@ fn eval_op(ctx: &QuestContext, op: u16) -> bool {
 impl PlayableApp {
     /// Build the condition/action snapshot for a dialogue with `npc_entity`.
     pub(super) fn quest_context(&self, npc_entity: usize) -> QuestContext {
-        let e = self.tables.as_ref().and_then(|t| t.entities.get(npc_entity));
+        let e = self
+            .tables
+            .as_ref()
+            .and_then(|t| t.entities.get(npc_entity));
         let (archetype, level) = e.map(|e| (e.archetype, e.stats.level)).unwrap_or((0, 0));
         let capacity = crate::character::max_party(self.player.class, self.player.charisma_base);
         QuestContext {
@@ -187,7 +193,12 @@ impl PlayableApp {
         let walk_frames = self
             .world
             .res
-            .walk_cycle_frames(entity.archetype, entity.visual_index, facing as usize, battle)
+            .walk_cycle_frames(
+                entity.archetype,
+                entity.visual_index,
+                facing as usize,
+                battle,
+            )
             .unwrap_or(0)
             .min(u8::MAX as usize) as u8;
         let idle_frames = self
@@ -288,7 +299,10 @@ impl PlayableApp {
             return;
         };
         // Run the option's action program before following its link.
-        if let Some(action) = self.dialog.as_ref().and_then(|d| d.options.get(index).map(|o| o.action))
+        if let Some(action) = self
+            .dialog
+            .as_ref()
+            .and_then(|d| d.options.get(index).map(|o| o.action))
         {
             if action >= 0 {
                 self.run_action_program(action as u16, npc_entity);
@@ -303,16 +317,10 @@ impl PlayableApp {
                 *dialog = None;
                 return;
             };
-            state.select(
-                quest,
-                &world.res.fonts,
-                index,
-                VIRTUAL_W,
-                &|id: u16| {
-                    let words = quest.condition_program(id);
-                    evaluate_condition(&words, |i| ctx.flag_active(i), |op| eval_op(&ctx, op))
-                },
-            )
+            state.select(quest, &world.res.fonts, index, VIRTUAL_W, &|id: u16| {
+                let words = quest.condition_program(id);
+                evaluate_condition(&words, |i| ctx.flag_active(i), |op| eval_op(&ctx, op))
+            })
         };
         if stay {
             self.run_on_open_actions(npc_entity);

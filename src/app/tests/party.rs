@@ -13,7 +13,10 @@ fn party_selection_gates_world_commands() {
     // Leader/party slot 0 is selected at start; a world click issues a move.
     assert!(app.party_selected[0], "leader selected at start");
     app.pointer_down(1, 500.0, 300.0);
-    assert!(app.target.is_some(), "selected leader receives the move command");
+    assert!(
+        app.target.is_some(),
+        "selected leader receives the move command"
+    );
 
     // Single-select an empty cell replaces the whole set (`FUN_00424D8C`).
     app.set_shift(false);
@@ -22,12 +25,18 @@ fn party_selection_gates_world_commands() {
     assert!(app.party_selected[5]);
     app.target = None;
     app.pointer_down(1, 500.0, 300.0);
-    assert!(app.target.is_none(), "deselected leader receives no command");
+    assert!(
+        app.target.is_none(),
+        "deselected leader receives no command"
+    );
 
     // Additive select (Shift) keeps the previous member.
     app.set_shift(true);
     app.select_party_member(0);
-    assert!(app.party_selected[0] && app.party_selected[5], "additive set");
+    assert!(
+        app.party_selected[0] && app.party_selected[5],
+        "additive set"
+    );
 }
 
 #[test]
@@ -40,7 +49,10 @@ fn party_portrait_click_is_consumed_and_selects() {
     app.party_selected = [false; crate::hud::PARTY_CELLS];
     app.pointer_down(1, 36.0, 36.0);
     assert!(app.party_selected[0], "portrait click selects cell 0");
-    assert!(app.target.is_none(), "portrait click must not move the world");
+    assert!(
+        app.target.is_none(),
+        "portrait click must not move the world"
+    );
 }
 
 /// A playable app with one synthetic, fully-free location so world clicks issue
@@ -72,7 +84,10 @@ fn sigma_joins_the_party_through_dialogue() {
     assert_eq!(app.party.len(), 1, "companion recruited");
     assert_eq!(app.party[0].entity.index, 539);
     assert!(app.party_selected[1], "new member auto-selected");
-    assert!(app.quest_flags[207] & 0x80 != 0, "flag 207 set by the action");
+    assert!(
+        app.quest_flags[207] & 0x80 != 0,
+        "flag 207 set by the action"
+    );
 
     // Re-open: the member branch (op 0x15E) now resolves to the party menu 1781.
     app.dialog = None;
@@ -105,7 +120,6 @@ fn sigma_joins_the_party_through_dialogue() {
     assert!(app.party.is_empty(), "companion dismissed via op 0x14C");
 }
 
-
 #[test]
 fn selected_companion_receives_the_world_click_move() {
     let Some(mut app) = build_party_move_app() else {
@@ -117,7 +131,10 @@ fn selected_companion_receives_the_world_click_move() {
     app.dialog_click_option(0); // 1771 -> 1774
     app.dialog_click_option(0); // recruit (op 0x123)
     assert_eq!(app.party.len(), 1);
-    assert!(app.party_selected[0] && app.party_selected[1], "leader + recruit selected");
+    assert!(
+        app.party_selected[0] && app.party_selected[1],
+        "leader + recruit selected"
+    );
 
     // Click a cell ~8 east of the leader. The original command 0 stores the same
     // clicked cell on every selected unit, so the companion is commanded too.
@@ -130,7 +147,10 @@ fn selected_companion_receives_the_world_click_move() {
     app.pointer_down(1, sx, sy);
 
     assert!(app.player_active, "leader walks to the click");
-    assert!(app.party[0].motion.walking, "companion is commanded to the same cell");
+    assert!(
+        app.party[0].motion.walking,
+        "companion is commanded to the same cell"
+    );
     assert!(
         !app.party[0].motion.path.is_empty(),
         "companion has a route to the clicked cell"
@@ -140,9 +160,11 @@ fn selected_companion_receives_the_world_click_move() {
     for _ in 0..300 {
         app.update_party(1.0 / LOGIC_TICK_HZ);
     }
-    assert_ne!(app.party[0].motion.cell, start, "companion moved on the click command");
+    assert_ne!(
+        app.party[0].motion.cell, start,
+        "companion moved on the click command"
+    );
 }
-
 
 #[test]
 fn tab_toggles_every_selected_party_member() {
@@ -177,10 +199,7 @@ fn tab_toggles_every_selected_party_member() {
 
     // The toggle is exact and reversible for both selected units.
     app.key_down(KEY_TAB);
-    assert_eq!(
-        app.player.flags_b & crate::anim::FLAG_BATTLE,
-        leader_before
-    );
+    assert_eq!(app.player.flags_b & crate::anim::FLAG_BATTLE, leader_before);
     assert_eq!(
         app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE,
         sig_before

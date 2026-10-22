@@ -11,7 +11,6 @@ pub fn is_free(collision: &[u16], x: i32, y: i32) -> bool {
     i < collision.len() && (collision[i] & 0x0FFF) == 0
 }
 
-
 /// True when this entity is a wandering civilian, mirroring the original
 /// dispatch: `flags_a(+0x02) & 0x40` set, `archetype & 0x80 == 0`, kind not
 /// `3`/`9` (`FUN_00415fc8` -> `FUN_004168a4`).
@@ -28,7 +27,6 @@ pub fn is_free(collision: &[u16], x: i32, y: i32) -> bool {
 pub fn wanders(e: &Entity) -> bool {
     e.flags_a & FLAG_WANDER != 0 && e.archetype & 0x80 == 0 && !matches!(e.kind, 3 | 9)
 }
-
 
 /// Port of `FUN_00413a84`: pick a random collision-free point strictly inside the
 /// group's spawn rectangle A, near the current position (or the rectangle centre
@@ -73,7 +71,6 @@ pub fn wander_target(
     }
     None
 }
-
 
 /// Original route builder (`FUN_0043DA1F`): a weighted search over the staggered
 /// movement grid that returns the list of direction codes (0..=7) to walk from
@@ -161,7 +158,6 @@ pub fn find_path(
     Some(dirs)
 }
 
-
 /// Bounds covering a rectangle plus start/goal, clamped to the runtime grid.
 pub fn path_bounds(rect: &Rect, a: (i32, i32), b: (i32, i32)) -> (i32, i32, i32, i32) {
     let xs = [rect.x1 as i32, rect.x2 as i32, a.0, b.0];
@@ -170,7 +166,10 @@ pub fn path_bounds(rect: &Rect, a: (i32, i32), b: (i32, i32)) -> (i32, i32, i32,
     let x1 = xs.iter().copied().max().unwrap_or(0) + 2;
     let y0 = ys.iter().copied().min().unwrap_or(0) - 2;
     let y1 = ys.iter().copied().max().unwrap_or(0) + 2;
-    (x0.max(0), y0.max(0), x1.min(RUNTIME_W - 1), y1.min(RUNTIME_H - 1))
+    (
+        x0.max(0),
+        y0.max(0),
+        x1.min(RUNTIME_W - 1),
+        y1.min(RUNTIME_H - 1),
+    )
 }
-
-

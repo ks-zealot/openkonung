@@ -35,8 +35,8 @@ use crate::res::u16 as rd_u16;
 
 pub use crate::constants::exe_tables::ITEM_INSTANCE_SIZE;
 
-use crate::constants::exe_tables::ITEM_DGROUP_VA;
 use crate::constants::exe_tables::ITEM_DGROUP_FILE;
+use crate::constants::exe_tables::ITEM_DGROUP_VA;
 
 use crate::constants::exe_tables::TABLE1_VA;
 use crate::constants::exe_tables::TABLE2_VA;
@@ -48,14 +48,16 @@ use crate::constants::exe_tables::NAME2_VA;
 use crate::constants::exe_tables::NAME3_VA;
 use crate::constants::exe_tables::NAME4_VA;
 
-use crate::constants::exe_tables::ARMOR_TABLE_VA;
 use crate::constants::exe_tables::ARMOR_STRIDE;
+use crate::constants::exe_tables::ARMOR_TABLE_VA;
 use crate::constants::exe_tables::ITEM_DURABILITY_OFF;
 use crate::constants::exe_tables::ITEM_LIFETIME_OFF;
 use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
 use crate::constants::exe_tables::ITEM_MODIFIER_STRIDE;
 use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
 use crate::constants::exe_tables::ITEM_RANGE_OFF;
+use crate::constants::exe_tables::ITEM_REQUIREMENT_STAT_OFF;
+use crate::constants::exe_tables::ITEM_REQUIREMENT_VALUE_OFF;
 
 /// Table `(icon_base_va, stride, name_base_va)` for an item class.
 fn table_for(class: u8) -> Option<(u32, usize, u32)> {
@@ -108,6 +110,10 @@ pub struct ItemInfo {
     pub rating: u16,
     /// Prototype durability (`u16@+0x2E`, stride-`0x40` records only).
     pub durability: u16,
+    /// Requirement stat id (`u16@+0x30`, stride-`0x40` records only).
+    pub requirement_stat: u16,
+    /// Requirement value (`u16@+0x32`, stride-`0x40` records only).
+    pub requirement_value: u16,
     /// Prototype reach (`u16@+0x34`, stride-`0x40` records only).
     pub range: u16,
     /// Projectile lifetime in frames (`u8@+0x08`, read by `FUN_0041BF44`).
@@ -198,15 +204,18 @@ impl ItemDb {
         if no + stride > self.konung.len() {
             return None;
         }
-        let (durability, range, projectile_lifetime) = if stride == 64 {
-            (
-                rd_u16(&self.konung, no + ITEM_DURABILITY_OFF) as u16,
-                rd_u16(&self.konung, no + ITEM_RANGE_OFF) as u16,
-                self.konung[no + ITEM_LIFETIME_OFF],
-            )
-        } else {
-            (0, 0, 0)
-        };
+        let (durability, requirement_stat, requirement_value, range, projectile_lifetime) =
+            if stride == 64 {
+                (
+                    rd_u16(&self.konung, no + ITEM_DURABILITY_OFF) as u16,
+                    rd_u16(&self.konung, no + ITEM_REQUIREMENT_STAT_OFF) as u16,
+                    rd_u16(&self.konung, no + ITEM_REQUIREMENT_VALUE_OFF) as u16,
+                    rd_u16(&self.konung, no + ITEM_RANGE_OFF) as u16,
+                    self.konung[no + ITEM_LIFETIME_OFF],
+                )
+            } else {
+                (0, 0, 0, 0, 0)
+            };
         let raw = &self.konung[no..no + stride];
         let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
         let name = decode_cp866(&raw[..end]);
@@ -229,6 +238,8 @@ impl ItemDb {
             weight,
             rating,
             durability,
+            requirement_stat,
+            requirement_value,
             range,
             projectile_lifetime,
             world_sprite,
@@ -277,9 +288,7 @@ impl ItemDb {
         if index < 0 || index as usize >= ITEM_MODIFIER_COUNT {
             return None;
         }
-        let o = va_to_file(ITEM_MODIFIER_TABLE_VA)
-            + index as usize * ITEM_MODIFIER_STRIDE
-            + 0x14;
+        let o = va_to_file(ITEM_MODIFIER_TABLE_VA) + index as usize * ITEM_MODIFIER_STRIDE + 0x14;
         if o + 0x2C > self.konung.len() {
             return None;
         }

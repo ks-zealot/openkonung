@@ -47,7 +47,12 @@ impl PlayableApp {
         goal: (i32, i32),
     ) {
         m.target = Some(goal);
-        let bounds = (0, 0, crate::coords::RUNTIME_W - 1, crate::coords::RUNTIME_H - 1);
+        let bounds = (
+            0,
+            0,
+            crate::coords::RUNTIME_W - 1,
+            crate::coords::RUNTIME_H - 1,
+        );
         match crate::actors::find_path(collision, occupied, m.cell, goal, bounds) {
             Some(p) if !p.is_empty() => {
                 m.path = p;

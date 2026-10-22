@@ -194,39 +194,39 @@ pub const BOTTOM_REGIONS: [usize; 2] = [BOTTOM_CANCEL_REGION, BOTTOM_OK_REGION];
 /// `NEWH_DRAW_640`: original image placement rectangles (even records of the
 /// 0x4629C table). Hero draw rects equal the `NEWH640R.RES` portrait sizes.
 pub const NEWH_DRAW_640: [Rect; NEWH_REGION_COUNT] = [
-    Rect::new(44, 94, 57, 66),   // 0 hero 0 portrait
-    Rect::new(137, 94, 58, 66),  // 1 hero 1 portrait
-    Rect::new(229, 94, 58, 66),  // 2 hero 2 portrait
-    Rect::new(481, 68, 20, 20),  // 3 stat control
-    Rect::new(448, 68, 20, 20),  // 4 stat control
-    Rect::new(448, 36, 20, 20),  // 5 stat control
-    Rect::new(481, 36, 20, 20),  // 6 stat control
-    Rect::new(465, 160, 20, 15), // 7 stat control
-    Rect::new(465, 178, 20, 15), // 8
-    Rect::new(465, 196, 20, 15), // 9
-    Rect::new(465, 214, 20, 15), // 10
-    Rect::new(513, 254, 30, 15), // 11
-    Rect::new(513, 272, 30, 15), // 12
-    Rect::new(575, 334, 30, 15), // 13
-    Rect::new(575, 352, 30, 15), // 14
-    Rect::new(434, 333, 20, 20), // 15
-    Rect::new(434, 350, 20, 20), // 16
-    Rect::new(461, 387, 20, 20), // 17
-    Rect::new(461, 404, 20, 20), // 18
-    Rect::new(461, 421, 20, 20), // 19
-    Rect::new(65, 427, 100, 33), // 20 bottom button 0
-    Rect::new(175, 427, 100, 33),// 21 bottom button 1
-    Rect::new(470, 127, 0, 0),   // 22 zero-size point (no-op)
-    Rect::new(40, 206, 262, 200),// 23 character preview panel
-    Rect::new(463, 134, 30, 15), // 24 points box
-    Rect::new(435, 160, 30, 15), // 25 CHA -
-    Rect::new(485, 160, 40, 15), // 26 CHA +
-    Rect::new(435, 178, 30, 15), // 27 STR -
-    Rect::new(485, 178, 40, 15), // 28 STR +
-    Rect::new(435, 196, 30, 15), // 29 DEX -
-    Rect::new(485, 196, 40, 15), // 30 DEX +
-    Rect::new(435, 214, 30, 15), // 31 END -
-    Rect::new(485, 214, 40, 15), // 32 END +
+    Rect::new(44, 94, 57, 66),    // 0 hero 0 portrait
+    Rect::new(137, 94, 58, 66),   // 1 hero 1 portrait
+    Rect::new(229, 94, 58, 66),   // 2 hero 2 portrait
+    Rect::new(481, 68, 20, 20),   // 3 stat control
+    Rect::new(448, 68, 20, 20),   // 4 stat control
+    Rect::new(448, 36, 20, 20),   // 5 stat control
+    Rect::new(481, 36, 20, 20),   // 6 stat control
+    Rect::new(465, 160, 20, 15),  // 7 stat control
+    Rect::new(465, 178, 20, 15),  // 8
+    Rect::new(465, 196, 20, 15),  // 9
+    Rect::new(465, 214, 20, 15),  // 10
+    Rect::new(513, 254, 30, 15),  // 11
+    Rect::new(513, 272, 30, 15),  // 12
+    Rect::new(575, 334, 30, 15),  // 13
+    Rect::new(575, 352, 30, 15),  // 14
+    Rect::new(434, 333, 20, 20),  // 15
+    Rect::new(434, 350, 20, 20),  // 16
+    Rect::new(461, 387, 20, 20),  // 17
+    Rect::new(461, 404, 20, 20),  // 18
+    Rect::new(461, 421, 20, 20),  // 19
+    Rect::new(65, 427, 100, 33),  // 20 bottom button 0
+    Rect::new(175, 427, 100, 33), // 21 bottom button 1
+    Rect::new(470, 127, 0, 0),    // 22 zero-size point (no-op)
+    Rect::new(40, 206, 262, 200), // 23 character preview panel
+    Rect::new(463, 134, 30, 15),  // 24 points box
+    Rect::new(435, 160, 30, 15),  // 25 CHA -
+    Rect::new(485, 160, 40, 15),  // 26 CHA +
+    Rect::new(435, 178, 30, 15),  // 27 STR -
+    Rect::new(485, 178, 40, 15),  // 28 STR +
+    Rect::new(435, 196, 30, 15),  // 29 DEX -
+    Rect::new(485, 196, 40, 15),  // 30 DEX +
+    Rect::new(435, 214, 30, 15),  // 31 END -
+    Rect::new(485, 214, 40, 15),  // 32 END +
 ];
 
 /// `NEWH_DRAW_800`: odd records of the 0x4629C table.
@@ -253,54 +253,54 @@ pub const NEWH_DRAW_800: [Rect; NEWH_REGION_COUNT] = [
     Rect::new(542, 509, 20, 20),
     Rect::new(85, 527, 100, 33),
     Rect::new(195, 527, 100, 33),
-    Rect::new(570, 160, 0, 0),   // 22 zero-size point (no-op)
-    Rect::new(40, 266, 317, 300),// 23 character preview panel
-    Rect::new(543, 164, 34, 15), // 24 points box
-    Rect::new(515, 195, 30, 15), // 25 CHA -
-    Rect::new(575, 195, 30, 15), // 26 CHA +
-    Rect::new(515, 218, 30, 15), // 27 STR -
-    Rect::new(575, 218, 30, 15), // 28 STR +
-    Rect::new(515, 239, 30, 15), // 29 DEX -
-    Rect::new(575, 239, 30, 15), // 30 DEX +
-    Rect::new(515, 259, 30, 15), // 31 END -
-    Rect::new(575, 259, 30, 15), // 32 END +
+    Rect::new(570, 160, 0, 0),    // 22 zero-size point (no-op)
+    Rect::new(40, 266, 317, 300), // 23 character preview panel
+    Rect::new(543, 164, 34, 15),  // 24 points box
+    Rect::new(515, 195, 30, 15),  // 25 CHA -
+    Rect::new(575, 195, 30, 15),  // 26 CHA +
+    Rect::new(515, 218, 30, 15),  // 27 STR -
+    Rect::new(575, 218, 30, 15),  // 28 STR +
+    Rect::new(515, 239, 30, 15),  // 29 DEX -
+    Rect::new(575, 239, 30, 15),  // 30 DEX +
+    Rect::new(515, 259, 30, 15),  // 31 END -
+    Rect::new(575, 259, 30, 15),  // 32 END +
 ];
 
 /// `NEWH_HIT_640`: interactive rectangles (even records of the 0x466DC table).
 pub const NEWH_HIT_640: [Rect; NEWH_REGION_COUNT] = [
-    Rect::new(44, 94, 57, 96),   // 0 hero 0
-    Rect::new(137, 94, 58, 96),  // 1 hero 1
-    Rect::new(229, 94, 58, 96),  // 2 hero 2
-    Rect::new(481, 68, 99, 20),  // 3
-    Rect::new(362, 68, 106, 20), // 4
-    Rect::new(362, 36, 106, 20), // 5
-    Rect::new(481, 36, 99, 20),  // 6
-    Rect::new(360, 160, 70, 15), // 7
-    Rect::new(360, 178, 70, 15), // 8
-    Rect::new(360, 196, 70, 15), // 9
-    Rect::new(360, 214, 70, 15), // 10
-    Rect::new(420, 254, 123, 15),// 11
-    Rect::new(420, 272, 123, 15),// 12
-    Rect::new(464, 334, 141, 15),// 13
-    Rect::new(464, 352, 141, 15),// 14
-    Rect::new(356, 333, 98, 20), // 15
-    Rect::new(356, 350, 98, 20), // 16
-    Rect::new(356, 387, 125, 20),// 17
-    Rect::new(356, 404, 125, 20),// 18
-    Rect::new(361, 421, 120, 20),// 19
-    Rect::new(65, 427, 100, 33), // 20 bottom 0
-    Rect::new(175, 427, 100, 33),// 21 bottom 1
-    Rect::new(470, 127, 0, 0),   // 22
-    Rect::new(40, 206, 262, 200),// 23 preview panel
-    Rect::new(463, 134, 30, 15), // 24 points
-    Rect::new(435, 160, 30, 15), // 25 CHA -
-    Rect::new(485, 160, 40, 15), // 26 CHA +
-    Rect::new(435, 178, 30, 15), // 27 STR -
-    Rect::new(485, 178, 40, 15), // 28 STR +
-    Rect::new(435, 196, 30, 15), // 29 DEX -
-    Rect::new(485, 196, 40, 15), // 30 DEX +
-    Rect::new(435, 214, 30, 15), // 31 END -
-    Rect::new(485, 214, 40, 15), // 32 END +
+    Rect::new(44, 94, 57, 96),    // 0 hero 0
+    Rect::new(137, 94, 58, 96),   // 1 hero 1
+    Rect::new(229, 94, 58, 96),   // 2 hero 2
+    Rect::new(481, 68, 99, 20),   // 3
+    Rect::new(362, 68, 106, 20),  // 4
+    Rect::new(362, 36, 106, 20),  // 5
+    Rect::new(481, 36, 99, 20),   // 6
+    Rect::new(360, 160, 70, 15),  // 7
+    Rect::new(360, 178, 70, 15),  // 8
+    Rect::new(360, 196, 70, 15),  // 9
+    Rect::new(360, 214, 70, 15),  // 10
+    Rect::new(420, 254, 123, 15), // 11
+    Rect::new(420, 272, 123, 15), // 12
+    Rect::new(464, 334, 141, 15), // 13
+    Rect::new(464, 352, 141, 15), // 14
+    Rect::new(356, 333, 98, 20),  // 15
+    Rect::new(356, 350, 98, 20),  // 16
+    Rect::new(356, 387, 125, 20), // 17
+    Rect::new(356, 404, 125, 20), // 18
+    Rect::new(361, 421, 120, 20), // 19
+    Rect::new(65, 427, 100, 33),  // 20 bottom 0
+    Rect::new(175, 427, 100, 33), // 21 bottom 1
+    Rect::new(470, 127, 0, 0),    // 22
+    Rect::new(40, 206, 262, 200), // 23 preview panel
+    Rect::new(463, 134, 30, 15),  // 24 points
+    Rect::new(435, 160, 30, 15),  // 25 CHA -
+    Rect::new(485, 160, 40, 15),  // 26 CHA +
+    Rect::new(435, 178, 30, 15),  // 27 STR -
+    Rect::new(485, 178, 40, 15),  // 28 STR +
+    Rect::new(435, 196, 30, 15),  // 29 DEX -
+    Rect::new(485, 196, 40, 15),  // 30 DEX +
+    Rect::new(435, 214, 30, 15),  // 31 END -
+    Rect::new(485, 214, 40, 15),  // 32 END +
 ];
 
 /// `NEWH_HIT_800`: odd records of the 0x466DC table.
@@ -327,17 +327,17 @@ pub const NEWH_HIT_800: [Rect; NEWH_REGION_COUNT] = [
     Rect::new(428, 509, 134, 20),
     Rect::new(85, 527, 100, 33),
     Rect::new(195, 527, 100, 33),
-    Rect::new(570, 160, 0, 0),   // 22
-    Rect::new(40, 266, 317, 300),// 23 preview panel
-    Rect::new(543, 164, 34, 15), // 24 points
-    Rect::new(515, 195, 30, 15), // 25 CHA -
-    Rect::new(575, 195, 30, 15), // 26 CHA +
-    Rect::new(515, 218, 30, 15), // 27 STR -
-    Rect::new(575, 218, 30, 15), // 28 STR +
-    Rect::new(515, 239, 30, 15), // 29 DEX -
-    Rect::new(575, 239, 30, 15), // 30 DEX +
-    Rect::new(515, 259, 30, 15), // 31 END -
-    Rect::new(575, 259, 30, 15), // 32 END +
+    Rect::new(570, 160, 0, 0),    // 22
+    Rect::new(40, 266, 317, 300), // 23 preview panel
+    Rect::new(543, 164, 34, 15),  // 24 points
+    Rect::new(515, 195, 30, 15),  // 25 CHA -
+    Rect::new(575, 195, 30, 15),  // 26 CHA +
+    Rect::new(515, 218, 30, 15),  // 27 STR -
+    Rect::new(575, 218, 30, 15),  // 28 STR +
+    Rect::new(515, 239, 30, 15),  // 29 DEX -
+    Rect::new(575, 239, 30, 15),  // 30 DEX +
+    Rect::new(515, 259, 30, 15),  // 31 END -
+    Rect::new(575, 259, 30, 15),  // 32 END +
 ];
 
 /// Logical frontend resolution. The original selects `MENU{width}R.RES` /

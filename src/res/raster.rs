@@ -9,9 +9,7 @@ pub struct Image {
     pub data: Vec<u8>, // RGBA
 }
 
-
 pub type Img = Rc<Image>;
-
 
 pub fn palette_rgb(graph: &[u8], palette_id: usize) -> [[u8; 3]; 256] {
     let mut out = [[0u8; 3]; 256];
@@ -28,7 +26,6 @@ pub fn palette_rgb(graph: &[u8], palette_id: usize) -> [[u8; 3]; 256] {
     }
     out
 }
-
 
 /// Decode the Konung indexed-image grammar into index + alpha arrays.
 pub fn decode_indexed_rle(payload: &[u8], off: usize) -> (Vec<u8>, Vec<u8>, usize, usize) {
@@ -88,8 +85,13 @@ pub fn decode_indexed_rle(payload: &[u8], off: usize) -> (Vec<u8>, Vec<u8>, usiz
     (idx, alpha, w, h)
 }
 
-
-pub fn indexed_to_rgba(idx: &[u8], alpha: &[u8], w: usize, h: usize, pal: &[[u8; 3]; 256]) -> Image {
+pub fn indexed_to_rgba(
+    idx: &[u8],
+    alpha: &[u8],
+    w: usize,
+    h: usize,
+    pal: &[[u8; 3]; 256],
+) -> Image {
     let mut data = vec![0u8; w * h * 4];
     for i in 0..w * h {
         if alpha[i] > 0 {
@@ -103,7 +105,6 @@ pub fn indexed_to_rgba(idx: &[u8], alpha: &[u8], w: usize, h: usize, pal: &[[u8;
     Image { w, h, data }
 }
 
-
 pub fn u16(b: &[u8], o: usize) -> u32 {
     (b[o] as u32) | ((b[o + 1] as u32) << 8)
 }
@@ -113,16 +114,12 @@ pub fn i16(b: &[u8], o: usize) -> i32 {
 }
 
 pub fn u32(b: &[u8], o: usize) -> u32 {
-    (b[o] as u32)
-        | ((b[o + 1] as u32) << 8)
-        | ((b[o + 2] as u32) << 16)
-        | ((b[o + 3] as u32) << 24)
+    (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24)
 }
 
 pub fn i32v(b: &[u8], o: usize) -> i32 {
     u32(b, o) as i32
 }
-
 
 pub fn cell_to_screen(cx: i32, cy: i32) -> (i32, i32) {
     (
@@ -131,9 +128,17 @@ pub fn cell_to_screen(cx: i32, cy: i32) -> (i32, i32) {
     )
 }
 
-
 /// Alpha-composite `src` onto `dst` at (ox, oy). Straight "over" operator.
-pub fn blit(dst: &mut [u8], dw: usize, dh: usize, src: &[u8], sw: usize, sh: usize, ox: i32, oy: i32) {
+pub fn blit(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    ox: i32,
+    oy: i32,
+) {
     if sw == 0 || sh == 0 {
         return;
     }
@@ -168,7 +173,6 @@ pub fn blit(dst: &mut [u8], dw: usize, dh: usize, src: &[u8], sw: usize, sh: usi
         }
     }
 }
-
 
 /// Alpha-composite only source rows `[sy0, sh)` of `src` onto `dst`, mapping
 /// source row `sy` to destination row `oy + sy`. Used by the party-panel HP
@@ -221,7 +225,6 @@ pub fn blit_rows(
     }
 }
 
-
 /// Fill a rectangle (opaque) clipping to the buffer.
 pub fn fill_rect(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
     let x0 = x.max(0);
@@ -237,9 +240,17 @@ pub fn fill_rect(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h
     }
 }
 
-
 /// Draw a filled ellipse using a simple scanline test.
-pub fn fill_ellipse(dst: &mut [u8], dw: usize, dh: usize, cx: f32, cy: f32, rx: f32, ry: f32, c: [u8; 4]) {
+pub fn fill_ellipse(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    cx: f32,
+    cy: f32,
+    rx: f32,
+    ry: f32,
+    c: [u8; 4],
+) {
     if rx <= 0.0 || ry <= 0.0 {
         return;
     }
@@ -260,9 +271,17 @@ pub fn fill_ellipse(dst: &mut [u8], dw: usize, dh: usize, cx: f32, cy: f32, rx: 
     }
 }
 
-
 /// Bresenham line.
-pub fn line(dst: &mut [u8], dw: usize, dh: usize, mut x0: i32, mut y0: i32, x1: i32, y1: i32, c: [u8; 4]) {
+pub fn line(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    mut x0: i32,
+    mut y0: i32,
+    x1: i32,
+    y1: i32,
+    c: [u8; 4],
+) {
     let dx = (x1 - x0).abs();
     let dy = -(y1 - y0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -287,5 +306,3 @@ pub fn line(dst: &mut [u8], dw: usize, dh: usize, mut x0: i32, mut y0: i32, x1: 
         }
     }
 }
-
-

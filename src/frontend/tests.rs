@@ -1,7 +1,7 @@
 //! Unit tests for the [`crate::frontend`] module.
 
 use super::*;
-use layout::{NEWH_HIT_640, MENU_IMAGE_A};
+use layout::{MENU_IMAGE_A, NEWH_HIT_640};
 
 fn synthetic_frontend() -> Frontend {
     // Minimal 15-image MENU and 13-image NEWH resources, 1x1 each.
@@ -88,7 +88,10 @@ fn hero_and_class_selection_then_confirm_starts() {
     assert_eq!(click(&mut f, ok), None);
 
     // Select Merchant (region 3) -> preset applied.
-    assert_eq!(click(&mut f, NEWH_HIT_640[CharacterClass::Merchant.region()]), None);
+    assert_eq!(
+        click(&mut f, NEWH_HIT_640[CharacterClass::Merchant.region()]),
+        None
+    );
     assert_eq!(f.new_hero.selected_class, Some(CharacterClass::Merchant));
 
     // Modify the draft (stat/skill editing is future work; this exercises the
@@ -193,7 +196,10 @@ fn save_and_load_entry_and_back() {
 fn resume_request_only_when_game_active() {
     let mut f = synthetic_frontend();
     f.game_active = true;
-    assert_eq!(click_action(&mut f, MainMenuAction::Resume), Some(FrontendCommand::Resume));
+    assert_eq!(
+        click_action(&mut f, MainMenuAction::Resume),
+        Some(FrontendCommand::Resume)
+    );
     // Fresh menu: Resume is not visible, so no action is hit.
     let mut g = synthetic_frontend();
     g.on_resize(640, 480);
@@ -216,10 +222,16 @@ fn new_hero_cancel_preserves_game_active() {
     f.game_active = true;
     assert_eq!(click_action(&mut f, MainMenuAction::NewGame), None);
     assert_eq!(f.screen, FrontendScreen::NewHero);
-    assert!(f.game_active, "entering New Hero must not clear the live game");
+    assert!(
+        f.game_active,
+        "entering New Hero must not clear the live game"
+    );
     f.on_resize(640, 480);
     let cancel = NEWH_HIT_640[layout::BOTTOM_CANCEL_REGION];
-    assert_eq!(f.pointer_down(1, cancel.x as f64 + 1.0, cancel.y as f64 + 1.0), None);
+    assert_eq!(
+        f.pointer_down(1, cancel.x as f64 + 1.0, cancel.y as f64 + 1.0),
+        None
+    );
     assert_eq!(f.screen, FrontendScreen::MainMenu);
     assert!(f.game_active);
 }
@@ -259,7 +271,11 @@ fn skill_selector_regions_route_to_specializations() {
     f.on_resize(640, 480);
     let click = |f: &mut Frontend, region: usize| {
         let r = NEWH_HIT_640[region];
-        f.pointer_down(1, r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 / 2.0)
+        f.pointer_down(
+            1,
+            r.x as f64 + r.w as f64 / 2.0,
+            r.y as f64 + r.h as f64 / 2.0,
+        )
     };
     click(&mut f, 6); // Warrior
     let b = f.new_hero.build.unwrap();
@@ -292,7 +308,11 @@ fn smithing_and_building_regions_are_noops() {
     f.on_resize(640, 480);
     let click = |f: &mut Frontend, region: usize| {
         let r = NEWH_HIT_640[region];
-        f.pointer_down(1, r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 / 2.0)
+        f.pointer_down(
+            1,
+            r.x as f64 + r.w as f64 / 2.0,
+            r.y as f64 + r.h as f64 / 2.0,
+        )
     };
     click(&mut f, 6); // class
     let before = f.new_hero.build.unwrap().skills();

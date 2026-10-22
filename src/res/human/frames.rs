@@ -4,13 +4,15 @@ use super::super::*;
 use crate::constants::combat::OBJECT_ARCHETYPE_BIT;
 
 pub fn human_frame_count(graph: &[u8], block_pos: usize, action: usize, direction: usize) -> usize {
-    let o = block_pos + action * HUMAN_ACTION_STRIDE + direction * HUMAN_DIRECTION_STRIDE + HUMAN_FRAME_COUNT_OFFSET;
+    let o = block_pos
+        + action * HUMAN_ACTION_STRIDE
+        + direction * HUMAN_DIRECTION_STRIDE
+        + HUMAN_FRAME_COUNT_OFFSET;
     if o + 2 > graph.len() {
         return 0;
     }
     u16(graph, o) as usize
 }
-
 
 pub fn human_mapped_frame(
     graph: &[u8],
@@ -24,13 +26,16 @@ pub fn human_mapped_frame(
         count = 1;
     }
     let fi = frame_index % count;
-    let o = block_pos + action * HUMAN_ACTION_STRIDE + direction * HUMAN_DIRECTION_STRIDE + fi * HUMAN_FRAME_ID_SIZE + HUMAN_FRAME_ID_OFFSET;
+    let o = block_pos
+        + action * HUMAN_ACTION_STRIDE
+        + direction * HUMAN_DIRECTION_STRIDE
+        + fi * HUMAN_FRAME_ID_SIZE
+        + HUMAN_FRAME_ID_OFFSET;
     if o + 2 > graph.len() {
         return (0, count);
     }
     (u16(graph, o) as usize, count)
 }
-
 
 pub fn render_graph_4d28_frame(
     graph: &[u8],
@@ -44,7 +49,11 @@ pub fn render_graph_4d28_frame(
     let total = u32(graph, block_pos + 4) as usize;
     let start = block_pos + HUMAN_BLOCK_DATA_OFFSET;
     let end = (block_pos + total).min(graph.len());
-    let payload = if start < end { &graph[start..end] } else { &[][..] };
+    let payload = if start < end {
+        &graph[start..end]
+    } else {
+        &[][..]
+    };
     let go = block_pos + HUMAN_ANCHOR_TABLE_OFFSET + frame_id * HUMAN_ANCHOR_RECORD_SIZE;
     let sprite_off = if go + 8 <= graph.len() {
         u32(graph, go + 4) as usize
@@ -57,13 +66,15 @@ pub fn render_graph_4d28_frame(
 
 // --- resource container ---
 
-
 impl Res {
-    pub fn human_frame(&mut self, variant_id: usize, anim_frame_index: usize) -> (Img, i32, i32, i32) {
+    pub fn human_frame(
+        &mut self,
+        variant_id: usize,
+        anim_frame_index: usize,
+    ) -> (Img, i32, i32, i32) {
         let direction = (self.variant(variant_id)[1] & 7) as usize;
         self.human_frame_state(variant_id, 0, direction, anim_frame_index, None)
     }
-
 
     pub fn human_frame_state(
         &mut self,
@@ -117,7 +128,6 @@ impl Res {
         self.npc_frame_cache.insert(key, value.clone());
         value
     }
-
 
     /// Render a human animation frame directly from a Game.N entity's
     /// `visual_index` (human base-graphics index) and its `palette_offset`
@@ -178,7 +188,6 @@ impl Res {
         value
     }
 
-
     /// Resolve and render frame 0 for a Game.N entity from its original visual
     /// fields (`KONUNG_SOURCE_OF_TRUTH.md` §5.1/§10).
     ///
@@ -216,7 +225,6 @@ impl Res {
         )
     }
 
-
     /// Stateful variant of [`actor_frame`] for animated humanoids.
     ///
     /// Humanoid family (`archetype & OBJECT_ARCHETYPE_BIT == 0`): `base_id = visual_index`,
@@ -249,7 +257,12 @@ impl Res {
 
         let (im, gx, gy) = if archetype & OBJECT_ARCHETYPE_BIT != 0 {
             let object_id = visual_index as usize;
-            if self.object_entries.get(object_id).and_then(|x| *x).is_none() {
+            if self
+                .object_entries
+                .get(object_id)
+                .and_then(|x| *x)
+                .is_none()
+            {
                 return Err(format!(
                     "object family visual_index {object_id} has no OBJECTS.RES entry"
                 ));
@@ -259,8 +272,13 @@ impl Res {
                     "object family visual_index {object_id} block too small for 0x3228 family"
                 ));
             }
-            let (im, gx, gy, _) =
-                self.monster_frame_state(object_id, palette_id as usize, action, facing as usize, anim_frame_index);
+            let (im, gx, gy, _) = self.monster_frame_state(
+                object_id,
+                palette_id as usize,
+                action,
+                facing as usize,
+                anim_frame_index,
+            );
             (im, gx, gy)
         } else {
             let base_id = visual_index as usize;
@@ -291,7 +309,6 @@ impl Res {
         Ok((im, gx, gy))
     }
 
-
     /// Animation-cycle length in frames for one family/direction/action, the
     /// original `Entity+0xD7` written by `FUN_0041435c`. `FUN_00413de4` wraps the
     /// frame counter at this value, and the walk action steps one collision cell
@@ -309,7 +326,12 @@ impl Res {
     ) -> Option<usize> {
         if archetype & OBJECT_ARCHETYPE_BIT != 0 {
             let object_id = visual_index as usize;
-            if self.object_entries.get(object_id).and_then(|x| *x).is_none() {
+            if self
+                .object_entries
+                .get(object_id)
+                .and_then(|x| *x)
+                .is_none()
+            {
                 return None;
             }
             let n = self.monster_frame_count(object_id, action, direction & 7);
@@ -330,7 +352,6 @@ impl Res {
         }
     }
 
-
     /// Walk-cycle length for the current stance: human row `1` (battle) / `7`
     /// (peaceful); object rows alias to `1`.
     pub fn walk_cycle_frames(
@@ -340,6 +361,11 @@ impl Res {
         direction: usize,
         battle: bool,
     ) -> Option<usize> {
-        self.action_cycle_frames(archetype, visual_index, direction, crate::anim::walk_action(battle))
+        self.action_cycle_frames(
+            archetype,
+            visual_index,
+            direction,
+            crate::anim::walk_action(battle),
+        )
     }
 }

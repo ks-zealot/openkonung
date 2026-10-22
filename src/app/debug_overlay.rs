@@ -48,7 +48,16 @@ impl PlayableApp {
             let ry = ioy + y1.round() as i32;
             let rw = ((x2 - x1).round() as i32).max(14) + 6;
             let rh = ((y2 - y1).round() as i32).max(8) + 4;
-            rect_outline(&mut self.frame, fw, fh, rx - 3, ry - 2, rw, rh, [80, 200, 255, 255]);
+            rect_outline(
+                &mut self.frame,
+                fw,
+                fh,
+                rx - 3,
+                ry - 2,
+                rw,
+                rh,
+                [80, 200, 255, 255],
+            );
             if on_screen(rx, ry) {
                 self.text_clamped(
                     rx + 4,
@@ -57,8 +66,15 @@ impl PlayableApp {
                     0.8,
                     format!(
                         "T rec{} {}->{} trig({},{})-({},{}) arr({},{})",
-                        e.rec, e.from, e.to, e.dst[0], e.dst[1], e.dst2[0], e.dst2[1],
-                        e.arrival()[0], e.arrival()[1]
+                        e.rec,
+                        e.from,
+                        e.to,
+                        e.dst[0],
+                        e.dst[1],
+                        e.dst2[0],
+                        e.dst2[1],
+                        e.arrival()[0],
+                        e.arrival()[1]
                     ),
                 );
             }
@@ -70,12 +86,41 @@ impl PlayableApp {
             let (rlx, rly) = entity_to_local_px_f(b.trigger[0], b.trigger[1]);
             let rsx = iox + rlx.round() as i32;
             let rsy = ioy + rly.round() as i32;
-            let (glx, gly) = prop_to_local_px(b.gate_grid[0].round() as i32, b.gate_grid[1].round() as i32);
+            let (glx, gly) =
+                prop_to_local_px(b.gate_grid[0].round() as i32, b.gate_grid[1].round() as i32);
             let gsx = iox + glx;
             let gsy = ioy + gly;
-            line(&mut self.frame, fw, fh, gsx, gsy, rsx, rsy, [255, 200, 60, 255]);
-            ellipse_outline(&mut self.frame, fw, fh, rsx as f32, rsy as f32, 9.0, 9.0, 2, [120, 255, 120, 255]);
-            rect_outline(&mut self.frame, fw, fh, gsx - 4, gsy - 4, 9, 9, [255, 120, 220, 255]);
+            line(
+                &mut self.frame,
+                fw,
+                fh,
+                gsx,
+                gsy,
+                rsx,
+                rsy,
+                [255, 200, 60, 255],
+            );
+            ellipse_outline(
+                &mut self.frame,
+                fw,
+                fh,
+                rsx as f32,
+                rsy as f32,
+                9.0,
+                9.0,
+                2,
+                [120, 255, 120, 255],
+            );
+            rect_outline(
+                &mut self.frame,
+                fw,
+                fh,
+                gsx - 4,
+                gsy - 4,
+                9,
+                9,
+                [255, 120, 220, 255],
+            );
             if on_screen(rsx, rsy) {
                 self.text_clamped(
                     rsx + 8,
@@ -97,7 +142,17 @@ impl PlayableApp {
                 let (lx, ly) = entity_to_local_px_f(ax as f64, ay as f64);
                 let sx = iox + lx.round() as i32;
                 let sy = ioy + ly.round() as i32;
-                ellipse_outline(&mut self.frame, fw, fh, sx as f32, sy as f32, 11.0, 6.0, 2, [255, 220, 80, 255]);
+                ellipse_outline(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    sx as f32,
+                    sy as f32,
+                    11.0,
+                    6.0,
+                    2,
+                    [255, 220, 80, 255],
+                );
                 if on_screen(sx, sy) {
                     self.text_clamped(
                         sx + 6,
@@ -139,7 +194,16 @@ impl PlayableApp {
             }
         }
         for (lx, ly) in prop_marks {
-            rect_outline(&mut self.frame, fw, fh, iox + lx - 8, ioy + ly - 8, 16, 16, [255, 120, 220, 255]);
+            rect_outline(
+                &mut self.frame,
+                fw,
+                fh,
+                iox + lx - 8,
+                ioy + ly - 8,
+                16,
+                16,
+                [255, 120, 220, 255],
+            );
         }
         for (sx, sy, s) in gate_labels {
             self.text_clamped(sx, sy, 0xFF_78DC, 0.8, s);
@@ -193,7 +257,11 @@ impl PlayableApp {
             py,
             0xAF_F0C3,
             0.9,
-            format!("PORTALS in Konung.{} ({})", self.current_map, bindings.len()),
+            format!(
+                "PORTALS in Konung.{} ({})",
+                self.current_map,
+                bindings.len()
+            ),
         );
         for b in bindings.iter() {
             if py > VIRTUAL_H - 40 {
@@ -220,7 +288,6 @@ impl PlayableApp {
             );
         }
     }
-
 
     /// R2 render-layer debug: per-frame draw counts for each static/dynamic
     /// layer (instrumentation only, not normal HUD content).
@@ -279,7 +346,6 @@ impl PlayableApp {
         }
     }
 
-
     /// Diagnostics for the currently selected location's C1/C2 population.
     /// Runtime placement, failures and visual-resolution failures are all
     /// listed; nothing with a saved position is silently skipped.
@@ -297,8 +363,17 @@ impl PlayableApp {
                 p.runtime_failed,
             )
         });
-        let (matching, reserved, inactive, invalid, enumerated, persisted, candidates, placed, failed) =
-            counts.unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0));
+        let (
+            matching,
+            reserved,
+            inactive,
+            invalid,
+            enumerated,
+            persisted,
+            candidates,
+            placed,
+            failed,
+        ) = counts.unwrap_or((0, 0, 0, 0, 0, 0, 0, 0, 0));
         let rejected = self.population_rejected.len();
 
         let mut lines: Vec<String> = vec![
@@ -363,6 +438,4 @@ impl PlayableApp {
             y = self.text_wrapped(12, y, 0xD8_E8D0, 0.8, l);
         }
     }
-
-
 }

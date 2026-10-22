@@ -6,7 +6,6 @@ use super::super::*;
 // Debug: party (recruited companions) — diagnostic only
 // --------------------------------------------------------------------------
 
-
 /// Number of recruited companions (party slots `1..`), or 0 when no game.
 #[no_mangle]
 pub extern "C" fn debug_party_count() -> u32 {

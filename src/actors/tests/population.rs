@@ -28,7 +28,19 @@ fn skips_group_zero_and_inactive_groups() {
 
 #[test]
 fn enumerates_first_plus_count_not_capacity_nor_one_per_group() {
-    let mut g = group(1, 10, 3, 1, 65, Rect { x1: 0, x2: 8, y1: 0, y2: 8 });
+    let mut g = group(
+        1,
+        10,
+        3,
+        1,
+        65,
+        Rect {
+            x1: 0,
+            x2: 8,
+            y1: 0,
+            y2: 8,
+        },
+    );
     g.capacity = 99;
     g.count_18 = 99;
     let mut entities: Vec<Entity> = (0..14).map(|i| entity(i, 0, 0, 1, 1)).collect();
@@ -43,7 +55,12 @@ fn enumerates_first_plus_count_not_capacity_nor_one_per_group() {
 
 #[test]
 fn zero_position_is_runtime_placed_and_source_unchanged() {
-    let rect = Rect { x1: 10, x2: 30, y1: 4, y2: 8 };
+    let rect = Rect {
+        x1: 10,
+        x2: 30,
+        y1: 4,
+        y2: 8,
+    };
     let groups = vec![group(1, 0, 2, 1, 65, rect)];
     let entities = vec![entity(0, 0, 0x4F, 0, 0), entity(1, 0, 0x4F, 0, 0)];
     let t = tables(groups, entities);
@@ -70,16 +87,19 @@ fn zero_position_is_runtime_placed_and_source_unchanged() {
 
 #[test]
 fn deterministic_repeatability_per_location() {
-    let rect = Rect { x1: 10, x2: 60, y1: 5, y2: 25 };
+    let rect = Rect {
+        x1: 10,
+        x2: 60,
+        y1: 5,
+        y2: 25,
+    };
     let groups = vec![group(1, 0, 6, 1, 65, rect)];
     let entities: Vec<Entity> = (0..6).map(|i| entity(i, 0, 0x4F, 0, 0)).collect();
     let t = tables(groups, entities);
 
     let a = build_population(&t, 1, &free_collision());
     let b = build_population(&t, 1, &free_collision());
-    let coords = |p: &PopulationBuild| {
-        p.actors.iter().map(|x| x.display_raw()).collect::<Vec<_>>()
-    };
+    let coords = |p: &PopulationBuild| p.actors.iter().map(|x| x.display_raw()).collect::<Vec<_>>();
     assert_eq!(coords(&a), coords(&b));
 }
 
@@ -149,7 +169,12 @@ fn wanders_classification_matches_dispatch_gate() {
 fn wander_target_stays_strictly_inside_rect_and_free() {
     // Rect large enough for the original 800x600 radii (x=20, y=9 => offsets up
     // to 2*radius-1), so a candidate is always found.
-    let rect = Rect { x1: 0, x2: 120, y1: 0, y2: 60 };
+    let rect = Rect {
+        x1: 0,
+        x2: 120,
+        y1: 0,
+        y2: 60,
+    };
     let free = free_collision();
     let mut rng = location_rng(1);
     for _ in 0..500 {
@@ -162,7 +187,12 @@ fn wander_target_stays_strictly_inside_rect_and_free() {
 
 #[test]
 fn wander_target_none_when_rect_blocked() {
-    let rect = Rect { x1: 0, x2: 40, y1: 0, y2: 40 };
+    let rect = Rect {
+        x1: 0,
+        x2: 40,
+        y1: 0,
+        y2: 40,
+    };
     let mut blocked = free_collision();
     for c in blocked.iter_mut() {
         *c = 0x0001;
@@ -171,10 +201,14 @@ fn wander_target_none_when_rect_blocked() {
     assert!(wander_target(&rect, (20, 20), &mut rng, &blocked).is_none());
 }
 
-
 #[test]
 fn update_population_moves_only_wanderers() {
-    let rect = Rect { x1: 10, x2: 60, y1: 5, y2: 25 };
+    let rect = Rect {
+        x1: 10,
+        x2: 60,
+        y1: 5,
+        y2: 25,
+    };
     let groups = vec![group(1, 0, 2, 1, 0x81, rect)];
     let mut citizen = entity(0, 6, 0x05, 30, 15);
     citizen.flags_a = FLAG_WANDER;
@@ -198,7 +232,12 @@ fn object_group_mobs_hold_position() {
     // Group class `0x41` (bit 0x40) selects the object/enemy AI `FUN_00412e00`,
     // which idles in place while `Group+0x1D == 0`. Such actors must not wander
     // even though every active-population entity carries `flags_a = 0x40`.
-    let rect = Rect { x1: 30, x2: 70, y1: 8, y2: 24 };
+    let rect = Rect {
+        x1: 30,
+        x2: 70,
+        y1: 8,
+        y2: 24,
+    };
     let groups = vec![group(1, 0, 1, 1, 0x41, rect)];
     let mut mob = entity(0, 6, 0x41, 50, 16);
     mob.flags_a = FLAG_WANDER;
@@ -218,7 +257,12 @@ fn object_group_mobs_hold_position() {
 #[test]
 fn citizen_group_wanders() {
     // Group class `0x81` (bit 0x80, no 0x40) selects `FUN_004168a4`.
-    let rect = Rect { x1: 30, x2: 70, y1: 8, y2: 24 };
+    let rect = Rect {
+        x1: 30,
+        x2: 70,
+        y1: 8,
+        y2: 24,
+    };
     let groups = vec![group(1, 0, 1, 1, 0x81, rect)];
     let mut c = entity(0, 6, 0x05, 50, 16);
     c.flags_a = FLAG_WANDER;
@@ -238,7 +282,12 @@ fn citizen_group_wanders() {
 #[test]
 fn idle_wanderer_holds_its_frame_not_loops() {
     use crate::population::{Settlement, Waypoint};
-    let rect = Rect { x1: 40, x2: 60, y1: 10, y2: 30 };
+    let rect = Rect {
+        x1: 40,
+        x2: 60,
+        y1: 10,
+        y2: 30,
+    };
     // Entity index 1 owns the home waypoint (owner 0 means "unassigned").
     let groups = vec![group(1, 1, 1, 1, 0x81, rect)];
     let mut mob = entity(1, 6, 0x45, 50, 20);
@@ -274,7 +323,12 @@ fn actor_commits_the_first_step_at_segment_start() {
     // A wandering citizen: the first cell of every route is committed at the
     // START of its segment (`FUN_0041435C`), so the stored cell leads the drawn
     // sprite (`render_cell`) by one step.
-    let rect = Rect { x1: 30, x2: 70, y1: 8, y2: 24 };
+    let rect = Rect {
+        x1: 30,
+        x2: 70,
+        y1: 8,
+        y2: 24,
+    };
     let groups = vec![group(1, 0, 1, 1, 0x81, rect)];
     let mut c = entity(0, 6, 0x05, 50, 16);
     c.flags_a = FLAG_WANDER;
@@ -303,4 +357,3 @@ fn actor_commits_the_first_step_at_segment_start() {
     }
     assert!(issued, "citizen should begin walking");
 }
-

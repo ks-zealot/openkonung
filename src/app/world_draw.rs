@@ -11,7 +11,16 @@ impl PlayableApp {
         for px in self.frame.iter_mut() {
             *px = 0;
         }
-        fill_rect(&mut self.frame, fw, fh, 0, 0, VIRTUAL_W, VIRTUAL_H, [7, 10, 9, 255]);
+        fill_rect(
+            &mut self.frame,
+            fw,
+            fh,
+            0,
+            0,
+            VIRTUAL_W,
+            VIRTUAL_H,
+            [7, 10, 9, 255],
+        );
 
         let ox = self.detail_pan[0];
         let oy = self.detail_pan[1];
@@ -41,7 +50,13 @@ impl PlayableApp {
         let moving = self.player_active;
         let (plx, ply) = entity_to_local_px_f(self.player_render_x, self.player_render_y);
         match self.player_frame(moving) {
-            Ok((im, gx, gy)) => sprites.push(WorldSprite { img: im, gx, gy, lx: plx, ly: ply }),
+            Ok((im, gx, gy)) => sprites.push(WorldSprite {
+                img: im,
+                gx,
+                gy,
+                lx: plx,
+                ly: ply,
+            }),
             Err(reason) => rejected.push(format!(
                 "player hero={} visual_index={} palette_offset=0x{:X} facing={} reason={}",
                 self.player.hero.name,
@@ -62,7 +77,16 @@ impl PlayableApp {
         for s in &sprites {
             let ax = iox + s.lx.round() as i32 + s.gx;
             let ay = ioy + s.ly.round() as i32 + s.gy;
-            blit(&mut self.frame, fw, fh, &s.img.data, s.img.w, s.img.h, ax, ay);
+            blit(
+                &mut self.frame,
+                fw,
+                fh,
+                &s.img.data,
+                s.img.w,
+                s.img.h,
+                ax,
+                ay,
+            );
         }
 
         // Ranged projectile pool (`0x80B0D0`) is drawn after the entity/prop
@@ -95,9 +119,38 @@ impl PlayableApp {
             let sx = iox + lx.round() as i32;
             let sy = ioy + ly.round() as i32;
             if -30 <= sx && sx <= VIRTUAL_W + 30 && -30 <= sy && sy <= VIRTUAL_H + 30 {
-                fill_ellipse(&mut self.frame, fw, fh, sx as f32, sy as f32, 18.0, 7.0, [58, 61, 58, 255]);
-                ellipse_outline(&mut self.frame, fw, fh, sx as f32, sy as f32, 18.0, 7.0, 2, [150, 155, 145, 255]);
-                ellipse_outline(&mut self.frame, fw, fh, sx as f32, sy as f32, 12.0, 4.0, 1, [94, 99, 92, 255]);
+                fill_ellipse(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    sx as f32,
+                    sy as f32,
+                    18.0,
+                    7.0,
+                    [58, 61, 58, 255],
+                );
+                ellipse_outline(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    sx as f32,
+                    sy as f32,
+                    18.0,
+                    7.0,
+                    2,
+                    [150, 155, 145, 255],
+                );
+                ellipse_outline(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    sx as f32,
+                    sy as f32,
+                    12.0,
+                    4.0,
+                    1,
+                    [94, 99, 92, 255],
+                );
                 let to = self.edges[b.edge].to;
                 let dest = self.label(to);
                 self.text_clamped(sx + 20, sy - 8, 0xAF_F0C3, 1.0, format!("->{}", dest));
@@ -108,13 +161,33 @@ impl PlayableApp {
             let (x, y) = entity_to_local_px_f(tx, ty);
             let sx = iox + x.round() as i32;
             let sy = ioy + y.round() as i32;
-            ellipse_outline(&mut self.frame, fw, fh, sx as f32, sy as f32, 6.0, 6.0, 1, [255, 220, 80, 255]);
+            ellipse_outline(
+                &mut self.frame,
+                fw,
+                fh,
+                sx as f32,
+                sy as f32,
+                6.0,
+                6.0,
+                1,
+                [255, 220, 80, 255],
+            );
         }
 
         // protagonist position marker (overlay; sprite already drawn in depth pass)
         let pax = iox + plx.round() as i32;
         let pay = ioy + ply.round() as i32;
-        ellipse_outline(&mut self.frame, fw, fh, pax as f32, pay as f32, 3.0, 3.0, 1, [255, 245, 120, 255]);
+        ellipse_outline(
+            &mut self.frame,
+            fw,
+            fh,
+            pax as f32,
+            pay as f32,
+            3.0,
+            3.0,
+            1,
+            [255, 245, 120, 255],
+        );
 
         // Game.N WorldObject pass (`FUN_0042532C` marker pass). The original
         // draws this after terrain/entities/party rings and outside the depth
@@ -142,6 +215,14 @@ impl PlayableApp {
         // (once bound) party portraits. Composited after the world and its
         // overlays; transparent regions keep the world visible. Debug overlays
         // below draw on top. Split borrows keep `frame` and `world.res` disjoint.
+        let owner = self.inventory_owner;
+        let owner_inventory = self.owner_inventory(owner);
+        let inventory_scroll = self.inventory_scroll;
+        let held_id = self.held_item.map(|h| h.id);
+        let cursor_px = (
+            self.cursor_virtual.0.round() as i32,
+            self.cursor_virtual.1.round() as i32,
+        );
         {
             let PlayableApp {
                 frame,
@@ -187,16 +268,16 @@ impl PlayableApp {
                     poisoned: m.entity.stats.periodic_damage != 0,
                 });
             }
-            // Fixed scroll offset for this task; the protagonist's own
-            // inventory is read directly (never re-initialized per frame).
             crate::hud::draw_game_hud(
                 frame,
                 fw,
                 fh,
                 &mut world.res,
-                &player.inventory,
-                0,
+                &owner_inventory,
+                inventory_scroll,
                 *hovered_slot,
+                held_id,
+                cursor_px,
                 &portraits,
                 player.auto_enabled(),
             );
@@ -205,26 +286,68 @@ impl PlayableApp {
         // Original character screen (INTR[2]) over the world area; its window
         // geometry keeps the party panel and bottom inventory strip visible.
         if self.character_screen {
-            // The original paper doll uses the selected entity's live action,
-            // facing and frame (`FUN_0042ea6c`).
-            let doll_battle = crate::anim::battle_from_flags(self.player.flags_b);
-            let doll_action = if moving {
-                crate::anim::walk_action(doll_battle)
-            } else {
-                crate::anim::idle_action(doll_battle)
+            let owner = self.inventory_owner;
+            let doll_pose = match owner {
+                crate::inventory::InventoryOwner::Protagonist => {
+                    let doll_battle = crate::anim::battle_from_flags(self.player.flags_b);
+                    let doll_action = if moving {
+                        crate::anim::walk_action(doll_battle)
+                    } else {
+                        crate::anim::idle_action(doll_battle)
+                    };
+                    crate::character_screen::PaperDollPose {
+                        action: doll_action,
+                        direction: self.player_dir.max(0) as u8,
+                        frame: self.player_frame_index(moving, doll_action),
+                    }
+                }
+                crate::inventory::InventoryOwner::Party(i) => self
+                    .party
+                    .get(i)
+                    .map(|m| crate::character_screen::PaperDollPose {
+                        action: m.motion.action as usize,
+                        direction: m.motion.facing,
+                        frame: m.motion.frame as usize,
+                    })
+                    .unwrap_or_default(),
             };
-            let doll_pose = crate::character_screen::PaperDollPose {
-                action: doll_action,
-                direction: self.player_dir.max(0) as u8,
-                frame: self.player_frame_index(moving, doll_action),
+            let (visual_index, palette_id) = match owner {
+                crate::inventory::InventoryOwner::Protagonist => {
+                    (self.player.hero.visual_index, self.player.hero.palette_id())
+                }
+                crate::inventory::InventoryOwner::Party(i) => self
+                    .party
+                    .get(i)
+                    .map(|m| {
+                        (
+                            m.entity.visual_index,
+                            (m.entity.palette_offset / 512) as i32,
+                        )
+                    })
+                    .unwrap_or((0, 0)),
             };
-            let PlayableApp {
-                frame,
-                world,
-                player,
-                ..
-            } = self;
-            crate::character_screen::draw(frame, fw, fh, &mut world.res, player, doll_pose);
+            let sheet = crate::character_screen::CharacterSheet {
+                name_id: match owner {
+                    crate::inventory::InventoryOwner::Protagonist => self.player.hero.name_id,
+                    crate::inventory::InventoryOwner::Party(i) => {
+                        self.party.get(i).map(|m| m.entity.name_id).unwrap_or(0)
+                    }
+                },
+                class: self.owner_class(owner),
+                equipment: self.owner_equipment(owner),
+                additional: self.slots(owner).map(|s| *s.additional).unwrap_or([0; 5]),
+                special: self.slots(owner).map(|s| s.special).unwrap_or(0),
+                inventory: self.owner_inventory(owner),
+                raw_0x12: self.owner_raw_0x12(owner),
+                flags_b: self.owner_flags_b(owner),
+                visual_index,
+                palette_id,
+                snapshot: self.snapshot(owner).unwrap_or_default(),
+                pose: doll_pose,
+            };
+            let held = self.held_item.map(|h| h.id);
+            let PlayableApp { frame, world, .. } = self;
+            crate::character_screen::draw(frame, fw, fh, &mut world.res, &sheet, held, cursor_px);
         }
 
         // NPC dialogue (original `FUN_0042CBD0` mode 1): INTR[1] window + INTR[0]
@@ -288,7 +411,13 @@ impl PlayableApp {
         if let Some((a, b, r)) = self.last_teleport {
             let an = self.label(a);
             let bn = self.label(b);
-            hy = self.text_wrapped(12, hy, 0xBE_DCC3, 1.0, format!("last teleport {}->{} r{}", an, bn, r));
+            hy = self.text_wrapped(
+                12,
+                hy,
+                0xBE_DCC3,
+                1.0,
+                format!("last teleport {}->{} r{}", an, bn, r),
+            );
         }
         if let Some(err) = self.teleport_error.clone() {
             hy = self.text_wrapped(12, hy, 0xFF_6B6B, 1.0, err);
@@ -304,6 +433,4 @@ impl PlayableApp {
             self.draw_layer_debug();
         }
     }
-
-
 }

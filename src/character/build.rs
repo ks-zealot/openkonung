@@ -23,7 +23,6 @@ pub struct Skills {
     pub smithing: u16,
 }
 
-
 /// The original initial skill values (equal to Fencing + Identification).
 pub const INITIAL_SKILLS: Skills = Skills {
     melee_mastery: 100,
@@ -34,7 +33,6 @@ pub const INITIAL_SKILLS: Skills = Skills {
     identification: 20,
     smithing: 10,
 };
-
 
 /// Final state of the character-creation screen: the class plus the configured
 /// skills and primary stats. This is what Start Game copies into the runtime
@@ -64,7 +62,6 @@ pub struct CharacterBuild {
     pub endurance: u16,
 }
 
-
 impl CharacterBuild {
     /// A fresh build for a class: preset stats + the default secondary-skill
     /// specializations (Fencing + Identification == [`INITIAL_SKILLS`]).
@@ -92,7 +89,6 @@ impl CharacterBuild {
         b
     }
 
-
     /// Apply a class: the primary-stat preset and `available_xp = 0`, preserving
     /// the seven secondary-skill values and both specialization selections.
     ///
@@ -108,7 +104,6 @@ impl CharacterBuild {
         self.available_xp = 0;
     }
 
-
     /// Select a combat specialization and apply only its four fields; the civil
     /// fields are untouched.
     pub fn select_combat(&mut self, spec: CombatSpecialization) {
@@ -116,14 +111,12 @@ impl CharacterBuild {
         self.apply_combat(spec);
     }
 
-
     /// Select a civil specialization and apply only its three fields; the
     /// combat-derived fields are untouched.
     pub fn select_civil(&mut self, spec: CivilSpecialization) {
         self.civil_specialization = spec;
         self.apply_civil(spec);
     }
-
 
     pub(super) fn apply_combat(&mut self, spec: CombatSpecialization) {
         match spec {
@@ -141,7 +134,6 @@ impl CharacterBuild {
             }
         }
     }
-
 
     pub(super) fn apply_civil(&mut self, spec: CivilSpecialization) {
         match spec {
@@ -163,7 +155,6 @@ impl CharacterBuild {
         }
     }
 
-
     pub fn skills(&self) -> Skills {
         Skills {
             melee_mastery: self.melee_mastery,
@@ -176,7 +167,6 @@ impl CharacterBuild {
         }
     }
 
-
     /// Current value of a primary stat.
     pub fn stat_value(&self, stat: PrimaryStat) -> u16 {
         match stat {
@@ -186,7 +176,6 @@ impl CharacterBuild {
             PrimaryStat::Endurance => self.endurance,
         }
     }
-
 
     pub(super) fn add_stat(&mut self, stat: PrimaryStat, delta: i32) {
         let cur = self.stat_value(stat) as i32;
@@ -198,7 +187,6 @@ impl CharacterBuild {
             PrimaryStat::Endurance => self.endurance = v,
         }
     }
-
 
     /// Original `+`: spend points to raise a stat. No-op if insufficient.
     pub fn try_increase(&mut self, stat: PrimaryStat) -> bool {
@@ -212,7 +200,6 @@ impl CharacterBuild {
         }
     }
 
-
     /// Original `-`: lower a stat and refund the cost of the step just removed.
     /// Exactly reversible with [`CharacterBuild::try_increase`].
     pub fn decrease(&mut self, stat: PrimaryStat) {
@@ -223,5 +210,4 @@ impl CharacterBuild {
             self.add_stat(stat, -1);
         }
     }
-
 }

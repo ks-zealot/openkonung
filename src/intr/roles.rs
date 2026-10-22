@@ -49,7 +49,6 @@ pub const ITEM_ICON_FIRST: usize = 22;
 
 pub const ITEM_ICON_LAST: usize = 168;
 
-
 /// Semantic role of one occupied INTR index (verified where noted; the rest are
 /// descriptive classifications, `Unclassified`/`SmallUi` where evidence is thin).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,7 +85,6 @@ pub enum IntrRole {
     Unclassified,
 }
 
-
 /// The verified/classified role of an occupied INTR index. Indices outside the
 /// occupied range return [`IntrRole::Unclassified`].
 pub fn role_of(id: usize) -> IntrRole {
@@ -109,5 +107,3 @@ pub fn role_of(id: usize) -> IntrRole {
         _ => IntrRole::Unclassified,
     }
 }
-
-

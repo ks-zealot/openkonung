@@ -13,7 +13,11 @@ pub(crate) fn parse_graph_layout(graph: &[u8]) -> (usize, usize, usize, Vec<usiz
         pos += 8 + size;
     }
     let terrain_block_pos = pos;
-    let terrain_payload_size = if pos + 8 <= graph.len() { u32(graph, pos + 4) as usize } else { 0 };
+    let terrain_payload_size = if pos + 8 <= graph.len() {
+        u32(graph, pos + 4) as usize
+    } else {
+        0
+    };
     let terrain_table_pos = pos + 8;
     let terrain_payload_pos = pos + 8 + 0x1000;
     pos = terrain_payload_pos + terrain_payload_size;
@@ -35,9 +39,14 @@ pub(crate) fn parse_graph_layout(graph: &[u8]) -> (usize, usize, usize, Vec<usiz
         pos += u32(graph, pos + 4) as usize;
     }
     let _ = terrain_block_pos;
-    (terrain_table_pos, terrain_payload_pos, terrain_payload_size, human_base_positions, human_overlay_positions)
+    (
+        terrain_table_pos,
+        terrain_payload_pos,
+        terrain_payload_size,
+        human_base_positions,
+        human_overlay_positions,
+    )
 }
-
 
 impl Res {
     pub fn terrain_tile(&mut self, tile_id: usize) -> Option<Img> {
@@ -49,7 +58,6 @@ impl Res {
         self.terrain_tile_cache.insert(tile_id, value.clone());
         value
     }
-
 
     pub(super) fn decode_terrain_tile(&self, tile_id: usize) -> Option<Img> {
         if tile_id >= 512 {
@@ -64,8 +72,8 @@ impl Res {
         if off == 0xFFFFFFFF {
             return None;
         }
-        let payload = &self.graph
-            [self.terrain_payload_pos..(self.terrain_payload_pos + self.terrain_payload_size).min(self.graph.len())];
+        let payload = &self.graph[self.terrain_payload_pos
+            ..(self.terrain_payload_pos + self.terrain_payload_size).min(self.graph.len())];
         let (idx, alpha, w, h) = decode_indexed_rle(payload, off);
         if w == 0 || h == 0 {
             return None;
@@ -76,6 +84,4 @@ impl Res {
     }
 
     // --- props ---
-
-
 }

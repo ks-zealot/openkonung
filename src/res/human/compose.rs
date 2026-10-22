@@ -9,8 +9,6 @@ pub(super) struct HumanLayer {
 }
 
 impl Res {
-
-
     /// GRAPH human-overlay selector (`equipped_visual`, prototype `+0x3E`) for
     /// an equipped item-instance id. The instance is decoded from `instances`
     /// (the loaded save for Game.N actors, or `Game.res` for the variant path)
@@ -26,7 +24,6 @@ impl Res {
             None
         }
     }
-
 
     /// Build the base body plus every equipped overlay for one frame.
     ///
@@ -49,13 +46,37 @@ impl Res {
         let base_fid = human_mapped_frame(&self.graph, base_pos, action, direction, fi).0;
         let base_im = render_graph_4d28_frame(&self.graph, base_pos, &self.palettes[pid], base_fid);
 
-        let goff = base_pos + HUMAN_BODY_ANCHOR_TABLE_OFFSET + action * HUMAN_BODY_ACTION_STRIDE + direction * HUMAN_BODY_DIRECTION_STRIDE + fi * HUMAN_ANCHOR_RECORD_SIZE;
-        let body_x = if goff + 8 <= self.graph.len() { i16(&self.graph, goff + 4) } else { 0 };
-        let body_y = if goff + 8 <= self.graph.len() { i16(&self.graph, goff + 6) } else { 0 };
+        let goff = base_pos
+            + HUMAN_BODY_ANCHOR_TABLE_OFFSET
+            + action * HUMAN_BODY_ACTION_STRIDE
+            + direction * HUMAN_BODY_DIRECTION_STRIDE
+            + fi * HUMAN_ANCHOR_RECORD_SIZE;
+        let body_x = if goff + 8 <= self.graph.len() {
+            i16(&self.graph, goff + 4)
+        } else {
+            0
+        };
+        let body_y = if goff + 8 <= self.graph.len() {
+            i16(&self.graph, goff + 6)
+        } else {
+            0
+        };
 
-        let aoff = base_pos + HUMAN_OVERLAY_ANCHOR_TABLE_OFFSET + action * HUMAN_OVERLAY_ACTION_STRIDE + direction * HUMAN_OVERLAY_DIRECTION_STRIDE + fi * HUMAN_OVERLAY_ANCHOR_RECORD_SIZE;
-        let anchor_x = if aoff + 4 <= self.graph.len() { i16(&self.graph, aoff) } else { 0 };
-        let anchor_y = if aoff + 4 <= self.graph.len() { i16(&self.graph, aoff + 2) } else { 0 };
+        let aoff = base_pos
+            + HUMAN_OVERLAY_ANCHOR_TABLE_OFFSET
+            + action * HUMAN_OVERLAY_ACTION_STRIDE
+            + direction * HUMAN_OVERLAY_DIRECTION_STRIDE
+            + fi * HUMAN_OVERLAY_ANCHOR_RECORD_SIZE;
+        let anchor_x = if aoff + 4 <= self.graph.len() {
+            i16(&self.graph, aoff)
+        } else {
+            0
+        };
+        let anchor_y = if aoff + 4 <= self.graph.len() {
+            i16(&self.graph, aoff + 2)
+        } else {
+            0
+        };
 
         let (order, variant) = overlay_plan(battle, weapon_slot, action, direction);
         let mut layers: Vec<HumanLayer> = vec![HumanLayer {
@@ -81,16 +102,36 @@ impl Res {
             let opos = self.human_overlay_positions[selector];
             let ofid = human_mapped_frame(&self.graph, opos, action, direction, fi).0;
             let opid = (self.overlay_palette_offsets[selector] / PALETTE_OFFSET_SCALE) as usize;
-            let oim = render_graph_4d28_frame(&self.graph, opos, &self.palettes[opid.min(PALETTE_MAX_INDEX as usize)], ofid);
-            let ooff = opos + HUMAN_BODY_ANCHOR_TABLE_OFFSET + action * HUMAN_BODY_ACTION_STRIDE + direction * HUMAN_BODY_DIRECTION_STRIDE + fi * HUMAN_ANCHOR_RECORD_SIZE;
-            let ox = if ooff + 8 <= self.graph.len() { anchor_x + i16(&self.graph, ooff + 4) } else { anchor_x };
-            let oy = if ooff + 8 <= self.graph.len() { anchor_y + i16(&self.graph, ooff + 6) } else { anchor_y };
-            layers.push(HumanLayer { im: oim, x: ox, y: oy });
+            let oim = render_graph_4d28_frame(
+                &self.graph,
+                opos,
+                &self.palettes[opid.min(PALETTE_MAX_INDEX as usize)],
+                ofid,
+            );
+            let ooff = opos
+                + HUMAN_BODY_ANCHOR_TABLE_OFFSET
+                + action * HUMAN_BODY_ACTION_STRIDE
+                + direction * HUMAN_BODY_DIRECTION_STRIDE
+                + fi * HUMAN_ANCHOR_RECORD_SIZE;
+            let ox = if ooff + 8 <= self.graph.len() {
+                anchor_x + i16(&self.graph, ooff + 4)
+            } else {
+                anchor_x
+            };
+            let oy = if ooff + 8 <= self.graph.len() {
+                anchor_y + i16(&self.graph, ooff + 6)
+            } else {
+                anchor_y
+            };
+            layers.push(HumanLayer {
+                im: oim,
+                x: ox,
+                y: oy,
+            });
         }
 
         (layers, body_x, body_y)
     }
-
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compose_human(
@@ -107,7 +148,15 @@ impl Res {
         count: usize,
     ) -> (Img, i32, i32, i32) {
         let (layers, _, _) = self.human_layers(
-            equipment, weapon_slot, battle, instances, base_pos, action, direction, fi, palette_id,
+            equipment,
+            weapon_slot,
+            battle,
+            instances,
+            base_pos,
+            action,
+            direction,
+            fi,
+            palette_id,
         );
 
         let mut minx = i32::MAX;
@@ -127,7 +176,16 @@ impl Res {
         let ch = (maxy - miny).max(1) as usize;
         let mut canvas = Image::new(cw, ch, [0, 0, 0, 0]);
         for l in &layers {
-            blit(&mut canvas.data, cw, ch, &l.im.data, l.im.w, l.im.h, l.x - minx, l.y - miny);
+            blit(
+                &mut canvas.data,
+                cw,
+                ch,
+                &l.im.data,
+                l.im.w,
+                l.im.h,
+                l.x - minx,
+                l.y - miny,
+            );
         }
         (Rc::new(canvas), minx, miny, count as i32)
     }

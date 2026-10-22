@@ -92,13 +92,28 @@ fn value_anchors_match_recovered_tables() {
 #[test]
 fn needed_raise_matches_tier_cost_gated_by_available_xp() {
     // Warrior STR=15 is specialized -> next cost is 5.
-    assert_eq!(needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 5), 5);
-    assert_eq!(needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 4), 0);
-    assert_eq!(needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 0), 0);
+    assert_eq!(
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 5),
+        5
+    );
+    assert_eq!(
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 4),
+        0
+    );
+    assert_eq!(
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 0),
+        0
+    );
     // Merchant CHA=25 is specialized -> cost 11.
-    assert_eq!(needed_raise(CharacterClass::Merchant, PrimaryStat::Charisma, 25, 11), 11);
+    assert_eq!(
+        needed_raise(CharacterClass::Merchant, PrimaryStat::Charisma, 25, 11),
+        11
+    );
     // Non-specialized Warrior CHA=8 -> normal tier cost 2.
-    assert_eq!(needed_raise(CharacterClass::Warrior, PrimaryStat::Charisma, 8, 2), 2);
+    assert_eq!(
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Charisma, 8, 2),
+        2
+    );
 }
 
 #[test]
@@ -139,14 +154,41 @@ fn draw_blits_paper_doll_pixels() {
     let mut p = player();
     p.equipment = [0, 0, 1, 0, 0, 0];
     p.raw_0x12 = 2;
-    let pose = PaperDollPose { action: 6, direction: 5, frame: 0 };
+    let pose = PaperDollPose {
+        action: 6,
+        direction: 5,
+        frame: 0,
+    };
     let doll = res
-        .paper_doll_frame(&p.equipment, p.raw_0x12, false, 1, p.hero.palette_id(), pose.action, pose.direction as usize, pose.frame)
+        .paper_doll_frame(
+            &p.equipment,
+            p.raw_0x12,
+            false,
+            1,
+            p.hero.palette_id(),
+            pose.action,
+            pose.direction as usize,
+            pose.frame,
+        )
         .expect("doll");
     let (dx, dy) = paper_doll_position(800);
 
     let mut frame = vec![0u8; 800 * 600 * 4];
-    draw(&mut frame, 800, 600, &mut res, &p, pose);
+    let sheet = CharacterSheet {
+        name_id: p.hero.name_id,
+        class: p.entity_class(),
+        equipment: p.equipment,
+        additional: p.additional_equipment,
+        special: p.special_equipment,
+        inventory: p.inventory,
+        raw_0x12: p.raw_0x12,
+        flags_b: p.flags_b,
+        visual_index: p.hero.visual_index,
+        palette_id: p.hero.palette_id(),
+        snapshot: crate::inventory::OwnerSnapshot::from_player(&p),
+        pose,
+    };
+    draw(&mut frame, 800, 600, &mut res, &sheet, None, (0, 0));
 
     let mut matching = 0;
     let mut opaque = 0;
@@ -166,7 +208,10 @@ fn draw_blits_paper_doll_pixels() {
         }
     }
     assert!(opaque > 100, "doll must have opaque pixels");
-    assert!(matching > 50, "draw must blit the paper doll ({matching}/{opaque} matched)");
+    assert!(
+        matching > 50,
+        "draw must blit the paper doll ({matching}/{opaque} matched)"
+    );
 }
 
 #[test]

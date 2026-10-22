@@ -20,20 +20,17 @@ pub(super) struct PortalBinding {
     pub(super) dist: f64,
 }
 
-
 /// Maximum gate-center → trigger-rectangle distance (grid units) for a cosmetic
 /// binding. Empirical Game.1 distribution: 100/108 outgoing transitions have a
 /// nearest gate within 8.0, then a clear gap to 18.34; 13.0 sits in that gap, so
 /// unrelated 244/245 objects stay unbound rather than drawing a misleading ring.
 pub(super) const MAX_GATE_TRIGGER_DIST: f64 = 13.0;
 
-
 /// Center of a trigger rectangle given its raw (possibly unnormalized) corners.
 /// A point trigger yields its exact coordinate.
 pub(super) fn trigger_center(x1: i32, y1: i32, x2: i32, y2: i32) -> [f64; 2] {
     [(x1 + x2) as f64 * 0.5, (y1 + y2) as f64 * 0.5]
 }
-
 
 /// Distance from a point to the rectangle with the given raw corners (0 if the
 /// point lies inside the normalized rectangle).
@@ -59,7 +56,6 @@ pub(super) fn dist_point_to_rect(px: f64, py: f64, x1: i32, y1: i32, x2: i32, y2
     (dx * dx + dy * dy).sqrt()
 }
 
-
 /// Best partial matching found by [`match_triggers_to_gates`].
 pub(super) struct GateMatchBest {
     count: usize,
@@ -68,7 +64,6 @@ pub(super) struct GateMatchBest {
     key: Vec<(usize, usize)>,
     assign: Vec<Option<usize>>,
 }
-
 
 pub(super) fn gate_match_better(a: &GateMatchBest, b: &GateMatchBest) -> bool {
     if a.count != b.count {
@@ -80,7 +75,6 @@ pub(super) fn gate_match_better(a: &GateMatchBest, b: &GateMatchBest) -> bool {
     a.key < b.key
 }
 
-
 pub(super) fn gate_match_key(assign: &[Option<usize>], recs: &[usize]) -> Vec<(usize, usize)> {
     let mut v: Vec<(usize, usize)> = assign
         .iter()
@@ -90,7 +84,6 @@ pub(super) fn gate_match_key(assign: &[Option<usize>], recs: &[usize]) -> Vec<(u
     v.sort_unstable();
     v
 }
-
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn gate_match_dfs(
@@ -126,13 +119,22 @@ pub(super) fn gate_match_dfs(
             continue;
         }
         cur[e] = Some(gi);
-        gate_match_dfs(k + 1, used | (1u64 << e), cur, count + 1, cost + d, best, candidates, order, recs);
+        gate_match_dfs(
+            k + 1,
+            used | (1u64 << e),
+            cur,
+            count + 1,
+            cost + d,
+            best,
+            candidates,
+            order,
+            recs,
+        );
         cur[e] = None;
     }
     // Leave this gate unbound.
     gate_match_dfs(k + 1, used, cur, count, cost, best, candidates, order, recs);
 }
-
 
 /// Deterministic one-to-one assignment of transitions to gates.
 ///
@@ -196,7 +198,6 @@ pub(super) fn match_triggers_to_gates(
     assign.clone_from_slice(&best.assign);
     assign
 }
-
 
 impl PlayableApp {
     /// Bind each outgoing transition edge to its nearest visual 244/245 gate.
@@ -269,12 +270,9 @@ impl PlayableApp {
         self.portal_bindings = bindings;
     }
 
-
     pub(super) fn outgoing(&self, lid: u32) -> Vec<PortalBinding> {
         self.portal_bindings.get(&lid).cloned().unwrap_or_default()
     }
 
     // --- Phase C1 population ---
-
-
 }

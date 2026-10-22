@@ -26,6 +26,10 @@ pub const ARMOR_STRIDE: usize = 64;
 /// Prototype durability (`u16@+0x2E`) and reach (`u16@+0x34`) of the
 /// stride-`0x40` item record.
 pub const ITEM_DURABILITY_OFF: usize = 0x2E;
+/// Requirement stat id and value (`+0x30`, `+0x32`) of the stride-`0x40`
+/// prototype record.
+pub const ITEM_REQUIREMENT_STAT_OFF: usize = 0x30;
+pub const ITEM_REQUIREMENT_VALUE_OFF: usize = 0x32;
 pub const ITEM_RANGE_OFF: usize = 0x34;
 /// Projectile lifetime byte (`+0x08`) read by `FUN_0041BF44` for bows.
 pub const ITEM_LIFETIME_OFF: usize = 0x08;

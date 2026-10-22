@@ -3,10 +3,7 @@
 use super::*;
 
 fn konung() -> Option<Vec<u8>> {
-    std::fs::read(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../konung.res"),
-    )
-    .ok()
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../konung.res")).ok()
 }
 
 #[test]

@@ -8,9 +8,9 @@ use crate::loc::Location;
 use crate::res::u16;
 
 pub const GAME_SIZE: usize = 0xAD4BE;
+pub use crate::constants::game_layout::TRANS_COUNT;
 pub use crate::constants::game_layout::TRANS_OFF;
 pub use crate::constants::game_layout::TRANS_REC;
-pub use crate::constants::game_layout::TRANS_COUNT;
 
 pub type Key7 = (u8, u8, u8, u16, u16, u16, u16, u16, u16);
 
@@ -36,7 +36,9 @@ pub struct Transition {
 
 impl Transition {
     pub fn key7(&self) -> Key7 {
-        (self.meta, self.src, self.dst, self.sx, self.sy, self.dx, self.dy, self.dx2, self.dy2)
+        (
+            self.meta, self.src, self.dst, self.sx, self.sy, self.dx, self.dy, self.dx2, self.dy2,
+        )
     }
 }
 
@@ -352,7 +354,9 @@ pub fn spring_layout(
 
     let minx = pos.values().map(|v| v[0]).fold(f64::INFINITY, f64::min);
     let miny = pos.values().map(|v| v[1]).fold(f64::INFINITY, f64::min);
-    pos.into_iter().map(|(k, v)| (k, (v[0] - minx, v[1] - miny))).collect()
+    pos.into_iter()
+        .map(|(k, v)| (k, (v[0] - minx, v[1] - miny)))
+        .collect()
 }
 
 #[cfg(test)]

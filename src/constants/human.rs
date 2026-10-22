@@ -1,4 +1,4 @@
-﻿//! Centralised human/GRAPH sprite constants and original draw-order tables
+//! Centralised human/GRAPH sprite constants and original draw-order tables
 //! (extracted from `res/human.rs`).
 
 /// Peaceful-stance overlay draw order, indexed by facing.
@@ -166,4 +166,3 @@ pub const PAPER_DOLL_W: usize = 160;
 pub const PAPER_DOLL_H: usize = 160;
 /// Original paper-doll body origin inside the offscreen surface.
 pub const PAPER_DOLL_BODY_ORIGIN: (i32, i32) = (0x3C, 0x14);
-

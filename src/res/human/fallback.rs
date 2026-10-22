@@ -8,7 +8,9 @@ impl Res {
         if let Some(vid) = requested {
             if vid < GAME_VARIANT_COUNT {
                 let vr = self.variant(vid);
-                if (vr[HUMAN_VARIANT_FLAGS_OFFSET] & OBJECT_ARCHETYPE_BIT) == 0 && (vr[HUMAN_VARIANT_BASE_OFFSET] as usize) < self.human_base_positions.len() {
+                if (vr[HUMAN_VARIANT_FLAGS_OFFSET] & OBJECT_ARCHETYPE_BIT) == 0
+                    && (vr[HUMAN_VARIANT_BASE_OFFSET] as usize) < self.human_base_positions.len()
+                {
                     return Some(vid);
                 }
             }
@@ -36,7 +38,9 @@ impl Res {
                 continue;
             }
             let pal_off = u32(vr, HUMAN_VARIANT_PALETTE_OFFSET);
-            if pal_off % PALETTE_OFFSET_SCALE != 0 || (pal_off / PALETTE_OFFSET_SCALE) >= PALETTE_COUNT as u32 {
+            if pal_off % PALETTE_OFFSET_SCALE != 0
+                || (pal_off / PALETTE_OFFSET_SCALE) >= PALETTE_COUNT as u32
+            {
                 continue;
             }
             return Some(vid);

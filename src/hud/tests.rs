@@ -24,7 +24,10 @@ fn slot_step_is_width_minus_one() {
 fn layout_800_matches_executable_constants() {
     let l = layout_800();
     assert_eq!((l.logical_w, l.logical_h), (800, 600));
-    assert_eq!((l.inventory_region.x, l.inventory_region.right()), (140, 800));
+    assert_eq!(
+        (l.inventory_region.x, l.inventory_region.right()),
+        (140, 800)
+    );
     assert_eq!(l.inventory_origin, (159, 486));
     assert_eq!(l.visible_slots, 9);
     assert_eq!(l.slot_step, 69);
@@ -35,7 +38,10 @@ fn layout_800_matches_executable_constants() {
 fn layout_640_matches_executable_constants() {
     let l = layout_640();
     assert_eq!((l.logical_w, l.logical_h), (640, 480));
-    assert_eq!((l.inventory_region.x, l.inventory_region.right()), (112, 640));
+    assert_eq!(
+        (l.inventory_region.x, l.inventory_region.right()),
+        (112, 640)
+    );
     assert_eq!(l.inventory_origin, (134, 375));
     assert_eq!(l.visible_slots, 7);
     assert_eq!(l.arrows, [(18, 111, 375), (20, 620, 375)]);
@@ -149,15 +155,34 @@ fn compose_preserves_world_through_transparent_pixels() {
         logical_h: 8,
         hud_id: 3,
         slot_id: 17,
-        inventory_region: Rect { x: 0, y: 0, w: 8, h: 8 },
+        inventory_region: Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        },
         inventory_origin: (0, 0),
         visible_slots: 0,
         slot_step: 69,
-        inventory_bar: Rect { x: 0, y: 0, w: 8, h: 8 },
+        inventory_bar: Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        },
         arrows: [(18, -1000, -1000), (20, -1000, -1000)],
         auto_pos: (-1000, -1000),
-        party_cells: [Rect { x: 0, y: 0, w: 8, h: 8 }; 10],
-        hp_bar: HpBar { height: 0, dx: 0, dy: 0 },
+        party_cells: [Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        }; 10],
+        hp_bar: HpBar {
+            height: 0,
+            dx: 0,
+            dy: 0,
+        },
         party_origins: [(0, 0); 10],
     };
     // 2x2 HUD: top-left transparent, others opaque red.
@@ -181,15 +206,34 @@ fn compose_clips_out_of_bounds_without_panic() {
         logical_h: 600,
         hud_id: 3,
         slot_id: 17,
-        inventory_region: Rect { x: 0, y: 0, w: 800, h: 70 },
+        inventory_region: Rect {
+            x: 0,
+            y: 0,
+            w: 800,
+            h: 70,
+        },
         inventory_origin: (0, 0),
         visible_slots: 7,
         slot_step: 69,
-        inventory_bar: Rect { x: 0, y: 0, w: 800, h: 45 },
+        inventory_bar: Rect {
+            x: 0,
+            y: 0,
+            w: 800,
+            h: 45,
+        },
         arrows: [(18, -1000, -1000), (20, -1000, -1000)],
         auto_pos: (-1000, -1000),
-        party_cells: [Rect { x: 0, y: 0, w: 68, h: 68 }; 10],
-        hp_bar: HpBar { height: 0, dx: 0, dy: 0 },
+        party_cells: [Rect {
+            x: 0,
+            y: 0,
+            w: 68,
+            h: 68,
+        }; 10],
+        hp_bar: HpBar {
+            height: 0,
+            dx: 0,
+            dy: 0,
+        },
         party_origins: [(0, 0); 10],
     };
     let big = solid(70, 70, [1, 2, 3, 255]);
@@ -202,9 +246,25 @@ fn compose_clips_out_of_bounds_without_panic() {
 #[test]
 fn layout_has_inventory_bar_text_area() {
     let l800 = layout_800();
-    assert_eq!(l800.inventory_bar, Rect { x: 140, y: 555, w: 660, h: 45 });
+    assert_eq!(
+        l800.inventory_bar,
+        Rect {
+            x: 140,
+            y: 555,
+            w: 660,
+            h: 45
+        }
+    );
     let l640 = layout_640();
-    assert_eq!(l640.inventory_bar, Rect { x: 112, y: 444, w: 528, h: 36 });
+    assert_eq!(
+        l640.inventory_bar,
+        Rect {
+            x: 112,
+            y: 444,
+            w: 528,
+            h: 36
+        }
+    );
 }
 
 #[test]
@@ -243,8 +303,16 @@ fn item_icons_are_centered_in_their_slots() {
     let state = HudState {
         party: Vec::new(),
         items: vec![
-            ItemIcon { slot: 0, icon: 50 },
-            ItemIcon { slot: 5, icon: 23 },
+            ItemIcon {
+                slot: 0,
+                icon: 50,
+                count: None,
+            },
+            ItemIcon {
+                slot: 5,
+                icon: 23,
+                count: None,
+            },
         ],
         hovered: None,
         auto: None,

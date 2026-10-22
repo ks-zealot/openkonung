@@ -21,10 +21,8 @@ pub(super) fn build_test_app() -> Option<PlayableApp> {
     let res = Res::new(game, graph, objects, exe);
     let world = World::new(res, Vec::new());
     let h = *hero(0).unwrap();
-    let mut player = PlayerCharacter::from_build(
-        h,
-        CharacterBuild::from_class(CharacterClass::Warrior),
-    );
+    let mut player =
+        PlayerCharacter::from_build(h, CharacterBuild::from_class(CharacterClass::Warrior));
     player.hp_internal = 1600;
     player.equipment = [0, 0, 1, 0, 0, 0];
     Some(PlayableApp::new(
@@ -45,7 +43,6 @@ pub(super) fn build_test_app() -> Option<PlayableApp> {
         Vec::new(),
     ))
 }
-
 
 /// A playable app with one synthetic, fully-free location so world clicks issue
 /// real routes (the plain `build_test_app` has no location, so every route is
@@ -74,10 +71,8 @@ pub(super) fn build_movement_app() -> Option<PlayableApp> {
     };
     let world = World::new(res, vec![loc]);
     let h = *hero(0).unwrap();
-    let mut player = PlayerCharacter::from_build(
-        h,
-        CharacterBuild::from_class(CharacterClass::Warrior),
-    );
+    let mut player =
+        PlayerCharacter::from_build(h, CharacterBuild::from_class(CharacterClass::Warrior));
     player.hp_internal = 1600;
     Some(PlayableApp::new(
         world,
@@ -104,7 +99,6 @@ pub(super) fn cell_screen(app: &PlayableApp, cx: i32, cy: i32) -> (f64, f64) {
     (app.detail_pan[0] + lx, app.detail_pan[1] + ly)
 }
 
-
 /// A playable app with the real `Game.1` tables and `QUEST_R.RES` (Dragomir's
 /// start map 4), so dialogue condition/action execution and recruitment can be
 /// exercised against the shipped data.
@@ -130,10 +124,8 @@ pub(super) fn build_party_app() -> Option<PlayableApp> {
     let _ = res.load_quest(&quest);
     let world = World::new(res, Vec::new());
     let h = *hero(0).unwrap();
-    let mut player = PlayerCharacter::from_build(
-        h,
-        CharacterBuild::from_class(CharacterClass::Warrior),
-    );
+    let mut player =
+        PlayerCharacter::from_build(h, CharacterBuild::from_class(CharacterClass::Warrior));
     player.hp_internal = 1600;
     Some(PlayableApp::new(
         world,
@@ -153,7 +145,6 @@ pub(super) fn build_party_app() -> Option<PlayableApp> {
         settlements,
     ))
 }
-
 
 /// A party app with the real `Game.1` tables + `QUEST_R.RES` and one synthetic,
 /// fully-free location (id `1`), so a world click issues real routes to the
@@ -191,10 +182,8 @@ pub(super) fn build_party_move_app() -> Option<PlayableApp> {
     };
     let world = World::new(res, vec![loc]);
     let h = *hero(0).unwrap();
-    let mut player = PlayerCharacter::from_build(
-        h,
-        CharacterBuild::from_class(CharacterClass::Warrior),
-    );
+    let mut player =
+        PlayerCharacter::from_build(h, CharacterBuild::from_class(CharacterClass::Warrior));
     player.hp_internal = 1600;
     Some(PlayableApp::new(
         world,
@@ -214,4 +203,3 @@ pub(super) fn build_party_move_app() -> Option<PlayableApp> {
         settlements,
     ))
 }
-

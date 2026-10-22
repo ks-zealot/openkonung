@@ -8,7 +8,6 @@ pub enum ActiveMode {
     Game,
 }
 
-
 /// Single owner of the frontend and the live game. The game is preserved while
 /// the frontend is active; `host_w`/`host_h` are the real canvas backing-store
 /// size and are forwarded to both so mode switches never reset input mapping.
@@ -21,11 +20,9 @@ pub struct Runtime {
     pub(super) quit: bool,
 }
 
-
 pub static mut LOADER: Option<Loader> = None;
 
 pub static mut RUNTIME: Option<Runtime> = None;
-
 
 pub fn runtime_mut() -> &'static mut Runtime {
     unsafe {
@@ -34,11 +31,9 @@ pub fn runtime_mut() -> &'static mut Runtime {
     }
 }
 
-
 pub fn frontend_mut() -> Option<&'static mut Frontend> {
     runtime_mut().frontend.as_mut()
 }
-
 
 /// All active text-overlay items (frontend or game).
 pub fn texts() -> Option<&'static Vec<TextItem>> {
@@ -49,7 +44,6 @@ pub fn texts() -> Option<&'static Vec<TextItem>> {
     }
 }
 
-
 /// Outcome of an input event, resolved after the runtime borrow has ended so the
 /// active mode may be switched (e.g. Escape opens the menu).
 pub enum InputAction {
@@ -58,7 +52,6 @@ pub enum InputAction {
     OpenMenu,
 }
 
-
 /// Apply the recorded host size, if the host has reported one.
 pub fn apply_host(f: &mut Frontend, host_w: i32, host_h: i32) {
     if host_w > 0 && host_h > 0 {
@@ -66,13 +59,11 @@ pub fn apply_host(f: &mut Frontend, host_w: i32, host_h: i32) {
     }
 }
 
-
 pub fn apply_host_to_app(a: &mut PlayableApp, host_w: i32, host_h: i32) {
     if host_w > 0 && host_h > 0 {
         a.on_resize(host_w, host_h);
     }
 }
-
 
 /// Build the game from the loaded resources, install it, and make it active.
 ///
@@ -228,7 +219,6 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
     1
 }
 
-
 /// Direct game start (no frontend). Retained for existing tools/tests.
 ///
 /// There is no character-creation screen here, so a default Warrior build is
@@ -241,7 +231,6 @@ pub extern "C" fn boot(hero_index: u32, variant: i32) -> u32 {
         variant,
     )
 }
-
 
 /// Start at the original frontend main menu. `width` selects the original
 /// layout/resource resolution (must be `640` or `800`; anything else is `800`).
@@ -267,7 +256,6 @@ pub extern "C" fn frontend_boot(width: u32) -> u32 {
         }
     }
 }
-
 
 /// Rebuild the currently active frontend at a different original resolution
 /// (debug aid; task §23). Preserves the live game, `game_active`, and the real
@@ -307,7 +295,6 @@ pub extern "C" fn frontend_set_resolution(width: u32) -> u32 {
     }
 }
 
-
 /// Open the frontend main menu while preserving the live game. Called when the
 /// game's Escape key handler sets `request_menu`.
 pub fn open_frontend_from_game() {
@@ -333,7 +320,6 @@ pub fn open_frontend_from_game() {
     }
     rt.active = ActiveMode::Frontend;
 }
-
 
 /// Handle a command returned by frontend input.
 pub fn handle_frontend_command(cmd: FrontendCommand) {
@@ -361,7 +347,6 @@ pub fn handle_frontend_command(cmd: FrontendCommand) {
 // Runtime
 // --------------------------------------------------------------------------
 
-
 pub fn resolve_input(action: InputAction) {
     match action {
         InputAction::None => {}
@@ -374,7 +359,6 @@ pub fn resolve_input(action: InputAction) {
 // Diagnostics (tests / tooling)
 // --------------------------------------------------------------------------
 
-
 impl Runtime {
     pub(super) fn new() -> Runtime {
         Runtime {
@@ -386,5 +370,4 @@ impl Runtime {
             quit: false,
         }
     }
-
 }
