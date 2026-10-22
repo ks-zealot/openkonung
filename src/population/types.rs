@@ -205,6 +205,93 @@ pub struct SettlementTarget {
     pub timer: u16,
 }
 
+/// Runtime trade/restock state for one settlement.
+///
+/// Stock arrays and production counters share the `Settlement` record:
+/// role 2 (`+0x412`, 24), role 3 (`+0x444`, 32), role 4 (`+0x484`, 23);
+/// producer entities at `+0x3DA/+0x3E2/+0x3EA/+0x3F2`; timers at
+/// `+0x4/+0x8/+0xC`; role-4 pending slot `+0x4B4`. Kept separate from
+/// [`Settlement`] so synthetic test fixtures and the AI parser stay unchanged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettlementTrade {
+    pub index: usize,
+    pub loc_id: u8,
+    pub flags_4b2: u8,
+    pub stock2: [u16; 24],
+    pub stock3: [u16; 32],
+    pub stock4: [u16; 23],
+    pub prod_role2: u16,
+    pub prod_role3: u16,
+    pub prod_role4: u16,
+    pub prod_role5: u16,
+    pub timer2: i32,
+    pub timer3: i32,
+    pub timer4: i32,
+    pub last_slot: i8,
+    pub quota0: u16,
+    pub quota1: u16,
+    pub quota2: u16,
+}
+
+impl Default for SettlementTrade {
+    fn default() -> Self {
+        SettlementTrade {
+            index: 0,
+            loc_id: 0,
+            flags_4b2: 0,
+            stock2: [0; 24],
+            stock3: [0; 32],
+            stock4: [0; 23],
+            prod_role2: 0,
+            prod_role3: 0,
+            prod_role4: 0,
+            prod_role5: 0,
+            timer2: 0,
+            timer3: 0,
+            timer4: 0,
+            last_slot: -1,
+            quota0: 0,
+            quota1: 0,
+            quota2: 0,
+        }
+    }
+}
+
+impl SettlementTrade {
+    /// Role 2..=4 stock list as a slice.
+    pub fn stock(&self, role: u8) -> Option<&[u16]> {
+        match role {
+            2 => Some(&self.stock2),
+            3 => Some(&self.stock3),
+            4 => Some(&self.stock4),
+            _ => None,
+        }
+    }
+
+    /// Mutable role 2..=4 stock list.
+    pub fn stock_mut(&mut self, role: u8) -> Option<&mut [u16]> {
+        match role {
+            2 => Some(&mut self.stock2),
+            3 => Some(&mut self.stock3),
+            4 => Some(&mut self.stock4),
+            _ => None,
+        }
+    }
+}
+
+impl Settlement {
+    /// Waypoint owner slot (`1..=5`) for `entity_index`, or `0` when the NPC
+    /// owns none of the first five settlement waypoints (`FUN_0041182C`).
+    pub fn role_of(&self, entity_index: u16) -> u8 {
+        self.waypoints
+            .iter()
+            .take(5)
+            .position(|w| w.owner == entity_index)
+            .map(|slot| slot as u8 + 1)
+            .unwrap_or(0)
+    }
+}
+
 /// Diagnostic report for one group selected for a location.
 #[derive(Clone, Debug)]
 pub struct GroupReport {

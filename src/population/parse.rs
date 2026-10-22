@@ -241,3 +241,55 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
     }
     Ok(out)
 }
+
+/// Parse the settlement merchant stock lists and restock state
+/// (`FUN_00431E2C` / `FUN_004175FC` / `FUN_004179C8`). The same `Game.N`
+/// `Settlement` records hold these fields, but they are kept in a parallel
+/// table so non-trade settlement consumers are unaffected.
+pub fn parse_settlement_trade(data: &[u8]) -> Result<Vec<SettlementTrade>, String> {
+    let required = SETTLEMENT_OFF + SETTLEMENT_COUNT * SETTLEMENT_STRIDE;
+    if data.len() < required {
+        return Err(format!(
+            "Settlement table truncated: file is {} bytes, need at least {} (0x{:X})",
+            data.len(),
+            required,
+            required
+        ));
+    }
+    let mut out = Vec::with_capacity(SETTLEMENT_COUNT);
+    for index in 0..SETTLEMENT_COUNT {
+        let o = SETTLEMENT_OFF + index * SETTLEMENT_STRIDE;
+        let mut stock2 = [0u16; TRADE_STOCK2_COUNT];
+        for (i, slot) in stock2.iter_mut().enumerate() {
+            *slot = u16(data, o + TRADE_STOCK2_OFF + i * 2) as u16;
+        }
+        let mut stock3 = [0u16; TRADE_STOCK3_COUNT];
+        for (i, slot) in stock3.iter_mut().enumerate() {
+            *slot = u16(data, o + TRADE_STOCK3_OFF + i * 2) as u16;
+        }
+        let mut stock4 = [0u16; TRADE_STOCK4_COUNT];
+        for (i, slot) in stock4.iter_mut().enumerate() {
+            *slot = u16(data, o + TRADE_STOCK4_OFF + i * 2) as u16;
+        }
+        out.push(SettlementTrade {
+            index,
+            loc_id: data[o + 3],
+            flags_4b2: data[o + 0x4B2],
+            stock2,
+            stock3,
+            stock4,
+            prod_role2: u16(data, o + TRADE_PROD2_OFF) as u16,
+            prod_role3: u16(data, o + TRADE_PROD3_OFF) as u16,
+            prod_role4: u16(data, o + TRADE_PROD4_OFF) as u16,
+            prod_role5: u16(data, o + TRADE_PROD5_OFF) as u16,
+            timer2: i32v(data, o + TRADE_TIMER2_OFF),
+            timer3: i32v(data, o + TRADE_TIMER3_OFF),
+            timer4: i32v(data, o + TRADE_TIMER4_OFF),
+            last_slot: data[o + TRADE_LAST_SLOT_OFF] as i8,
+            quota0: u16(data, o + TRADE_QUOTA0_OFF) as u16,
+            quota1: u16(data, o + TRADE_QUOTA1_OFF) as u16,
+            quota2: u16(data, o + TRADE_QUOTA2_OFF) as u16,
+        });
+    }
+    Ok(out)
+}

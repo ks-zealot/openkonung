@@ -60,7 +60,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x113,
         handler: 0x431E2C,
         kind: Action,
-        effect: "trade/loot: load player+partner inventories/money, open interface mode 0",
+        effect: "trade/loot: load player+partner inventories/money, open exchange mode 7",
     },
     ScriptOp {
         op: 0x114,

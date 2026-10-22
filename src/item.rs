@@ -50,6 +50,8 @@ use crate::constants::exe_tables::NAME4_VA;
 
 use crate::constants::exe_tables::ARMOR_STRIDE;
 use crate::constants::exe_tables::ARMOR_TABLE_VA;
+use crate::constants::exe_tables::ITEM_CONDITION_VALUE_STRIDE;
+use crate::constants::exe_tables::ITEM_CONDITION_VALUE_VA;
 use crate::constants::exe_tables::ITEM_DURABILITY_OFF;
 use crate::constants::exe_tables::ITEM_LIFETIME_OFF;
 use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
@@ -58,6 +60,8 @@ use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
 use crate::constants::exe_tables::ITEM_RANGE_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_STAT_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_VALUE_OFF;
+use crate::constants::exe_tables::ITEM_VALUE_OFF_128;
+use crate::constants::exe_tables::ITEM_VALUE_OFF_64;
 
 /// Table `(icon_base_va, stride, name_base_va)` for an item class.
 fn table_for(class: u8) -> Option<(u32, usize, u32)> {
@@ -276,6 +280,68 @@ impl ItemDb {
     /// the projectile damage path where only the bow subtype is stored.
     pub fn rating_for_subtype(&self, subtype: u8) -> u16 {
         let o = va_to_file(ARMOR_TABLE_VA) + subtype as usize * ARMOR_STRIDE;
+        if o + 2 <= self.konung.len() {
+            rd_u16(&self.konung, o) as u16
+        } else {
+            0
+        }
+    }
+
+    /// Base trade value of one item instance (`FUN_0041B2A8`).
+    ///
+    /// The value is the prototype `price` field (`+0x36` for stride-`0x40`
+    /// records, `+0x78` for stride-`0x80` records). For classes `0..=8` a
+    /// condition bonus from `0x458530 + condition*0x10` is added when the item
+    /// is not broken (`flags & 1 == 0`). Class 12 multiplies by the stack
+    /// quantity; class 9 shifts the result left by 3 (`<<3`).
+    pub fn instance_trade_value(&self, inst: &ItemInstance) -> i32 {
+        let Some((_, stride, name_va)) = table_for(inst.class) else {
+            return 0;
+        };
+        let no = va_to_file(name_va) + inst.subtype as usize * stride;
+        let value_off = if stride == 64 {
+            ITEM_VALUE_OFF_64
+        } else {
+            ITEM_VALUE_OFF_128
+        };
+        let mut value = if no + value_off + 2 <= self.konung.len() {
+            rd_u16(&self.konung, no + value_off) as i32
+        } else {
+            0
+        };
+        let quantity = inst.current_durability.to_bits() as i32;
+        match inst.class {
+            0..=8 => {
+                if inst.condition >= 0 && inst.flags & 1 == 0 {
+                    let co = va_to_file(ITEM_CONDITION_VALUE_VA)
+                        + inst.condition as usize * ITEM_CONDITION_VALUE_STRIDE;
+                    if co + 2 <= self.konung.len() {
+                        value += rd_u16(&self.konung, co) as i32;
+                    }
+                }
+                value.max(1)
+            }
+            12 => value * quantity,
+            9 => {
+                if value < 0 {
+                    value = (-(quantity as f64) * value as f64).round() as i32;
+                }
+                value << 3
+            }
+            _ => value,
+        }
+    }
+
+    /// Trade value of item instance `id` in the loaded save.
+    pub fn instance_trade_value_by_id(&self, game: &[u8], id: u16) -> Option<i32> {
+        let inst = Self::decode_instance(game, id)?;
+        Some(self.instance_trade_value(&inst))
+    }
+
+    /// Raw `u16` at `va + extra` in the loaded `konung.res` image. Used for the
+    /// settlement restock recipe-level tables.
+    pub fn read_va_u16(&self, va: u32, extra: usize) -> u16 {
+        let o = va_to_file(va) + extra;
         if o + 2 <= self.konung.len() {
             rd_u16(&self.konung, o) as u16
         } else {

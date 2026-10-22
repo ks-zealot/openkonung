@@ -27,6 +27,7 @@ impl PlayableApp {
         if whole >= 1.0 {
             self.world_frame = self.world_frame.saturating_add(whole as u64);
             self.world_frame_accum -= whole;
+            self.tick_settlement_trade(whole as u64);
         }
     }
 

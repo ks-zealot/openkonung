@@ -143,6 +143,8 @@ impl PlayableApp {
             0x123 => self.recruit_companion(npc_entity),
             // 0x14C FUN_00432954: dismiss the party member.
             0x14C => self.dismiss_companion(npc_entity),
+            // 0x113 FUN_00431E2C: open the exchange interface (mode 7).
+            0x113 => self.start_trade(npc_entity),
             0x11D => self.player.money -= 5,
             0x11E => self.player.money -= 10,
             0x11F => self.player.money -= 20,
@@ -278,6 +280,9 @@ impl PlayableApp {
             // NPC voice line (`FUN_00435290` picks 0x0C..0x0F for a humanoid).
             self.sounds.push(0x0C + (npc_entity as u16 & 3));
             self.run_on_open_actions(npc_entity);
+            if self.trade.is_some() {
+                self.dialog = None;
+            }
         }
     }
 
@@ -322,6 +327,10 @@ impl PlayableApp {
                 evaluate_condition(&words, |i| ctx.flag_active(i), |op| eval_op(&ctx, op))
             })
         };
+        if self.trade.is_some() {
+            self.dialog = None;
+            return;
+        }
         if stay {
             self.run_on_open_actions(npc_entity);
         } else {

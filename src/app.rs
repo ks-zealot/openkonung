@@ -28,7 +28,9 @@ mod party;
 mod player;
 mod population;
 mod portals;
+mod settlement_trade;
 mod text;
+mod trade;
 mod world_draw;
 mod world_items;
 
@@ -160,7 +162,7 @@ pub struct PlayableApp {
     // entities are deferred to C2; no runtime placement/AI is implemented.
     tables: Option<GameTables>,
     /// Parsed `Game.N` settlements (citizen home/role waypoints, `+0x3D0`).
-    settlements: Vec<Settlement>,
+    pub(crate) settlements: Vec<Settlement>,
     population_cache: HashMap<u32, PopulationBuild>,
     population_debug: bool,
     population_rejected: Vec<String>,
@@ -210,6 +212,13 @@ pub struct PlayableApp {
     pub character_screen: bool,
     /// Active NPC dialogue (original `FUN_0042CBD0` mode 1). Escape closes it.
     pub dialog: Option<crate::dialog::DialogState>,
+    /// Active exchange (interface mode 7), opened by quest opcode `0x113`.
+    pub trade: Option<crate::trade::TradeState>,
+    /// Timed trade rejection message (`FUN_0042E9CC`).
+    pub trade_message: Option<String>,
+    pub trade_message_t: f64,
+    /// Settlement merchant stock/restock state (`Game.N +0xA769A` tails).
+    pub settlement_trade: Vec<crate::population::SettlementTrade>,
     pub host_w: i32,
     pub host_h: i32,
     drag: bool,
@@ -317,6 +326,8 @@ impl PlayableApp {
             .map(|q| q.initial_flags())
             .unwrap_or_default();
         let world_object_sources = crate::world_objects::parse_sources(&world.res.save_game);
+        let settlement_trade =
+            crate::population::parse_settlement_trade(&world.res.save_game).unwrap_or_default();
         let mut app = PlayableApp {
             world,
             edges,
@@ -374,6 +385,10 @@ impl PlayableApp {
             hovered_slot: None,
             character_screen: false,
             dialog: None,
+            trade: None,
+            trade_message: None,
+            trade_message_t: 0.0,
+            settlement_trade,
             host_w: VIRTUAL_W,
             host_h: VIRTUAL_H,
             drag: false,
@@ -432,6 +447,12 @@ impl PlayableApp {
             self.pickup_message_t -= dt.max(0.0);
             if self.pickup_message_t <= 0.0 {
                 self.pickup_message = None;
+            }
+        }
+        if self.trade_message_t > 0.0 {
+            self.trade_message_t -= dt.max(0.0);
+            if self.trade_message_t <= 0.0 {
+                self.trade_message = None;
             }
         }
         if !self.mode_graph {

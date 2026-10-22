@@ -44,6 +44,27 @@ impl PlayableApp {
             self.drag_start = Some((x, y));
             self.dragging = false;
         }
+        // Exchange window: consume every click; no world input or click-through.
+        if self.trade.is_some() {
+            if button == 1 {
+                if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                    let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                    match crate::trade_screen::hit_test(vx, vy, VIRTUAL_W) {
+                        crate::trade_screen::TradeHit::Cell { row, col } => {
+                            self.trade_click_cell(row, col)
+                        }
+                        crate::trade_screen::TradeHit::PageLeft(row) => self.trade_page(row, -1),
+                        crate::trade_screen::TradeHit::PageRight(row) => self.trade_page(row, 1),
+                        crate::trade_screen::TradeHit::Cancel => self.trade_cancel(),
+                        crate::trade_screen::TradeHit::Confirm => self.trade_confirm(),
+                        crate::trade_screen::TradeHit::None => {}
+                    }
+                }
+            }
+            self.drag = false;
+            self.last_mouse = (x, y);
+            return;
+        }
         // While a dialogue is open it consumes every click: option selection
         // only (left button). It is closed with Escape or by an end option.
         if self.dialog.is_some() {
@@ -299,6 +320,13 @@ impl PlayableApp {
     }
 
     pub fn pointer_up(&mut self, button: u32) {
+        if self.trade.is_some() {
+            if button == 1 {
+                self.mouse_left_down = false;
+            }
+            self.drag = false;
+            return;
+        }
         if button == 1 {
             if self.dragging {
                 self.drop_held_at_cursor();
@@ -361,6 +389,10 @@ impl PlayableApp {
     /// Read-only HUD hover: which visible inventory cell is under the cursor.
     /// Does not touch world targeting, movement or portals.
     pub(super) fn update_hover(&mut self, x: f64, y: f64) {
+        if self.trade.is_some() {
+            self.hovered_slot = None;
+            return;
+        }
         let Some((mx, my)) = self.window_to_virtual(x, y) else {
             self.hovered_slot = None;
             return;
@@ -375,6 +407,9 @@ impl PlayableApp {
     }
 
     pub fn wheel(&mut self, delta: f64) {
+        if self.trade.is_some() {
+            return;
+        }
         if self.mode_graph {
             let factor = 1.2f64.powf(delta);
             self.graph_zoom = (self.graph_zoom * factor).clamp(0.04, 3.0);
@@ -390,6 +425,14 @@ impl PlayableApp {
     }
 
     pub fn key_down(&mut self, code: u32) {
+        // Exchange captures the keyboard: Escape cancels/returns the offers.
+        if self.trade.is_some() {
+            if code == KEY_ESCAPE {
+                self.trade_cancel();
+                self.hovered_slot = None;
+            }
+            return;
+        }
         // Dialogue captures the keyboard: only Escape closes it.
         if self.dialog.is_some() {
             if code == KEY_ESCAPE {

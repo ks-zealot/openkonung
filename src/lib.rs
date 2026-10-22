@@ -65,6 +65,8 @@ pub mod res;
 pub mod resource_pack;
 pub mod script;
 pub mod sound;
+pub mod trade;
+pub mod trade_screen;
 pub mod world_objects;
 
 use std::collections::HashMap;

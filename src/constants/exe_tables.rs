@@ -31,6 +31,15 @@ pub const ITEM_DURABILITY_OFF: usize = 0x2E;
 pub const ITEM_REQUIREMENT_STAT_OFF: usize = 0x30;
 pub const ITEM_REQUIREMENT_VALUE_OFF: usize = 0x32;
 pub const ITEM_RANGE_OFF: usize = 0x34;
+/// Trade-value (`price`) field of the stride-`0x40` prototype record
+/// (`0x459B50 + 0x36`, read by `FUN_0041B2A8`).
+pub const ITEM_VALUE_OFF_64: usize = 0x36;
+/// Trade-value field of the stride-`0x80` prototype record
+/// (`0x4580B0/0x459450/0x46091C + 0x78`).
+pub const ITEM_VALUE_OFF_128: usize = 0x78;
+/// Per-condition trade-value bonus table (`FUN_0041B2A8`, stride `0x10`).
+pub const ITEM_CONDITION_VALUE_VA: u32 = 0x458530;
+pub const ITEM_CONDITION_VALUE_STRIDE: usize = 0x10;
 /// Projectile lifetime byte (`+0x08`) read by `FUN_0041BF44` for bows.
 pub const ITEM_LIFETIME_OFF: usize = 0x08;
 /// Weapon-vs-creature modifier table (`FUN_0041aea8`); 18 records of `0x40`

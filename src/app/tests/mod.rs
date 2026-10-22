@@ -5,5 +5,6 @@ mod inventory;
 mod movement;
 mod party;
 mod portals;
+mod trade;
 mod ui;
 mod world_items;

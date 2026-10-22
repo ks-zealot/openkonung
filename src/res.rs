@@ -231,6 +231,11 @@ impl Res {
         self.item_db.as_ref()?.resolve(&self.save_game, id)
     }
 
+    /// Template info by class/subtype (for generated merchant stock).
+    pub fn item_info_for(&self, class: u8, subtype: u8) -> Option<crate::item::ItemInfo> {
+        self.item_db.as_ref()?.info(class, subtype)
+    }
+
     /// Clone a 16-byte item instance into the first free instance slot.
     ///
     /// Mirrors `FUN_00438884`: scan from instance 1 for a record whose signed
@@ -272,6 +277,12 @@ impl Res {
     pub fn item_class_subtype(&self, id: u16) -> Option<(u8, u8)> {
         let i = self.item_instance(id)?;
         Some((i.class, i.subtype))
+    }
+
+    /// Original trade value of item instance `id` (`FUN_0041B2A8`).
+    pub fn item_trade_value(&self, id: u16) -> Option<i32> {
+        let db = self.item_db.as_ref()?;
+        db.instance_trade_value_by_id(&self.save_game, id)
     }
 
     /// `class` byte of an item instance.

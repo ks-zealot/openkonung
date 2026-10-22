@@ -283,6 +283,40 @@ impl PlayableApp {
             );
         }
 
+        // Exchange (interface mode 7, `FUN_00430D6C`). Drawn over the HUD
+        // after the world, with the original stone fill/window/rows/buttons.
+        if self.trade.is_some() {
+            let trade_name = self
+                .trade
+                .as_ref()
+                .and_then(|t| self.tables.as_ref()?.entities.get(t.npc_entity))
+                .and_then(|e| self.world.res.character_name(e.name_id))
+                .unwrap_or_else(|| "????????".to_string());
+            let message = self.trade_message.clone();
+            let cursor = (
+                self.cursor_virtual.0.round() as i32,
+                self.cursor_virtual.1.round() as i32,
+            );
+            let PlayableApp {
+                frame,
+                world,
+                trade,
+                ..
+            } = self;
+            if let Some(state) = trade.as_ref() {
+                crate::trade_screen::draw(
+                    frame,
+                    fw,
+                    fh,
+                    &mut world.res,
+                    state,
+                    &trade_name,
+                    message.as_deref(),
+                    cursor,
+                );
+            }
+        }
+
         // Original character screen (INTR[2]) over the world area; its window
         // geometry keeps the party panel and bottom inventory strip visible.
         if self.character_screen {

@@ -23,6 +23,8 @@ mod ranged;
 mod sound;
 #[path = "debug/text.rs"]
 mod text;
+#[path = "debug/trade.rs"]
+mod trade;
 
 pub use self::combat::*;
 pub use self::entity::*;
@@ -34,3 +36,4 @@ pub use self::quest::*;
 pub use self::ranged::*;
 pub use self::sound::*;
 pub use self::text::*;
+pub use self::trade::*;
