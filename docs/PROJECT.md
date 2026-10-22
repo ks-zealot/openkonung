@@ -41,15 +41,18 @@ original_install/                      # game install dir (immutable inputs)
     src/                               # Rust source (see MODULES.md)
     www/    app.js index.html          # browser shell (hand-written)
             openkonung.wasm            # GENERATED build artifact
+            openkonung.pack.zip        # GENERATED packed resources (all .res/exe/music)
             manifest.json              # GENERATED build artifact
     tools/                             # smoke tests, PNG exporters, parity
     examples/dump.rs                   # Rust↔Python parity dump
+    examples/pack.rs                   # native resource packer (separate target)
     Cargo.toml  build.ps1  build.sh
     serve.ps1   serve.sh   server.py
 ```
 
 Treat the original data files and `web/target/` as immutable inputs/artifacts.
-`www/openkonung.wasm` and `www/manifest.json` are generated — never hand-edit.
+`www/openkonung.wasm`, `www/openkonung.pack.zip` and `www/manifest.json` are
+generated — never hand-edit.
 
 ## 3. Build / run / test (run from `web/`)
 
@@ -58,30 +61,37 @@ Treat the original data files and `web/target/` as immutable inputs/artifacts.
 | Build wasm + regenerate manifest | `.\build.ps1` (Windows) / `bash build.sh` |
 | Typecheck all targets | `cargo check --all-targets` |
 | Unit tests | `cargo test` (**dev profile**; do **not** use `--release` — `panic = "abort"`) |
-| Headless wasm smoke | `node tools/smoke.mjs` |
+| Headless wasm smoke (raw fallback) | `node tools/smoke.mjs` |
+| Pack-only acceptance smoke (only `web/www` served) | `node tools/pack_smoke.mjs` |
 | Frontend smoke (menu → New Game → New Hero → confirm → game) | `node tools/frontend_smoke.mjs` |
 | Page smoke over HTTP | start `serve.ps1`/`serve.sh`, then `node tools/page_smoke.mjs [url]` |
 | Run in a browser | `.\serve.ps1` or `bash serve.sh` → http://localhost:8000/ |
 | Rust↔Python parity | `python tools/parity.py [base] [profile] [variant]` vs `cargo run --release --example dump -- <base> [profile] [variant]` |
 | Render frames to PNG | `node tools/frame_png.mjs` (also `menu_png.mjs`, `intr_png.mjs`, `intr_sheet.mjs`, `character_png.mjs`) |
 
-`build.ps1`/`build.sh` require the `wasm32-unknown-unknown` target. The build
-copies `target/…/openkonung.wasm` into `web/www/` and regenerates
-`web/www/manifest.json` via `tools/make_manifest.py`.
+`build.ps1`/`build.sh` require the `wasm32-unknown-unknown` target and the
+native packer target. The build copies `target/…/openkonung.wasm` into
+`web/www/`, runs `cargo run --release --example pack` to write
+`web/www/openkonung.pack.zip`, and regenerates `web/www/manifest.json` via
+`tools/make_manifest.py`.
 
-**Current verified state:** `cargo check --all-targets` clean (no warnings);
-`cargo test` → **208 passed, 0 failed**; `smoke` and `frontend_smoke` → OK;
-release wasm builds (~434 KB) and the manifest lists 43 Konung maps.
+**Current verified state:** `cargo check --all-targets` clean; `cargo test` →
+**311 passed, 0 failed**; `smoke`, `pack_smoke`, `frontend_smoke`, `combat_smoke`
+and `ranged_smoke` → OK; release wasm builds (~667 KB) and the manifest lists
+43 Konung maps plus the pack.
 
 ## 4. Runtime architecture
 
 The port uses **no `wasm-bindgen`**. `web/www/app.js` is the shell:
 
-1. fetch `manifest.json`, then fetch each resource;
-2. copy bytes into linear memory via `alloc`, hand them over with `load_*`;
+1. fetch `manifest.json`; if it advertises `openkonung.pack.zip`, fetch that and
+   call `load_pack` (ZIP → `bincode` → one `Loader`); otherwise fetch each
+   original resource and hand it over with `load_*` (fallback, `?nopack=1`);
+2. copy bytes into linear memory via `alloc` (raw path) or let `load_pack`
+   consume them;
 3. start either the original frontend (`frontend_boot`) or the game (`boot`);
 4. drive the frame loop with `step` and blit the RGBA framebuffer read from
-   `frame_ptr`.
+   `frame_ptr`. Packed music is served from `pack_music_*` as `Blob` URLs.
 
 `lib.rs` owns a single `Runtime` that holds **both** the original frontend and a
 live `PlayableApp` at once, so Escape opens the menu without discarding the game

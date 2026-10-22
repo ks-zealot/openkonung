@@ -14,6 +14,7 @@ module root; a matching sibling directory holds its subsystems and its
 | `res.rs` | Resource container (`Res`) and decoding entry points; re-exports `res/*`. |
 | `actors.rs` | Runtime population API + frame/tick constants; re-exports `actors/*`. |
 | `population.rs` | `Game.N` Group/Entity/Settlement tables; re-exports `population/*`. |
+| `resource_pack.rs` | Packed archive model (`ResourcePack` + `bincode`), validation, `Loader` application, minimal ZIP reader/native writer; re-exports `resource_pack/*`. |
 | `character.rs` | Hero/class/build/player model; re-exports `character/*`. |
 | `loc.rs` | `Konung.N` map decode: base terrain, 320×160 collision, GRAPH/prop placements, gates. |
 | `edges.rs` | `Game.N` transition graph (`+0x29600`), trigger rectangles, location graph. |
@@ -130,6 +131,7 @@ keep working.
 |---|---|
 | `memory.rs` | `alloc`, `dealloc`, byte-copy helper. |
 | `resource.rs` | `Loader`, `load_resource`/`load_profile`/`load_konung`, kind constants, frontend asset build. |
+| `pack.rs` | `load_pack`, pack build-id and `pack_music_*` accessors for the browser shell. |
 | `lifecycle.rs` | `Runtime`, `ActiveMode`, boot / start-game / menu switching, `apply_host`. |
 | `frame.rs` | `step`, `frame_ptr`/`frame_w`/`frame_h`, `should_quit`, `on_resize`, host size. |
 | `input.rs` | Pointer/wheel/key forwarding into the active side. |
@@ -143,7 +145,9 @@ keep working.
 | `web/www/app.js` | Hand-written browser shell (manifest fetch, memory loading, loop, input, blit). |
 | `web/www/index.html` | Canvas host page. |
 | `web/examples/dump.rs` | Rust↔Python parity dump (`tools/parity.py` mirrors it). |
-| `web/tools/smoke.mjs` | Headless wasm smoke test. |
+| `web/examples/pack.rs` | Native resource packer (writes `openkonung.pack.zip`; never linked into wasm). |
+| `web/tools/smoke.mjs` | Headless wasm smoke test (raw per-file fallback). |
+| `web/tools/pack_smoke.mjs` | Pack-only acceptance smoke (only `web/www` served). |
 | `web/tools/frontend_smoke.mjs` | Full frontend-flow smoke test. |
 | `web/tools/page_smoke.mjs` | Served-bundle HTTP smoke test. |
 | `web/tools/frame_png.mjs`, `menu_png.mjs`, `intr_png.mjs`, `intr_sheet.mjs`, `character_png.mjs` | Diagnostic PNG exporters. |

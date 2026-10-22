@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the OpenKonung wasm module and regenerate www/manifest.json.
+# Build the OpenKonung wasm module, the single-file resource pack and
+# www/manifest.json.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +22,7 @@ if command -v rustup >/dev/null 2>&1; then
 fi
 
 echo "Building wasm (release)..."
-cargo build --release --target wasm32-unknown-unknown --manifest-path "$ROOT/Cargo.toml"
+cargo build --release --target wasm32-unknown-unknown --lib --manifest-path "$ROOT/Cargo.toml"
 
 cp "$ROOT/target/wasm32-unknown-unknown/release/openkonung.wasm" "$ROOT/www/openkonung.wasm"
 
@@ -30,6 +31,19 @@ if [ -z "${PYTHON:-}" ]; then
     echo "error: python3 not found (needed to generate the manifest)." >&2
     exit 1
 fi
-"$PYTHON" "$ROOT/tools/make_manifest.py" --base "$BASE" --out "$ROOT/www/manifest.json"
 
-echo "Built web/www/openkonung.wasm and web/www/manifest.json"
+RAW="$ROOT/www/manifest.raw.json"
+PACK="$ROOT/www/openkonung.pack.zip"
+
+echo "Generating raw manifest..."
+"$PYTHON" "$ROOT/tools/make_manifest.py" --base "$BASE" --out "$RAW"
+
+echo "Packing resources (native examples/pack)..."
+cargo run --release --example pack --manifest-path "$ROOT/Cargo.toml" -- \
+    --base "$BASE" --manifest "$RAW" --out "$PACK"
+
+echo "Generating final manifest (pack advertised, per-file fallback kept)..."
+"$PYTHON" "$ROOT/tools/make_manifest.py" --base "$BASE" --pack "$PACK" --out "$ROOT/www/manifest.json"
+rm -f "$RAW"
+
+echo "Built web/www/openkonung.wasm, web/www/openkonung.pack.zip and web/www/manifest.json"

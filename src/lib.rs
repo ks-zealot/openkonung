@@ -24,6 +24,8 @@ mod input;
 mod lifecycle;
 #[path = "abi/memory.rs"]
 mod memory;
+#[path = "abi/pack.rs"]
+mod pack_api;
 #[path = "abi/resource.rs"]
 mod resource;
 
@@ -33,6 +35,7 @@ pub use self::frontend_api::*;
 pub use self::input::*;
 pub use self::lifecycle::*;
 pub use self::memory::*;
+pub use self::pack_api::*;
 pub use self::resource::*;
 
 pub mod actors;
@@ -59,6 +62,7 @@ pub mod population;
 pub mod quest;
 pub mod render;
 pub mod res;
+pub mod resource_pack;
 pub mod script;
 pub mod sound;
 pub mod world_objects;
