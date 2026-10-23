@@ -2,7 +2,7 @@
 
 /// Character class. Controls `Entity+0x04` and the stat preset. Independent of
 /// the selected hero.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CharacterClass {
     Warrior,
     Hunter,

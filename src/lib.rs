@@ -28,6 +28,8 @@ mod memory;
 mod pack_api;
 #[path = "abi/resource.rs"]
 mod resource;
+#[path = "abi/save_api.rs"]
+mod save_api;
 
 pub use self::debug::*;
 pub use self::frame::*;
@@ -37,6 +39,7 @@ pub use self::lifecycle::*;
 pub use self::memory::*;
 pub use self::pack_api::*;
 pub use self::resource::*;
+pub use self::save_api::*;
 
 pub mod actors;
 pub mod anim;
@@ -63,6 +66,7 @@ pub mod quest;
 pub mod render;
 pub mod res;
 pub mod resource_pack;
+pub mod save;
 pub mod script;
 pub mod sound;
 pub mod trade;

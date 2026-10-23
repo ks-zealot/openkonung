@@ -4,7 +4,7 @@ use super::*;
 
 /// A single group spawn rectangle (§4.3). Offsets differ between rectangles:
 /// rectangle A reads `+08/+0C/+10/+14`, rectangle B `+0A/+0E/+12/+16`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rect {
     pub x1: u16,
     pub x2: u16,
@@ -16,7 +16,7 @@ pub struct Rect {
 ///
 /// `index` is the source group id and is preserved. The record is interleaved;
 /// rectangle A/B are decoded from their own offsets, never as one rectangle.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Group {
     /// Source group id (table index).
     pub index: usize,
@@ -36,6 +36,14 @@ pub struct Group {
     pub entity_count: u8,
     /// `+0x1E` u8 — group archetype/class/flags; `0` marks inactive (§4.2).
     pub class_1e: u8,
+    /// Runtime group activity byte `+0x1D` (`FUN_004245B4` wake / quest `0x150`).
+    /// Runtime-only; persisted through [`crate::save::SaveExtra`].
+    #[serde(skip)]
+    pub activity_1d: u8,
+    /// Runtime "visited" flag set by quest opcode `0x112`
+    /// (`DAT_0067C0A9[group*0x20] = 1`). Runtime-only.
+    #[serde(skip)]
+    pub visited: bool,
 }
 
 /// Authoritative character/gameplay fields of an `Entity` record, parsed
@@ -47,7 +55,7 @@ pub struct Group {
 /// `raw_0x11` has **UNKNOWN** semantics and is retained as an input to the
 /// future population-growth constructor (VA 0x420A8C). `raw_0x52` is the venom
 /// value copied into the corpse-loot stinger instance (`FUN_00418480`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntityStats {
     /// `+0x11` u8 — raw field, semantics UNKNOWN (growth-constructor input).
     pub raw_0x11: u8,
@@ -116,7 +124,7 @@ pub struct EntityStats {
 /// `index` is the source entity id. `x`/`y` are persisted coordinates and are
 /// not converted to any other domain. `stats`, `equipment` and `inventory` are
 /// the authored gameplay state (source of truth for runtime actors).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Entity {
     /// Source entity id (table index).
     pub index: usize,
@@ -163,6 +171,7 @@ pub struct Entity {
 }
 
 /// Both parsed tables.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GameTables {
     pub groups: Vec<Group>,
     pub entities: Vec<Entity>,
@@ -173,7 +182,7 @@ pub struct GameTables {
 /// 8-byte record: `+0` facing, `+1` unknown, `+2` owning Entity index
 /// (`0` = unassigned), `+4` target x, `+6` target y (runtime/Entity grid).
 /// Field use is ORIGINAL-CODE VERIFIED; the `+1` byte is UNKNOWN.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Waypoint {
     pub facing: u8,
     pub owner: u16,
@@ -182,12 +191,24 @@ pub struct Waypoint {
 }
 
 /// One `Settlement` record (`Game.N`, stride `0x4B5`); `loc_id` is byte `+3`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settlement {
     pub index: usize,
     pub loc_id: u8,
     /// `+0x02` group index woken by `FUN_004245B4`.
     pub group_id: u8,
+    /// `+0x14` settlement progress bits (`0x112` ORs `0x15`).
+    pub progress_14: u16,
+    /// `+0x10` settlement money pool (quest `0x11B` pays it out, `0x16D` zeros it).
+    /// Runtime-only; persisted through [`crate::save::SaveExtra`].
+    #[serde(skip)]
+    pub money_pool_10: i32,
+    /// `+0x00` target-list base byte (quest `0x147`/`0x169` index `base0 + 7`).
+    #[serde(skip)]
+    pub target_base0: u8,
+    /// `+0x01` target-list count byte (quest `0x169` loop count).
+    #[serde(skip)]
+    pub target_base1: u8,
     /// `+0x4B2` runtime flags (`0x15` set by the projectile prop branch).
     pub flags_4b2: u8,
     /// `+0x18` target list, 8 bytes per entry.
@@ -197,7 +218,7 @@ pub struct Settlement {
 
 /// One `Settlement+0x18` target entry: `+0x00 key`, `+0x01 state`,
 /// `+0x02 u16 prop index`, `+0x06 u16 timer`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SettlementTarget {
     pub key: u8,
     pub state: u8,
@@ -212,7 +233,7 @@ pub struct SettlementTarget {
 /// producer entities at `+0x3DA/+0x3E2/+0x3EA/+0x3F2`; timers at
 /// `+0x4/+0x8/+0xC`; role-4 pending slot `+0x4B4`. Kept separate from
 /// [`Settlement`] so synthetic test fixtures and the AI parser stay unchanged.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SettlementTrade {
     pub index: usize,
     pub loc_id: u8,

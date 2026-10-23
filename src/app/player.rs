@@ -225,6 +225,7 @@ impl PlayableApp {
                 if self.world.loc_index.contains_key(&dst) {
                     let [ax, ay] = e.arrival();
                     self.current_map = dst;
+                    self.mark_discovered(dst);
                     self.selected = Some(dst);
                     self.player_x = ax as f64;
                     self.player_y = ay as f64;

@@ -198,7 +198,7 @@ fn blit_clip(
 
 /// True when an entry's `+0x06` condition is absent (`-1`) or its `B4` program
 /// evaluates true (`FUN_00434FE8`).
-fn entry_condition_ok(cond: i16, eval: &dyn Fn(u16) -> bool) -> bool {
+fn entry_condition_ok(cond: i16, eval: &mut dyn FnMut(u16) -> bool) -> bool {
     cond < 0 || eval(cond as u16)
 }
 
@@ -212,7 +212,7 @@ fn build_page(
     fonts: &Fonts,
     node: usize,
     logical_w: i32,
-    eval: &dyn Fn(u16) -> bool,
+    eval: &mut dyn FnMut(u16) -> bool,
 ) -> Option<(usize, Vec<String>, Vec<DialogOption>, Vec<u16>)> {
     let lay = layout(logical_w);
     let n = quest.node(node)?;
@@ -272,7 +272,7 @@ fn resolve(
     fonts: &Fonts,
     start: usize,
     logical_w: i32,
-    eval: &dyn Fn(u16) -> bool,
+    eval: &mut dyn FnMut(u16) -> bool,
 ) -> Option<(usize, Vec<String>, Vec<DialogOption>, Vec<u16>)> {
     let mut cur = start;
     for _ in 0..MAX_RESOLVE_HOPS {
@@ -309,7 +309,7 @@ impl DialogState {
         npc_entity: usize,
         dialogue_id: u8,
         logical_w: i32,
-        eval: &dyn Fn(u16) -> bool,
+        eval: &mut dyn FnMut(u16) -> bool,
     ) -> Option<DialogState> {
         let start = quest.dialogue_start(dialogue_id)?;
         let (page, prompt_lines, options, on_open_actions) =
@@ -333,7 +333,7 @@ impl DialogState {
         fonts: &Fonts,
         index: usize,
         logical_w: i32,
-        eval: &dyn Fn(u16) -> bool,
+        eval: &mut dyn FnMut(u16) -> bool,
     ) -> bool {
         let Some(next) = self.options.get(index).map(|o| o.next) else {
             return true;

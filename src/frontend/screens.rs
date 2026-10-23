@@ -85,6 +85,23 @@ impl Frontend {
                 draw_image(&mut self.frame, fw, fh, img, 0, 0);
             }
         }
+        // Original `FUN_004304F4`: 10 slot names at the recovered row rects.
+        let rects = self.res.save_slot_rects();
+        for (slot, r) in rects.iter().enumerate() {
+            let text = crate::save_slot_name(slot as u32);
+            if text.is_empty() {
+                continue;
+            }
+            let x = r.x as i32 + 4;
+            let y = r.y as i32 + (r.h as i32 - 12) / 2;
+            let font = if self.save_slot_hover == Some(slot) {
+                OriginalFont::Highlighted
+            } else {
+                OriginalFont::Small
+            };
+            self.fonts
+                .draw(&mut self.frame, fw, fh, font, &text, x, y, None);
+        }
     }
 
     pub(super) fn draw_main_menu(&mut self) {

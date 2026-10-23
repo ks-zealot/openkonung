@@ -3,7 +3,7 @@
 use super::super::*;
 
 /// Live movement state for one runtime actor (original Entity grid).
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct ActorMotion {
     /// Current **committed** runtime/Entity cell (`Entity+0x08/+0x0A`). Advanced
     /// at the START of each walk segment (`FUN_0041435C`), so while walking it is
@@ -62,7 +62,7 @@ pub struct ActorMotion {
 }
 
 /// How a [`RuntimeActor`] gets its draw position.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ActorPlacement {
     /// Persisted Entity x/y (+0x08/+0x0A) are the draw coordinates.
     Persisted,
@@ -81,7 +81,7 @@ pub enum ActorPlacement {
 /// state: stats, equipment, inventory, ids) plus the enumerating group id and
 /// the runtime placement. Runtime placement only adds a position; it never
 /// writes back into `entity`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeActor {
     /// Canonical parsed Entity — the source of truth for all authored state.
     pub entity: Entity,

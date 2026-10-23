@@ -375,6 +375,24 @@ impl QuestData {
         out
     }
 
+    /// Every distinct script opcode (`0x2000` words) used by the loaded
+    /// `B4`/`B5` blocks, sorted. Diagnostic/census helper.
+    pub fn used_script_ops(&self) -> Vec<u16> {
+        let mut ops = std::collections::BTreeSet::new();
+        for (base, len) in [(B4_OFF, B4_LEN), (B5_OFF, B5_LEN)] {
+            let mut o = base;
+            let end = base + len;
+            while o + 2 <= end {
+                let w = self.u16(o);
+                if w != PROGRAM_END && w & OP_FLAG_SCRIPT != 0 {
+                    ops.insert(w & OP_MASK);
+                }
+                o += 2;
+            }
+        }
+        ops.into_iter().collect()
+    }
+
     /// `B4` condition program by id.
     pub fn condition_program(&self, id: u16) -> Vec<u16> {
         self.program(B4_OFF, B4_LEN, id)
@@ -409,13 +427,24 @@ impl QuestData {
         (w != UNUSED).then_some(w)
     }
 
-    /// The initial runtime `B7` flag bytes (the first byte of each 4-byte slot).
-    /// The original copies these into its runtime flag array and toggles bit
-    /// `0x80` at runtime (`FUN_00434BB8` / read by `FUN_00434FE8`). Slots whose
-    /// file byte already has `0x80` set start "active".
-    pub fn initial_flags(&self) -> Vec<u8> {
+    /// A whole `B7` slot (`u32` at VA `0x615068`). The original copies the full
+    /// 1200-byte block into its runtime flag array and saves it verbatim; the
+    /// low byte carries the `0x80` active bit, `+0x02` the journal line.
+    pub fn flag_word(&self, index: usize) -> Option<u32> {
+        let o = B7_OFF + index * 4;
+        if o + 4 > B7_OFF + B7_LEN {
+            return None;
+        }
+        Some(self.u32(o))
+    }
+
+    /// The initial runtime `B7` flag words (300 x u32). The original copies
+    /// these into `0x615068` and toggles bit `0x80` at runtime
+    /// (`FUN_00434BB8` / read by `FUN_00434FE8`). Slots whose file byte already
+    /// has `0x80` set start "active".
+    pub fn initial_flags(&self) -> Vec<u32> {
         (0..FLAG_SLOTS)
-            .map(|i| self.bytes[B7_OFF + i * 4])
+            .map(|i| self.u32(B7_OFF + i * 4))
             .collect()
     }
 }

@@ -20,7 +20,7 @@ pub mod projectile;
 
 /// Original LCG (`FUN_0043ea46`): `seed = seed*0x41c64e6d + 0x3039`,
 /// result `(seed >> 16) & 0x7FFF`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct OriginalRng {
     state: u32,
 }
@@ -97,7 +97,7 @@ fn round_even(v: f64) -> i64 {
 }
 
 /// Runtime target handle used by the melee orchestration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CombatTarget {
     /// Party slot 0 (`PlayableApp.player`).
     Player,
@@ -264,7 +264,7 @@ pub fn mitigate_damage(s: &CombatStats, incoming: i32, armor: i32) -> u16 {
 }
 
 /// Snapshot of the bow fields copied into a projectile by `FUN_0041BF44`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BowShot {
     pub rating: u16,
     pub modifier: i8,

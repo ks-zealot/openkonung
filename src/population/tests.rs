@@ -173,6 +173,8 @@ fn empty_group(index: usize) -> Group {
         loc_id: 0,
         entity_count: 0,
         class_1e: 0,
+        activity_1d: 0,
+        visited: false,
     }
 }
 

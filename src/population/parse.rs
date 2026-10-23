@@ -37,6 +37,8 @@ pub fn parse_groups(data: &[u8]) -> Result<Vec<Group>, String> {
             loc_id: r[0x1B],
             entity_count: r[0x1C],
             class_1e: r[0x1E],
+            activity_1d: r[0x1D],
+            visited: false,
         });
     }
     Ok(groups)
@@ -234,6 +236,10 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
             index,
             loc_id,
             group_id,
+            progress_14: u16(data, o + 0x14) as u16,
+            money_pool_10: i32v(data, o + 0x10),
+            target_base0: data[o],
+            target_base1: data[o + 1],
             flags_4b2,
             targets,
             waypoints,

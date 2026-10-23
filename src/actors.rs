@@ -87,7 +87,7 @@ pub fn visual_family(archetype: u8) -> VisualFamily {
 /// separately as [`crate::character::PlayerCharacter`]); companions occupy
 /// slots `1..=N`, and each companion's HUD panel cell is its slot index
 /// (`FUN_0042C730`: cell = `entity_index - group.first_entity`).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PartyMember {
     pub entity: Entity,
     pub motion: ActorMotion,

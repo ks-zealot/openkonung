@@ -149,6 +149,33 @@ pub const MENU_IMAGE_SMALL: usize = 2;
 pub const SAVE_IMAGE_LOAD: usize = 0;
 pub const SAVE_IMAGE_SAVE: usize = 1;
 
+/// Exact 10 save-slot rectangles from `konung.res` VA `0x46241C`
+/// (stride `0x20`; 640 at `+0`, 800 at `+0x10`). Rect = (x, y, width, height).
+pub const SAVE_SLOT_RECTS_640: [Rect; 10] = [
+    Rect::new(140, 69, 370, 31),
+    Rect::new(140, 100, 370, 30),
+    Rect::new(140, 131, 370, 29),
+    Rect::new(140, 162, 370, 28),
+    Rect::new(140, 193, 370, 27),
+    Rect::new(140, 224, 370, 26),
+    Rect::new(140, 255, 370, 25),
+    Rect::new(140, 286, 370, 24),
+    Rect::new(140, 317, 370, 23),
+    Rect::new(140, 348, 370, 22),
+];
+/// 800x600 save-slot rectangles (odd records at `0x46242C`).
+pub const SAVE_SLOT_RECTS_800: [Rect; 10] = [
+    Rect::new(175, 86, 463, 39),
+    Rect::new(175, 125, 463, 37),
+    Rect::new(175, 164, 463, 36),
+    Rect::new(175, 203, 463, 35),
+    Rect::new(175, 241, 463, 36),
+    Rect::new(175, 280, 463, 35),
+    Rect::new(175, 319, 463, 35),
+    Rect::new(175, 357, 463, 35),
+    Rect::new(175, 396, 463, 34),
+    Rect::new(175, 435, 463, 34),
+];
 /// New-Hero background / auxiliary image indices (`NEWH{width}R.RES`).
 pub const NEWH_BACKGROUND: usize = 0;
 pub const NEWH_AUX_100: usize = 1;
@@ -396,6 +423,21 @@ impl FrontendRes {
         let minus = hit[NEWH_STEPPER_FIRST_REGION + i * 2];
         let plus = hit[NEWH_STEPPER_FIRST_REGION + i * 2 + 1];
         (minus, plus)
+    }
+
+    /// Original `SAVE{width}R.RES` 10-row slot rectangles.
+    pub fn save_slot_rects(self) -> &'static [Rect] {
+        match self {
+            FrontendRes::R640 => &SAVE_SLOT_RECTS_640,
+            FrontendRes::R800 => &SAVE_SLOT_RECTS_800,
+        }
+    }
+
+    /// Slot index under a logical pointer position, if any.
+    pub fn save_slot_hit_test(self, x: i32, y: i32) -> Option<usize> {
+        self.save_slot_rects()
+            .iter()
+            .position(|r| r.contains(x, y))
     }
 }
 

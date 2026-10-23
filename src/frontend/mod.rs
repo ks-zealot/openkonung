@@ -70,6 +70,8 @@ pub struct Frontend {
     pub screen: FrontendScreen,
     /// Hovered `MAIN_MENU` index while on the main menu.
     pub hovered: Option<usize>,
+    /// Hovered save/load slot (0..9) on the SAVE screens.
+    pub save_slot_hover: Option<usize>,
     /// Last logical mouse position.
     pub mouse: (i32, i32),
     pub new_hero: NewHeroState,
@@ -132,6 +134,7 @@ impl Frontend {
             fonts,
             screen: FrontendScreen::MainMenu,
             hovered: None,
+            save_slot_hover: None,
             mouse: (0, 0),
             new_hero: NewHeroState::default(),
             frame: vec![0u8; w * h * 4],
@@ -241,6 +244,9 @@ impl Frontend {
             FrontendScreen::NewHero => {
                 self.new_hero.hovered_region = NewHeroState::hit_test(self.res, mx, my);
             }
+            FrontendScreen::SaveGame | FrontendScreen::LoadGame => {
+                self.save_slot_hover = self.res.save_slot_hit_test(mx, my);
+            }
             _ => {}
         }
     }
@@ -341,6 +347,17 @@ impl Frontend {
                         // Left control ("Отмена", #9/#10) -> back.
                         self.screen = FrontendScreen::MainMenu;
                         self.hovered = None;
+                    }
+                }
+            }
+            FrontendScreen::SaveGame | FrontendScreen::LoadGame => {
+                if let Some(slot) = self.res.save_slot_hit_test(mx, my) {
+                    if self.screen == FrontendScreen::SaveGame {
+                        if self.game_active {
+                            crate::request_save_slot(slot as u32);
+                        }
+                    } else {
+                        crate::request_load_slot(slot as u32);
                     }
                 }
             }

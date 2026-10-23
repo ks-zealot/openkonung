@@ -300,6 +300,10 @@ fn idle_wanderer_holds_its_frame_not_loops() {
         index: 0,
         loc_id: 1,
         group_id: 0,
+        progress_14: 0,
+        money_pool_10: 0,
+        target_base0: 0,
+        target_base1: 0,
         flags_4b2: 0,
         targets: Vec::new(),
         waypoints: vec![Waypoint {

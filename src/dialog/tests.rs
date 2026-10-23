@@ -65,7 +65,7 @@ fn start_builds_prompt_and_options() {
 
     let q = QuestData::parse(&b).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let d = DialogState::start(&q, &fonts, 277, 3, 800, &|_| false).unwrap();
+    let d = DialogState::start(&q, &fonts, 277, 3, 800, &mut |_| false).unwrap();
     assert_eq!(d.npc_entity, 277);
     assert_eq!(d.page, 10);
     assert_eq!(d.prompt_lines, vec!["Hi".to_string()]);
@@ -84,10 +84,10 @@ fn select_end_link_closes() {
     b3_str(&mut b, 0, b"Hi");
     let q = QuestData::parse(&b).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let mut d = DialogState::start(&q, &fonts, 1, 3, 800, &|_| false).unwrap();
+    let mut d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
     assert_eq!(d.options.len(), 1);
     assert!(
-        !d.select(&q, &fonts, 0, 800, &|_| false),
+        !d.select(&q, &fonts, 0, 800, &mut |_| false),
         "end link must close"
     );
 }
@@ -105,8 +105,8 @@ fn select_follows_link() {
     b3_str(&mut b, 0, b"Hi");
     let q = QuestData::parse(&b).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let mut d = DialogState::start(&q, &fonts, 1, 3, 800, &|_| false).unwrap();
-    assert!(d.select(&q, &fonts, 0, 800, &|_| false));
+    let mut d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
+    assert!(d.select(&q, &fonts, 0, 800, &mut |_| false));
     assert_eq!(d.page, 20);
     assert!(d.options.is_empty());
 }
@@ -130,7 +130,7 @@ fn branch_node_is_followed() {
     b3_str(&mut b, 0, b"Hi");
     let q = QuestData::parse(&b).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let d = DialogState::start(&q, &fonts, 1, 3, 800, &|_| false).unwrap();
+    let d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
     assert_eq!(d.page, 11);
     assert_eq!(d.prompt_lines, vec!["Hi".to_string()]);
 }
@@ -147,7 +147,7 @@ fn option_hit_testing() {
     b3_str(&mut b, 0, b"Hi");
     let q = QuestData::parse(&b).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let d = DialogState::start(&q, &fonts, 1, 3, 800, &|_| false).unwrap();
+    let d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
     assert_eq!(d.options.len(), 2);
     let r0 = d.options[0].row;
     assert_eq!(d.option_at(r0.0 + 1, r0.1 + 1), Some(0));
@@ -185,7 +185,7 @@ fn opens_shipped_dialogue() {
     };
     let q = QuestData::parse(&data).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let d = DialogState::start(&q, &fonts, 277, 140, 800, &|_| true).expect("dialogue 140 opens");
+    let d = DialogState::start(&q, &fonts, 277, 140, 800, &mut |_| true).expect("dialogue 140 opens");
     let prompt = d.prompt_lines.join(" ");
     assert!(prompt.contains("Князь"), "unexpected prompt: {prompt}");
     assert!(!d.options.is_empty(), "expected at least one option");

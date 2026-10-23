@@ -57,6 +57,13 @@ pub struct PlayerCharacter {
     /// `Entity+0x04` bit `0x80` — dead/incapacitated. Forces the dead portrait
     /// variant (`FUN_0042C730`, set by the defeat path `FUN_0041D048`).
     pub dead: bool,
+    /// `Entity+0xD0` — protagonist dialogue id (`0xFF` = none). Read by quest
+    /// predicate `0x12F`; runtime-only, persisted through `SaveExtra`.
+    pub dialogue_id: u8,
+    /// `Entity+0xD2` — interface/action mode byte used by `0x145/0x158/0x16C`.
+    pub interface_mode_d2: u8,
+    /// `Entity+0xD3` — action/state byte used by `0x114`.
+    pub state_d3: u8,
 
     /// `Entity+0xCE` — temporary-effect timer in logic frames.
     pub temp_effect_timer: u16,
@@ -108,6 +115,9 @@ impl PlayerCharacter {
             raw_0x12: 0,
             flags_b: 0,
             dead: false,
+            dialogue_id: 0xFF,
+            interface_mode_d2: 0,
+            state_d3: 0,
             temp_effect_timer: 0,
             temp_effect_id: 0,
             saved_dexterity: 0,
@@ -133,6 +143,7 @@ impl PlayerCharacter {
         // Money (`+0x34`) is likewise taken from the loaded Game.N entity (the
         // field-restore does not overwrite it).
         self.money = entity.stats.money;
+        self.dialogue_id = entity.dialogue_id;
         self.flags_b = entity.flags_b;
         self.temp_effect_timer = entity.stats.temp_effect_timer;
         self.temp_effect_id = entity.stats.temp_effect_id;

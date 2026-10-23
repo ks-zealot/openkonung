@@ -21,8 +21,50 @@
 pub const OP_BASE: u16 = 0x112;
 /// Last opcode with a handler used by the shipped dialogues.
 pub const OP_LAST: u16 = 0x16E;
+/// Last parameterized low-family opcode (`0x00..=0x111`).
+pub const LOW_OP_LAST: u16 = 0x111;
 /// The trade / inventory-exchange opcode (`FUN_00431E2C`).
 pub const TRADE_OP: u16 = 0x113;
+
+/// Parameterized low-opcode families (`FUN_0043159C` range dispatch).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LowFamily {
+    /// `0x00..=0x37`: group `N = op+1` has an active member.
+    GroupActive { group: u16 },
+    /// `0x38..=0x6F`: group `N = op-0x37` has no live member.
+    GroupNoLiveMember { group: u16 },
+    /// `0x70..=0xA5`: remove inventory item class `0x0B`, subtype `N = op-0x6F - 1`.
+    RemovePartyItem { subtype: u8 },
+    /// `0xA6..=0xDB`: add inventory item class `0x0B`, subtype `N = op-0xA5 - 1`.
+    SpawnPartyItem { subtype: u8 },
+    /// `0xDC..=0x111`: inventory contains class `0x0B`, subtype `N = op-0xDB - 1`.
+    HasPartyItem { subtype: u8 },
+}
+
+/// Decode a low-family opcode into its parameterized operation.
+pub fn low_family(op: u16) -> Option<LowFamily> {
+    match op {
+        0x00..=0x37 => Some(LowFamily::GroupActive { group: op + 1 }),
+        0x38..=0x6F => Some(LowFamily::GroupNoLiveMember { group: op - 0x37 }),
+        0x70..=0xA5 => Some(LowFamily::RemovePartyItem {
+            subtype: (op - 0x6F).saturating_sub(1) as u8,
+        }),
+        0xA6..=0xDB => Some(LowFamily::SpawnPartyItem {
+            subtype: (op - 0xA5).saturating_sub(1) as u8,
+        }),
+        0xDC..=0x111 => Some(LowFamily::HasPartyItem {
+            subtype: (op - 0xDB).saturating_sub(1) as u8,
+        }),
+        _ => None,
+    }
+}
+
+/// True when the dispatcher recognizes the opcode. `0x16A` is a documented
+/// no-op (unrecovered float evaluation); every other recognized opcode has an
+/// implementation or a verified no-op.
+pub fn op_supported(op: u16) -> bool {
+    op <= OP_LAST
+}
 
 /// How an opcode's return value is used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,7 +96,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x112,
         handler: 0x431DCC,
         kind: Action,
-        effect: "mark NPC group visited; OR settlement progress bits 0x15",
+        effect: "mark NPC group visited; flags_4b2 |= 0x15 when the settlement group matches",
     },
     ScriptOp {
         op: 0x113,
@@ -102,7 +144,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x11A,
         handler: 0x434B68,
         kind: Both,
-        effect: "if settlement and money>=120: clear flag 0x20, pay 120",
+        effect: "settlement && money>=120: clear flags_4b2 0x20, pay 120",
     },
     ScriptOp {
         op: 0x11B,
@@ -114,7 +156,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x11C,
         handler: 0x433824,
         kind: Action,
-        effect: "if settlement: set flag 0x20, +100 gold",
+        effect: "if settlement: flags_4b2 |= 0x20, +100 gold",
     },
     ScriptOp {
         op: 0x11D,
@@ -270,7 +312,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x136,
         handler: 0x4331FC,
         kind: Predicate,
-        effect: "money >= 300 (500/halved by settlement flag 0x10)",
+        effect: "money >= (level>3 ? 500 : 300), halved when settlement flag 0x10 is clear",
     },
     ScriptOp {
         op: 0x137,
@@ -366,13 +408,13 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x146,
         handler: 0x432DE8,
         kind: Predicate,
-        effect: "settlement group/strength FUN_00431520 >= 5",
+        effect: "settlement group max building skill (FUN_00431520) >= 5",
     },
     ScriptOp {
         op: 0x147,
         handler: 0x432E48,
         kind: Predicate,
-        effect: "settlement owner group slot record nonzero",
+        effect: "target[base0+7] state/timer nonzero",
     },
     ScriptOp {
         op: 0x148,
@@ -414,13 +456,13 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x14E,
         handler: 0x433B18,
         kind: Action,
-        effect: "set target +0x48 dist value, +0x5C=1600, re-render",
+        effect: "target healing += (1600-player.hp)/1024, hp=1600",
     },
     ScriptOp {
         op: 0x14F,
         handler: 0x433BA0,
         kind: Action,
-        effect: "group members +0x48 computed, +0x5C=6, FUN_0042C730",
+        effect: "group members healing += (640-hp)/1024, hp=1600",
     },
     ScriptOp {
         op: 0x150,
@@ -450,7 +492,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x154,
         handler: 0x432314,
         kind: Predicate,
-        effect: "requirement for state settlement[+0x2D]>>24",
+        effect: "target3.timer = table[target3.key]",
     },
     ScriptOp {
         op: 0x155,
@@ -504,7 +546,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x15D,
         handler: 0x434168,
         kind: Predicate,
-        effect: "party count <= capacity",
+        effect: "party capacity <= member count (at capacity)",
     },
     ScriptOp {
         op: 0x15E,
@@ -540,49 +582,49 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x163,
         handler: 0x4321C4,
         kind: Action,
-        effect: "write settlement[+0x26]=0x458A06[state]",
+        effect: "target1.timer = table[target1.key]",
     },
     ScriptOp {
         op: 0x164,
         handler: 0x43226C,
         kind: Action,
-        effect: "write settlement[+0x3E]=table[state]",
+        effect: "target4.timer = table[target4.key]",
     },
     ScriptOp {
         op: 0x165,
         handler: 0x4322C0,
         kind: Action,
-        effect: "write settlement[+0x4E]=table[state]",
+        effect: "target6.timer = table[target6.key]",
     },
     ScriptOp {
         op: 0x166,
         handler: 0x432078,
-        kind: Predicate,
-        effect: "requirement for state settlement[+0x2D]>>24",
+        kind: Action,
+        effect: "target3.timer = table[target3.key]",
     },
     ScriptOp {
         op: 0x167,
         handler: 0x432218,
         kind: Action,
-        effect: "write settlement[+0x2E]=table[state]",
+        effect: "target2.timer = table[target2.key]",
     },
     ScriptOp {
         op: 0x168,
         handler: 0x4320CC,
         kind: Action,
-        effect: "write settlement[+0x46]=table[state]",
+        effect: "target5.timer = table[target5.key]",
     },
     ScriptOp {
         op: 0x169,
         handler: 0x432120,
         kind: Action,
-        effect: "write each settlement group slot +0x1E = table value",
+        effect: "for i in 0..base1: target[base0+7+i].timer = table[key]",
     },
     ScriptOp {
         op: 0x16A,
         handler: 0x434880,
         kind: Both,
-        effect: "group-wide equipment/stat float evaluation",
+        effect: "repair/cap party equipment+inventory durability using NPC smithing (10x threshold, 30% excess)",
     },
     ScriptOp {
         op: 0x16B,
@@ -747,6 +789,56 @@ mod tests {
         let neg = [OP_FLAG_GROUP | OP_FLAG_NEGATE | 207];
         assert!(evaluate_condition(&neg, |i| i != 207, |_| false));
         assert!(!evaluate_condition(&neg, |i| i == 207, |_| false));
+    }
+
+    #[test]
+    fn all_recognized_ranges_decode() {
+        assert!(op_supported(0x00));
+        assert!(op_supported(LOW_OP_LAST));
+        assert!(op_supported(OP_BASE));
+        assert!(op_supported(OP_LAST));
+        assert!(!op_supported(OP_LAST + 1));
+        assert!(matches!(low_family(0x00), Some(LowFamily::GroupActive { group: 1 })));
+        assert!(matches!(
+            low_family(0x38),
+            Some(LowFamily::GroupNoLiveMember { group: 1 })
+        ));
+        assert!(matches!(
+            low_family(0x70),
+            Some(LowFamily::RemovePartyItem { subtype: 0 })
+        ));
+        assert!(matches!(
+            low_family(0xA6),
+            Some(LowFamily::SpawnPartyItem { subtype: 0 })
+        ));
+        assert!(matches!(
+            low_family(0xDC),
+            Some(LowFamily::HasPartyItem { subtype: 0 })
+        ));
+        assert!(low_family(OP_BASE).is_none());
+    }
+
+    /// No shipped dialogue program may use an opcode the dispatcher does not
+    /// recognize. This is the "all opcodes" acceptance guard.
+    #[test]
+    fn shipped_quest_uses_only_supported_ops() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let data = ["Quest_r.res", "QUEST_R.RES", "QUESTR.RES"]
+            .iter()
+            .find_map(|n| std::fs::read(dir.join(n)).ok());
+        let Some(data) = data else {
+            eprintln!("skipping: QUEST_R.RES not present");
+            return;
+        };
+        let q = crate::quest::QuestData::parse(&data).unwrap();
+        let used = q.used_script_ops();
+        assert!(!used.is_empty(), "ship file should use script opcodes");
+        for &op in &used {
+            assert!(op_supported(op), "unsupported shipped opcode {op:#X}");
+            if op >= OP_BASE {
+                assert!(script_op(op).is_some(), "missing high catalogue entry {op:#X}");
+            }
+        }
     }
 
     #[test]

@@ -29,6 +29,8 @@ pub(super) fn group(
         loc_id: loc,
         entity_count: count,
         class_1e: class,
+        activity_1d: 0,
+        visited: false,
     }
 }
 

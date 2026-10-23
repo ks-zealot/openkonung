@@ -29,7 +29,7 @@ pub const WORLD_OBJECT_RESPAWN_FRAMES: i64 = 0x1518;
 pub const WORLD_OBJECT_GENERIC_SPRITE: u16 = 0xA3;
 
 /// One authored `Game.N +0x21900` record (the canonical source record).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WorldObjectSource {
     /// Table index, stored at runtime-marker `+0x0E`.
     pub index: usize,
@@ -101,7 +101,7 @@ impl WorldObjectSource {
 }
 
 /// One record active on the current map (runtime marker pool `0x785BB4`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ActiveWorldObject {
     /// Index into the source table.
     pub source: usize,

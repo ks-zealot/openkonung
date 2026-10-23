@@ -24,7 +24,7 @@ pub const DRAW_DX: [i8; 8] = [0, 0, 0, 0, -3, -29, -29, -23];
 pub const DRAW_DY: [i16; 8] = [-3, 0, 0, -3, 0, 0, -17, 0];
 
 /// One live ranged projectile.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Projectile {
     /// Local-world screen pixels (camera added at draw time).
     pub x: f32,

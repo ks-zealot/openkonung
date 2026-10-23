@@ -17,7 +17,7 @@ pub enum PlacementError {
 
 /// Deterministic RNG (xorshift64). No thread/browser randomness is used, so
 /// placement is reproducible for a given location.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DeterministicRng {
     state: u64,
 }
@@ -131,7 +131,7 @@ pub fn place_entity(
 // ---------------------------------------------------------------------------
 
 /// A `(0,0)` entity that could not be placed after [`MAX_ATTEMPTS`] attempts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FailedPlacement {
     pub source_group_id: usize,
     pub source_entity_id: usize,
@@ -140,7 +140,7 @@ pub struct FailedPlacement {
 }
 
 /// Result of building one location's population.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct PopulationBuild {
     /// Persisted and successfully runtime-positioned actors, unsorted.
     pub actors: Vec<RuntimeActor>,

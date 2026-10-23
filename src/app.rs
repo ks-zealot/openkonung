@@ -21,6 +21,7 @@ mod combat;
 mod cursor;
 mod debug_overlay;
 mod dialogue_exec;
+mod dialogue_ops;
 mod graph;
 mod input;
 mod inventory;
@@ -28,6 +29,7 @@ mod party;
 mod player;
 mod population;
 mod portals;
+mod save;
 mod settlement_trade;
 mod text;
 mod trade;
@@ -239,7 +241,9 @@ pub struct PlayableApp {
     /// active). Initialized from the loaded `QUEST_R.RES` at game start and
     /// mutated by dialogue action programs (`FUN_00434BB8`) / read by condition
     /// programs (`FUN_00434FE8`).
-    pub quest_flags: Vec<u8>,
+    pub quest_flags: Vec<u32>,
+    /// 56-byte discovered world-map location mask (`0x81CF80` in the original).
+    pub discovered_locations: [u8; 56],
     /// Additive-selection modifier (`_DAT_0081D624`, Shift): when held, a
     /// party-portrait click adds the member instead of replacing the set.
     pub shift_down: bool,
@@ -398,6 +402,7 @@ impl PlayableApp {
             party_selected: [false; crate::hud::PARTY_CELLS],
             party: Vec::new(),
             quest_flags,
+            discovered_locations: [0; 56],
             shift_down: false,
             inventory_owner: crate::inventory::InventoryOwner::Protagonist,
             held_item: None,
@@ -431,12 +436,20 @@ impl PlayableApp {
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
         // sets `selection[0] = leader` after loading the save).
         app.party_selected[0] = true;
+        app.mark_discovered(start_map);
         app.sweep_all_owners();
         app.rebuild_portal_bindings();
         app.rebuild_world_objects();
         app.center_camera_on_player(true, 0.0);
         app.fit_graph();
         app
+    }
+
+    /// Mark a location discovered in the original 56-byte world-map mask.
+    pub fn mark_discovered(&mut self, loc_id: u32) {
+        if (1..=56).contains(&loc_id) {
+            self.discovered_locations[(loc_id - 1) as usize] = 1;
+        }
     }
 
     // --- camera ---
