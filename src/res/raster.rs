@@ -225,6 +225,63 @@ pub fn blit_rows(
     }
 }
 
+/// Alpha-composite a source sub-rectangle at `(ox, oy)`, clipped to the
+/// destination buffer. Used by the world-map stone tiling and parchment
+/// viewport clipping.
+#[allow(clippy::too_many_arguments)]
+pub fn blit_sub(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    sx: usize,
+    sy: usize,
+    w: usize,
+    h: usize,
+    ox: i32,
+    oy: i32,
+) {
+    if w == 0 || h == 0 || sx >= sw || sy >= sh {
+        return;
+    }
+    let w = w.min(sw - sx);
+    let h = h.min(sh - sy);
+    for row in 0..h {
+        let dy = oy + row as i32;
+        if dy < 0 || dy >= dh as i32 {
+            continue;
+        }
+        let srow = (sy + row) * sw * 4;
+        let drow = dy as usize * dw * 4;
+        for col in 0..w {
+            let dx = ox + col as i32;
+            if dx < 0 || dx >= dw as i32 {
+                continue;
+            }
+            let si = srow + (sx + col) * 4;
+            let a = src[si + 3];
+            if a == 0 {
+                continue;
+            }
+            let di = drow + dx as usize * 4;
+            if a == 255 {
+                dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+            } else {
+                let sa = a as u32;
+                let inv = 255 - sa;
+                dst[di] = ((src[si] as u32 * sa + dst[di] as u32 * inv) / 255) as u8;
+                dst[di + 1] =
+                    ((src[si + 1] as u32 * sa + dst[di + 1] as u32 * inv) / 255) as u8;
+                dst[di + 2] =
+                    ((src[si + 2] as u32 * sa + dst[di + 2] as u32 * inv) / 255) as u8;
+                dst[di + 3] = 255;
+            }
+        }
+    }
+}
+
 /// Fill a rectangle (opaque) clipping to the buffer.
 pub fn fill_rect(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
     let x0 = x.max(0);

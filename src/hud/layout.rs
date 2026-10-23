@@ -104,6 +104,11 @@ pub struct HudLayout {
     pub hp_bar: HpBar,
     /// Per-slot portrait/marker/HP-bar draw origin, from `0x45AF10`.
     pub party_origins: [(i32, i32); PARTY_CELLS],
+    /// Interface viewport (`_81D738/_81D754/_81D744/_81D760`): x, y, w, h.
+    /// Window screens (map, quest log, dialogue) tile/clip inside it.
+    pub viewport: Rect,
+    /// World-map overlay top-left (absolute logical coordinates).
+    pub map_origin: (i32, i32),
 }
 
 /// Select the layout for a logical framebuffer width (`<=640` -> 640 variant).
@@ -152,6 +157,13 @@ pub fn layout_800() -> HudLayout {
             dy: 10,
         },
         party_origins: PARTY_ORIGINS_800,
+        viewport: Rect {
+            x: 140,
+            y: 0,
+            w: 660,
+            h: 556,
+        },
+        map_origin: (220, 60),
     }
 }
 
@@ -191,6 +203,13 @@ pub fn layout_640() -> HudLayout {
             dy: 8,
         },
         party_origins: PARTY_ORIGINS_640,
+        viewport: Rect {
+            x: 112,
+            y: 0,
+            w: 528,
+            h: 445,
+        },
+        map_origin: (125, 13),
     }
 }
 

@@ -85,6 +85,11 @@ pub struct HudState {
     pub hovered: Option<usize>,
     /// AUTO button `(intr_id, x, y)` to overlay, if any.
     pub auto: Option<(usize, i32, i32)>,
+    /// The original seven-icon lower-left strip (`0x81CF68[0..7]`), in draw
+    /// order: weapon plaque then stance/map/halt/engage/quest/character.
+    pub icons: Vec<(usize, i32, i32)>,
+    /// Command code whose icon is drawn pressed (`|0x80`, 2 px higher).
+    pub pressed: Option<u8>,
 }
 
 /// Composite the HUD onto `frame` using `lookup` to resolve INTR sprites.
@@ -105,6 +110,17 @@ pub fn compose<F>(
     // Whole-screen overlay (party panel + bottom bar) at (0,0).
     if let Some(bg) = lookup(layout.hud_id) {
         blit(frame, fw, fh, &bg.data, bg.w, bg.h, 0, 0);
+    }
+
+    // Lower-left button strip (`FUN_0042CA44`): weapon plaque then the six
+    // interface buttons. The pressed icon is shifted up by 2 px (`|0x80`
+    // branch in the original).
+    let pressed_slot = state.pressed.and_then(slot_for_code);
+    for (slot, &(id, x, y)) in state.icons.iter().enumerate() {
+        let y = if pressed_slot == Some(slot) { y - 2 } else { y };
+        if let Some(im) = lookup(id) {
+            blit(frame, fw, fh, &im.data, im.w, im.h, x, y);
+        }
     }
 
     // Scroll-arrow end caps (drawn by the original strip renderer even at
@@ -199,6 +215,9 @@ pub fn draw_game_hud(
     cursor: (i32, i32),
     party: &[PartyPortrait],
     auto_on: bool,
+    weapon_slot: u8,
+    battle: bool,
+    pressed: Option<u8>,
 ) {
     if res.intr.is_none() {
         return;
@@ -241,6 +260,8 @@ pub fn draw_game_hud(
         items: items.clone(),
         hovered,
         auto: Some((auto_id, l.auto_pos.0, l.auto_pos.1)),
+        icons: icon_plan(l.logical_w, weapon_slot, battle).to_vec(),
+        pressed,
     };
     compose(frame, fw, fh, &l, &state, |id| res.intr_sprite(id));
 

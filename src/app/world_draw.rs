@@ -223,6 +223,7 @@ impl PlayableApp {
             self.cursor_virtual.0.round() as i32,
             self.cursor_virtual.1.round() as i32,
         );
+        let hud_press = self.hud_press.map(|(code, _)| code);
         {
             let PlayableApp {
                 frame,
@@ -280,7 +281,19 @@ impl PlayableApp {
                 cursor_px,
                 &portraits,
                 player.auto_enabled(),
+                player.raw_0x12,
+                crate::anim::battle_from_flags(player.flags_b),
+                hud_press,
             );
+        }
+
+        // World-map (interface mode 5) and quest-log (mode 2) cover the
+        // viewport; the left party panel and bottom bar stay visible, exactly
+        // like the original `FUN_0042CBD0` cases 5/2.
+        if self.map_open {
+            self.draw_map_screen();
+        } else if self.quest_log_open {
+            self.draw_quest_log_screen();
         }
 
         // Exchange (interface mode 7, `FUN_00430D6C`). Drawn over the HUD

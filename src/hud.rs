@@ -25,8 +25,11 @@ use crate::res::{blit, Img, Res};
 #[cfg(test)]
 mod tests;
 
+mod buttons;
+mod buttons_data;
 mod compose;
 mod layout;
 
+pub use self::buttons::*;
 pub use self::compose::*;
 pub use self::layout::*;

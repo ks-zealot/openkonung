@@ -203,7 +203,10 @@ impl PlayableApp {
         self.combat_test_target = None;
         self.combat_test_prop = None;
         self.camera_follow = true;
-        self.mark_discovered(self.current_map);
+        // The 56-byte discovered mask is restored verbatim from the snapshot
+        // (`FUN_004246C0` block at `0xB076C`); loading never discovers extra
+        // locations.
+        self.map_overlay = None;
 
         if !self.population_cache.contains_key(&self.current_map) {
             self.ensure_population(self.current_map);

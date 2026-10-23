@@ -58,7 +58,10 @@ pub extern "C" fn debug_render_intr_hud(variant: u32) -> u32 {
         }
     }
     let layout = hud::layout(w as i32);
-    let state = hud::HudState::default();
+    let mut state = hud::HudState::default();
+    // Diagnostic preview uses the sword plaque + peaceful stance (the runtime
+    // passes the real `Entity+0x12` and battle flag).
+    state.icons = hud::icon_plan(w as i32, 2, false).to_vec();
     hud::compose(&mut frame, fw, fh, &layout, &state, |id| archive.get(id));
     unsafe {
         let slot = addr_of_mut!(DEBUG_HUD);
@@ -88,5 +91,73 @@ pub extern "C" fn debug_hud_h() -> u32 {
     match unsafe { &*addr_of!(DEBUG_HUD) } {
         Some((_, _, h)) => *h,
         None => 0,
+    }
+}
+
+/// Diagnostic: reveal every world-map location (preview/smoke only).
+#[no_mangle]
+pub extern "C" fn debug_reveal_all_locations() -> u32 {
+    match runtime_mut().game.as_deref_mut() {
+        Some(g) => {
+            g.discovered_locations = [1; 56];
+            g.map_overlay = None;
+            1
+        }
+        None => 0,
+    }
+}
+
+/// Diagnostic: reveal one location index (0..55).
+#[no_mangle]
+pub extern "C" fn debug_reveal_location(index: u32) -> u32 {
+    match runtime_mut().game.as_deref_mut() {
+        Some(g) if index < 56 => {
+            g.discovered_locations[index as usize] = 1;
+            g.map_overlay = None;
+            1
+        }
+        _ => 0,
+    }
+}
+
+/// Diagnostic: force the world map open/closed (mode 5 toggle gate).
+#[no_mangle]
+pub extern "C" fn debug_set_map_open(open: u32) -> u32 {
+    match runtime_mut().game.as_deref_mut() {
+        Some(g) => {
+            g.map_open = open != 0;
+            g.quest_log_open = false;
+            g.map_overlay = None;
+            1
+        }
+        None => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_map_open() -> u32 {
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| u32::from(g.map_open))
+        .unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn debug_current_map() -> u32 {
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| g.current_map)
+        .unwrap_or(0)
+}
+
+/// Packed `(x << 16) | y` of the first map-local pixel in a location run;
+/// `0xFFFFFFFF` when the location has no run.
+#[no_mangle]
+pub extern "C" fn debug_map_location_point(index: u32) -> u32 {
+    match crate::world_map::point_for_location(index as u8) {
+        Some((x, y)) => ((x as u32) << 16) | (y as u32 & 0xFFFF),
+        None => 0xFFFF_FFFF,
     }
 }

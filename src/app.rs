@@ -23,12 +23,15 @@ mod debug_overlay;
 mod dialogue_exec;
 mod dialogue_ops;
 mod graph;
+mod buttons;
 mod input;
 mod inventory;
+mod map;
 mod party;
 mod player;
 mod population;
 mod portals;
+mod quest_log;
 mod save;
 mod settlement_trade;
 mod text;
@@ -48,7 +51,9 @@ pub use crate::constants::keys::KEY_ESCAPE;
 pub use crate::constants::keys::KEY_F;
 pub use crate::constants::keys::KEY_H;
 pub use crate::constants::keys::KEY_L;
+pub use crate::constants::keys::KEY_M;
 pub use crate::constants::keys::KEY_P;
+pub use crate::constants::keys::KEY_Q;
 pub use crate::constants::keys::KEY_R;
 pub use crate::constants::keys::KEY_T;
 pub use crate::constants::keys::KEY_TAB;
@@ -212,6 +217,14 @@ pub struct PlayableApp {
     hovered_slot: Option<usize>,
     /// Character screen (`INTR[2]`) open. Escape closes it.
     pub character_screen: bool,
+    /// World-map / travel screen (original interface mode 5).
+    pub map_open: bool,
+    /// Quest-log window (original interface mode 2).
+    pub quest_log_open: bool,
+    /// Short-lived pressed HUD icon (`0x81CF68[i] |= 0x80` flash).
+    pub(super) hud_press: Option<(u8, f64)>,
+    /// Cached revealed-map overlay (hash of the discovered mask + image).
+    pub(super) map_overlay: Option<(u64, crate::res::Img)>,
     /// Active NPC dialogue (original `FUN_0042CBD0` mode 1). Escape closes it.
     pub dialog: Option<crate::dialog::DialogState>,
     /// Active exchange (interface mode 7), opened by quest opcode `0x113`.
@@ -388,6 +401,10 @@ impl PlayableApp {
             sounds: Vec::new(),
             hovered_slot: None,
             character_screen: false,
+            map_open: false,
+            quest_log_open: false,
+            hud_press: None,
+            map_overlay: None,
             dialog: None,
             trade: None,
             trade_message: None,
@@ -436,7 +453,8 @@ impl PlayableApp {
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
         // sets `selection[0] = leader` after loading the save).
         app.party_selected[0] = true;
-        app.mark_discovered(start_map);
+        // New games start with the 56-byte mask cleared (`FUN_00436214` case 8
+        // memsets `0x81CF80`); locations are revealed only by map items.
         app.sweep_all_owners();
         app.rebuild_portal_bindings();
         app.rebuild_world_objects();
@@ -449,6 +467,7 @@ impl PlayableApp {
     pub fn mark_discovered(&mut self, loc_id: u32) {
         if (1..=56).contains(&loc_id) {
             self.discovered_locations[(loc_id - 1) as usize] = 1;
+            self.map_overlay = None;
         }
     }
 
@@ -456,6 +475,14 @@ impl PlayableApp {
 
     pub fn step(&mut self, dt: f64) {
         self.advance_world_frame(dt);
+        if let Some((code, t)) = self.hud_press {
+            let remaining = t - dt.max(0.0);
+            self.hud_press = if remaining > 0.0 {
+                Some((code, remaining))
+            } else {
+                None
+            };
+        }
         if self.pickup_message_t > 0.0 {
             self.pickup_message_t -= dt.max(0.0);
             if self.pickup_message_t <= 0.0 {

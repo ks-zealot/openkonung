@@ -184,6 +184,13 @@ fn compose_preserves_world_through_transparent_pixels() {
             dy: 0,
         },
         party_origins: [(0, 0); 10],
+        viewport: Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 8,
+        },
+        map_origin: (0, 0),
     };
     // 2x2 HUD: top-left transparent, others opaque red.
     let mut hud = Image::new(2, 2, [255, 0, 0, 255]);
@@ -235,6 +242,13 @@ fn compose_clips_out_of_bounds_without_panic() {
             dy: 0,
         },
         party_origins: [(0, 0); 10],
+        viewport: Rect {
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 4,
+        },
+        map_origin: (0, 0),
     };
     let big = solid(70, 70, [1, 2, 3, 255]);
     let state = HudState::default();
@@ -316,6 +330,8 @@ fn item_icons_are_centered_in_their_slots() {
         ],
         hovered: None,
         auto: None,
+        icons: Vec::new(),
+        pressed: None,
     };
     let art = solid(40, 40, [10, 200, 10, 255]);
     compose(&mut frame, fw, fh, &l, &state, |id| {

@@ -222,40 +222,10 @@ impl PlayableApp {
             if let Some((_, ei)) = best {
                 let e = self.edges[ei].clone();
                 let dst = e.to;
-                if self.world.loc_index.contains_key(&dst) {
-                    let [ax, ay] = e.arrival();
-                    self.current_map = dst;
-                    self.mark_discovered(dst);
-                    self.selected = Some(dst);
-                    self.player_x = ax as f64;
-                    self.player_y = ay as f64;
-                    self.player_render_x = ax as f64;
-                    self.player_render_y = ay as f64;
-                    // Companions travel with the party: snap them onto the
-                    // arrival cell (their previous map cells are meaningless
-                    // here) and clear their follow routes.
-                    for m in self.party.iter_mut() {
-                        m.motion.cell = (ax as i32, ay as i32);
-                        m.motion.render_cell = (ax as i32, ay as i32);
-                        m.motion.path.clear();
-                        m.motion.target = None;
-                        m.motion.walking = false;
-                        m.motion.frame = 0;
-                    }
-                    self.target = None;
-                    self.player_path.clear();
-                    self.player_active = false;
-                    self.player_step_t = 0.0;
-                    self.player_interact = false;
-                    self.rebuild_world_objects();
-                    self.dialog = None;
-                    self.teleport_cooldown = 0.9;
+                let facing = self.player_dir;
+                if self.travel_to_map(e.from, dst, e.arrival()[0], e.arrival()[1], facing, e.rec) {
                     self.last_teleport = Some((e.from, dst, e.rec));
                     self.teleport_error = None;
-                    self.fit_detail();
-                    if self.camera_follow {
-                        self.center_camera_on_player(true, 0.0);
-                    }
                 } else {
                     // Loud diagnostic instead of a silent skip: the transition
                     // fired but its destination Konung.N is not loaded.
@@ -269,6 +239,56 @@ impl PlayableApp {
                 }
             }
         }
+    }
+
+    /// Shared destination application for portals and world-map travel. The
+    /// original travel command finds the transition record whose
+    /// `destination_location (+0x04)` matches the clicked map region and uses
+    /// its arrival cell (`+05/+07`) and meta/facing (`+02`).
+    pub(super) fn travel_to_map(
+        &mut self,
+        from: u32,
+        dst: u32,
+        ax: i32,
+        ay: i32,
+        facing: i32,
+        rec: usize,
+    ) -> bool {
+        if !self.world.loc_index.contains_key(&dst) {
+            return false;
+        }
+        self.current_map = dst;
+        self.selected = Some(dst);
+        self.player_x = ax as f64;
+        self.player_y = ay as f64;
+        self.player_render_x = ax as f64;
+        self.player_render_y = ay as f64;
+        self.player_dir = facing & 7;
+        // Companions travel with the party: snap them onto the arrival cell
+        // (their previous map cells are meaningless here) and clear routes.
+        for m in self.party.iter_mut() {
+            m.motion.cell = (ax, ay);
+            m.motion.render_cell = (ax, ay);
+            m.motion.path.clear();
+            m.motion.target = None;
+            m.motion.walking = false;
+            m.motion.frame = 0;
+        }
+        self.target = None;
+        self.player_path.clear();
+        self.player_active = false;
+        self.player_step_t = 0.0;
+        self.player_interact = false;
+        self.rebuild_world_objects();
+        self.dialog = None;
+        self.teleport_cooldown = 0.9;
+        self.last_teleport = Some((from, dst, rec));
+        self.teleport_error = None;
+        self.fit_detail();
+        if self.camera_follow {
+            self.center_camera_on_player(true, 0.0);
+        }
+        true
     }
 
     /// Resolve the protagonist through the canonical Entity visual path with

@@ -71,6 +71,7 @@ pub mod script;
 pub mod sound;
 pub mod trade;
 pub mod trade_screen;
+pub mod world_map;
 pub mod world_objects;
 
 use std::collections::HashMap;
@@ -121,6 +122,9 @@ pub extern "C" fn debug_intr_role(id: u32) -> u32 {
         // Appended after the original codes so existing tooling indices stay put.
         SelectionMarker => 13,
         HealthBar => 14,
+        HudIcon => 15,
+        MapParchment => 16,
+        MapOverlay => 17,
     }
 }
 

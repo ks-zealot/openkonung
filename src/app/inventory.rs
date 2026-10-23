@@ -488,6 +488,7 @@ impl PlayableApp {
             8 => ItemLocation::Additional(3),
             12 => ItemLocation::Special,
             9 => return self.use_inventory_slot(visible_slot),
+            11 => return self.use_map_item(id),
             _ => return false,
         };
         if !self.lift_item(ItemLocation::Inventory(idx)) {
@@ -500,6 +501,36 @@ impl PlayableApp {
             false
         }
     }
+
+    /// Right-click a class-11 / subtype-0 map item (`FUN_00414DE4` case 0):
+    /// reveal one random undiscovered, non-reserved world-map location and
+    /// consume the item (`class = 0xFF`). `FUN_0043EA46` is the CRT `rand()`.
+    pub fn use_map_item(&mut self, id: u16) -> bool {
+        if self.world.res.item_class_subtype(id) != Some((11, 0)) {
+            return false;
+        }
+        let start = (self.combat_rng.next_u32() % 56) as usize;
+        let mut found = false;
+        for step in 0..56 {
+            let i = (start + step) % 56;
+            if self.discovered_locations[i] == 0
+                && crate::world_map::MAP_RESERVED[i] == 0
+            {
+                self.discovered_locations[i] = 1;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return false;
+        }
+        self.map_overlay = None;
+        self.world.res.set_item_class(id, 0xFF);
+        self.sweep_all_owners();
+        self.sounds.push(9);
+        true
+    }
+
 
     /// Right-click an inventory slot: use a class-9 item in place.
     pub fn use_inventory_slot(&mut self, visible_slot: usize) -> bool {

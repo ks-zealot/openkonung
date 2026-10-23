@@ -49,6 +49,25 @@ pub const ITEM_ICON_FIRST: usize = 22;
 
 pub const ITEM_ICON_LAST: usize = 168;
 
+/// Lower-left HUD button strip (`0x81CF68[0..7]`, drawn by `FUN_0042CA44`).
+/// Slot 0 selects sword (`16`) / axe (`8`) / bow (`9`) by `Entity+0x12`.
+pub const HUD_ICON_AXE: usize = 8;
+pub const HUD_ICON_BOW: usize = 9;
+pub const HUD_ICON_STANCE_BATTLE: usize = 10;
+pub const HUD_ICON_HALT: usize = 11;
+pub const HUD_ICON_QUEST: usize = 12;
+pub const HUD_ICON_CHARACTER: usize = 13;
+pub const HUD_ICON_MAP: usize = 14;
+pub const HUD_ICON_STANCE_PEACE: usize = 15;
+pub const HUD_ICON_SWORD: usize = 16;
+
+/// World-map screen sprites: parchment frame, 100x100 stone tile and the
+/// 502x361 discovered-region overlay (`FUN_00428390`).
+pub const MAP_PARCHMENT: usize = 4;
+pub const MAP_STONE_TILE: usize = 5;
+pub const MAP_OVERLAY: usize = 179;
+
+
 /// Semantic role of one occupied INTR index (verified where noted; the rest are
 /// descriptive classifications, `Unclassified`/`SmallUi` where evidence is thin).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +90,12 @@ pub enum IntrRole {
     Portrait,
     /// Item / ability icon referenced by the item tables.
     ItemIcon,
+    /// Lower-left HUD button-strip sprite (`INTR[8..16]`).
+    HudIcon,
+    /// World-map parchment frame (`INTR[4]`).
+    MapParchment,
+    /// World-map discovered-region overlay (`INTR[179]`).
+    MapOverlay,
     /// Large window / dialog frame.
     WindowFrame,
     /// Panel background.
@@ -98,11 +123,13 @@ pub fn role_of(id: usize) -> IntrRole {
         174..=177 => IntrRole::HealthBar,
         200..=274 => IntrRole::Portrait,
         22..=168 => IntrRole::ItemIcon,
-        0 | 1 | 4 | 5 | 6 => IntrRole::WindowFrame,
-        179 => IntrRole::Panel,
-        8 | 9 | 16 | 172 | 178 => IntrRole::Panel,
+        MAP_PARCHMENT => IntrRole::MapParchment,
+        MAP_STONE_TILE => IntrRole::Panel,
+        MAP_OVERLAY => IntrRole::MapOverlay,
+        8..=16 => IntrRole::HudIcon,
+        0 | 1 | 6 => IntrRole::WindowFrame,
+        172 | 178 => IntrRole::Panel,
         180..=183 => IntrRole::Button,
-        10..=15 => IntrRole::InterfaceControl,
         171 | 184..=199 => IntrRole::SmallUi,
         _ => IntrRole::Unclassified,
     }

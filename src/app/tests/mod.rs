@@ -2,6 +2,7 @@
 
 mod common;
 mod inventory;
+mod map;
 mod movement;
 mod ops;
 mod party;

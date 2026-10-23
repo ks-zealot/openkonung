@@ -44,6 +44,55 @@ impl PlayableApp {
             self.drag_start = Some((x, y));
             self.dragging = false;
         }
+        // World map (mode 5). Clicks inside the map rectangle are travel/empty
+        // cells; clicks on the still-visible left panel keep their original
+        // role (the compass closes the map, party portraits select).
+        if self.map_open {
+            if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                if self.map_click(vx, vy) {
+                    self.drag = false;
+                    self.last_mouse = (x, y);
+                    return;
+                }
+                if button == 1 {
+                    if let Some(code) = crate::hud::button_at(vx, vy, VIRTUAL_W) {
+                        if code == crate::hud::CODE_MAP {
+                            self.toggle_map();
+                            return;
+                        }
+                    }
+                    if let Some(cell) = self.party_cell_at(x, y) {
+                        self.select_party_member(cell);
+                        return;
+                    }
+                }
+            }
+            self.drag = false;
+            self.last_mouse = (x, y);
+            return;
+        }
+        // Quest log (mode 2): the book closes it; the rest is modal.
+        if self.quest_log_open {
+            if button == 1 {
+                if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                    let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                    if let Some(code) = crate::hud::button_at(vx, vy, VIRTUAL_W) {
+                        if code == crate::hud::CODE_QUEST {
+                            self.toggle_quest_log();
+                            return;
+                        }
+                    }
+                    if let Some(cell) = self.party_cell_at(x, y) {
+                        self.select_party_member(cell);
+                        return;
+                    }
+                }
+            }
+            self.drag = false;
+            self.last_mouse = (x, y);
+            return;
+        }
         // Exchange window: consume every click; no world input or click-through.
         if self.trade.is_some() {
             if button == 1 {
@@ -145,6 +194,20 @@ impl PlayableApp {
         // issue a world movement command. The character screen is not opened by
         // this click (original: opened by a command) — use `C` instead.
         if button == 1 && !self.mode_graph {
+            // Original HUD button strip (`0x81CF68`). The command compiler
+            // returns codes 1..=7 before the world/inventory commands.
+            if self.held_item.is_none() {
+                if let Some((vx, vy)) = self.window_to_virtual(x, y) {
+                    let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                    if let Some(code) = crate::hud::button_at(vx, vy, VIRTUAL_W) {
+                        if self.press_hud_button(code) {
+                            self.drag = false;
+                            self.last_mouse = (x, y);
+                            return;
+                        }
+                    }
+                }
+            }
             if let Some(cell) = self.party_cell_at(x, y) {
                 if self.held_item.is_some() {
                     self.give_held_to_member(cell);
@@ -441,16 +504,35 @@ impl PlayableApp {
             }
             return;
         }
+        // Mode 5 / mode 2: only the original close keys act.
+        if self.map_open && code != KEY_ESCAPE && code != KEY_M {
+            return;
+        }
+        if self.quest_log_open && code != KEY_ESCAPE && code != KEY_Q {
+            return;
+        }
         match code {
             // Escape closes the character screen when open; otherwise it opens
             // the frontend/menu (the live game is preserved by the host runtime).
             KEY_ESCAPE => {
-                if self.character_screen {
+                if self.map_open {
+                    self.toggle_map();
+                } else if self.quest_log_open {
+                    self.toggle_quest_log();
+                } else if self.character_screen {
                     self.character_screen = false;
                     self.hovered_slot = None;
                 } else {
                     self.request_menu = true;
                 }
+            }
+            // M — world map toggle (`FUN_0042CBD0(4)`, VK 0x4D).
+            KEY_M => {
+                self.toggle_map();
+            }
+            // Q — quest log (`FUN_004242BC`, mode 2).
+            KEY_Q => {
+                self.toggle_quest_log();
             }
             KEY_H => {
                 if !self.mode_graph {
