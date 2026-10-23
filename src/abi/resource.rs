@@ -55,6 +55,8 @@ pub struct Loader {
     pub(super) sounds: Vec<u8>,
     pub(super) profiles: HashMap<u32, Vec<u8>>,
     pub(super) konungs: Vec<(u32, Vec<u8>)>,
+    /// One-time pre-rendered New-Hero paper-doll frames (hero x weapon slot).
+    pub(super) hero_previews: Option<Vec<crate::res::Img>>,
 }
 
 pub fn loader_mut() -> &'static mut Loader {
@@ -144,7 +146,40 @@ pub fn frontend_assets(res: FrontendRes) -> FrontendAssets {
 }
 
 /// Build a [`Frontend`] for one resolution from the loaded menu assets.
+/// Compose the New-Hero paper-doll previews once, borrowing the loaded
+/// GRAPH/OBJECTS/Game.res/exe buffers and returning them afterwards.
+///
+/// The original preview compositor (`FUN_00427E9C`) reads the live item-instance
+/// table. Before any `Game.N` is loaded (`FUN_0043A870` has not run) that table
+/// is zeroed, so the preview is composed against a zeroed `0x20000` table.
+fn build_hero_previews() -> Option<Vec<crate::res::Img>> {
+    let l = loader_mut();
+    if let Some(cached) = &l.hero_previews {
+        return Some(cached.clone());
+    }
+    if l.game.is_empty() || l.graph.is_empty() || l.objects.is_empty() || l.exe.is_empty() {
+        return None;
+    }
+    let game = std::mem::take(&mut l.game);
+    let graph = std::mem::take(&mut l.graph);
+    let objects = std::mem::take(&mut l.objects);
+    let exe = std::mem::take(&mut l.exe);
+    let mut res = crate::res::Res::new(game, graph, objects, exe);
+    res.load_items_and_fonts(&l.names);
+    let instances = vec![0u8; 0x20000];
+    res.set_save_game(&instances);
+    let previews = crate::frontend::previews::compose_previews(&mut res);
+    let (game, graph, objects, exe) = res.into_parts();
+    l.game = game;
+    l.graph = graph;
+    l.objects = objects;
+    l.exe = exe;
+    l.hero_previews = Some(previews.clone());
+    Some(previews)
+}
+
 pub fn build_frontend(res: FrontendRes) -> Result<Frontend, String> {
+    let previews = build_hero_previews();
     let a = frontend_assets(res);
     if a.menu.is_empty() || a.newh.is_empty() {
         return Err(format!(
@@ -160,7 +195,7 @@ pub fn build_frontend(res: FrontendRes) -> Result<Frontend, String> {
     } else {
         Some((a.save_name.as_str(), a.save))
     };
-    Frontend::new(
+    let mut frontend = Frontend::new(
         res,
         &a.menu_name,
         a.menu,
@@ -168,5 +203,9 @@ pub fn build_frontend(res: FrontendRes) -> Result<Frontend, String> {
         a.newh,
         save,
         a.fonts,
-    )
+    )?;
+    if let Some(previews) = previews {
+        frontend.set_hero_previews(previews);
+    }
+    Ok(frontend)
 }

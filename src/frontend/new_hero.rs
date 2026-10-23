@@ -6,15 +6,14 @@
 //! `NEWH_HIT_*` regions `[0, 1, 2]`; the two large bottom controls are regions
 //! `[20, 21]`.
 //!
-//! **WORKING INTERPRETATION** (task §15): the first image of each hero pair is
-//! the normal state and the second is the selected/hovered state. Both images
-//! of every pair are preserved.
+//! The first image of each hero pair is the normal state and the second is the
+//! selected state; the original has no hover variant (`FUN_0042EA6C`).
+//! Both images of every pair are preserved.
 //!
-//! Bottom control roles are **DATA-CORRELATED** from the decoded artwork: the
-//! left control (`NEWH{width}R.RES` #9/#10) is "Отмена" (Cancel) and the right
-//! (#11/#12) is "Ok".
+//! Bottom control roles are verified from `FUN_0042EA6C` / case 2:
+//! **left** (region 20, #11/#12) = Ok; **right** (region 21, #9/#10) = Cancel.
 
-use crate::character::{CharacterBuild, CharacterClass};
+use crate::character::{CharacterBuild, CharacterClass, CombatSpecialization};
 
 use super::layout::{
     FrontendRes, Rect, BOTTOM_IMAGE_PAIRS, BOTTOM_REGIONS, HERO_IMAGE_PAIRS, HERO_REGIONS,
@@ -27,22 +26,85 @@ use super::layout::{
 /// character-creation draft; it is copied **once** into the runtime
 /// [`crate::character::PlayerCharacter`] when the player confirms, and is not
 /// consulted by the game afterwards.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewHeroState {
-    /// Selected hero identity index (0/1/2), or `None` before a click.
+    /// Selected hero identity index (0/1/2).
     pub selected_hero: Option<usize>,
-    /// Selected class, or `None` before a class box is clicked.
+    /// Selected class.
     pub selected_class: Option<CharacterClass>,
-    /// Character-creation draft (set when a class is selected; editable).
+    /// Character-creation draft (editable).
     pub build: Option<CharacterBuild>,
     /// Currently hovered `NEWH_HIT_*` region index.
     pub hovered_region: Option<usize>,
+    /// Big-panel description currently shown (hit region `0..=19`, or a stat
+    /// row `7..=10`). The original keeps the last description while the pointer
+    /// is over a region that has no description.
+    pub description_region: Option<usize>,
+    /// `Entity+0x12` active weapon storage slot used by the paper-doll preview
+    /// (`FUN_00436214` hero/specialization handlers).
+    pub preview_weapon_slot: u8,
+}
+
+impl Default for NewHeroState {
+    /// Original New-Game init (`FUN_00436214` case 1, menu action 3): the
+    /// creation entity starts as Dragomir (`D6 = 1`), class 5 (Warrior),
+    /// Fencing + Identification, stats 3/3/15/10.
+    fn default() -> Self {
+        let class = CharacterClass::Warrior;
+        NewHeroState {
+            selected_hero: Some(0),
+            selected_class: Some(class),
+            build: Some(CharacterBuild::from_class(class)),
+            hovered_region: None,
+            description_region: None,
+            preview_weapon_slot: 0,
+        }
+    }
 }
 
 impl NewHeroState {
-    /// Select a hero identity.
+    /// Select a hero identity and reproduce the original `Entity+0x12` choice:
+    /// hero 0 → `0` when melee > archery else `1`; heroes 1/2 → `2` else `1`.
     pub fn select_hero(&mut self, hero: usize) {
         self.selected_hero = Some(hero);
+        if let Some(build) = self.build.as_ref() {
+            let archery_below_melee = build.archery_mastery < build.melee_mastery;
+            self.preview_weapon_slot = match hero {
+                0 => {
+                    if archery_below_melee {
+                        0
+                    } else {
+                        1
+                    }
+                }
+                _ => {
+                    if archery_below_melee {
+                        2
+                    } else {
+                        1
+                    }
+                }
+            };
+        }
+    }
+
+    /// Select a combat specialization. The original handlers also set the
+    /// active weapon slot (`Entity+0x12`): Fencing → `0` for Mikhail else `2`;
+    /// Marksmanship → `1`.
+    pub fn select_combat(&mut self, spec: CombatSpecialization) {
+        if let Some(build) = self.build.as_mut() {
+            build.select_combat(spec);
+        }
+        self.preview_weapon_slot = match spec {
+            CombatSpecialization::Fencing => {
+                if self.selected_hero == Some(1) {
+                    0
+                } else {
+                    2
+                }
+            }
+            CombatSpecialization::Marksmanship => 1,
+        };
     }
 
     /// Select a class. The first selection initializes the draft; subsequent
@@ -60,6 +122,29 @@ impl NewHeroState {
     /// Start Game requires both a hero identity and a class/build.
     pub fn can_confirm(&self) -> bool {
         self.selected_hero.is_some() && self.build.is_some()
+    }
+
+    /// `NEWH` skill-box regions that receive the image-`#2` marker, in the same
+    /// independent order as `FUN_0042EA6C`: one combat box (`archery < melee` →
+    /// 15, else 16) and any civil box whose skill exceeds its threshold.
+    pub fn skill_marker_regions(&self) -> Option<Vec<usize>> {
+        let b = self.build?;
+        let mut out = Vec::with_capacity(4);
+        out.push(if b.archery_mastery < b.melee_mastery {
+            15
+        } else {
+            16
+        });
+        if b.identification > 10 {
+            out.push(17);
+        }
+        if b.trade > 10 {
+            out.push(18);
+        }
+        if b.healing > 50 {
+            out.push(19);
+        }
+        Some(out)
     }
 }
 
@@ -90,6 +175,8 @@ pub enum RegionStatus {
     Bottom,
     /// Implemented: primary-stat stepper `-`/`+` (regions 25..32).
     Stepper,
+    /// Implemented: combat/civil skill selector marker box (regions 15..19).
+    Skill,
     /// Implemented (display only): top free-parameter-points box (region 24).
     Points,
     /// Real hitbox, original behavior not yet recovered.
@@ -104,6 +191,8 @@ pub fn region_status(region: usize) -> RegionStatus {
         RegionStatus::Class
     } else if (NEWH_STEPPER_FIRST_REGION..NEWH_STEPPER_FIRST_REGION + 8).contains(&region) {
         RegionStatus::Stepper
+    } else if (15..=19).contains(&region) {
+        RegionStatus::Skill
     } else if region == NEWH_POINTS_REGION {
         RegionStatus::Points
     } else if BOTTOM_REGIONS.contains(&region) {
@@ -122,8 +211,8 @@ impl NewHeroState {
         HERO_REGIONS.iter().position(|&r| r == region)
     }
 
-    /// Bottom control ordinal (0 = left/confirm candidate, 1 = right/cancel
-    /// candidate) for a hit region, if it is one of the two large buttons.
+    /// Bottom control ordinal (0 = left/Ok, 1 = right/Отмена) for a hit region,
+    /// if it is one of the two large buttons.
     pub fn bottom_index_for_region(region: usize) -> Option<usize> {
         BOTTOM_REGIONS.iter().position(|&r| r == region)
     }
@@ -136,24 +225,21 @@ impl NewHeroState {
     }
 
     /// Image index to draw for a hero region: the selected image when the hero
-    /// is chosen or hovered, otherwise the normal image.
-    pub fn hero_image(&self, hero: usize, region: usize) -> usize {
+    /// is chosen, otherwise the normal image. The original has no hover variant
+    /// (`FUN_0042EA6C` compares only the selected hero index).
+    pub fn hero_image(&self, hero: usize, _region: usize) -> usize {
         let (normal, selected) = HERO_IMAGE_PAIRS[hero];
-        if self.selected_hero == Some(hero) || self.hovered_region == Some(region) {
+        if self.selected_hero == Some(hero) {
             selected
         } else {
             normal
         }
     }
 
-    /// Image index to draw for a bottom control: the alternate image while hovered.
-    pub fn bottom_image(&self, bottom: usize, region: usize) -> usize {
-        let (normal, alternate) = BOTTOM_IMAGE_PAIRS[bottom];
-        if self.hovered_region == Some(region) {
-            alternate
-        } else {
-            normal
-        }
+    /// Normal image index for a bottom control (ordinal 0 = Ok, 1 = Cancel).
+    /// The original only swaps in the pressed image during the click itself.
+    pub fn bottom_image(&self, bottom: usize) -> usize {
+        BOTTOM_IMAGE_PAIRS[bottom].0
     }
 
     /// Draw position of a region's image (`NEWH_DRAW_*`).

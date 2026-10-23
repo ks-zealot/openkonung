@@ -183,14 +183,17 @@ pub const NEWH_AUX_100: usize = 1;
 /// the selected class draw rectangle by the original renderer (VA 0x42EA6C).
 pub const NEWH_CLASS_MARKER: usize = 2;
 
-/// Hero portrait image pairs: (normal, selected/hover) for hero 0/1/2.
-/// Pairing is a **WORKING INTERPRETATION** (task §15); both images are kept.
+/// Hero portrait image pairs: (normal, selected) for hero 0/1/2. The original
+/// renderer chooses only by the selected hero index (`Entity+0xD3 >> 24`); there
+/// is no hover variant (`FUN_0042EA6C`).
 pub const HERO_IMAGE_PAIRS: [(usize, usize); 3] = [(3, 4), (5, 6), (7, 8)];
 
-/// Bottom New-Hero button image pairs: (normal, alternate) for the two large
-/// controls. Pair 0 is "Отмена" (Cancel) and pair 1 is "Ok", confirmed from the
-/// decoded artwork (`NEWH{width}R.RES` #9/#10 and #11/#12).
-pub const BOTTOM_IMAGE_PAIRS: [(usize, usize); 2] = [(9, 10), (11, 12)];
+/// Bottom New-Hero button image pairs `(normal, pressed)` indexed by
+/// [`BOTTOM_REGIONS`] ordinal: pair 0 = region 20 / **Ok** (`#11/#12`), pair 1 =
+/// region 21 / **Отмена** (`#9/#10`). Verified from `FUN_0042EA6C`
+/// (region 20 uses images `0x1FE/0x1FF`, region 21 uses `0x1FC/0x1FD`) and the
+/// decoded artwork.
+pub const BOTTOM_IMAGE_PAIRS: [(usize, usize); 2] = [(11, 12), (9, 10)];
 
 /// Number of logical New-Hero regions (each has one draw rect and one hit rect).
 ///
@@ -210,13 +213,24 @@ pub const NEWH_STEPPER_FIRST_REGION: usize = 25;
 /// Hero-selection regions (task §16 hitboxes #0/#1/#2).
 pub const HERO_REGIONS: [usize; 3] = [0, 1, 2];
 
-/// The two large bottom controls (task §20 #20/#21), region indices.
+/// The two large bottom controls (regions #20/#21).
 ///
-/// The decoded artwork labels region 20 "Отмена" (Cancel) and region 21 "Ok"
-/// (confirm), so these roles are **DATA-CORRELATED** rather than guessed.
-pub const BOTTOM_CANCEL_REGION: usize = 20;
-pub const BOTTOM_OK_REGION: usize = 21;
-pub const BOTTOM_REGIONS: [usize; 2] = [BOTTOM_CANCEL_REGION, BOTTOM_OK_REGION];
+/// Verified from `FUN_0042EA6C` / `FUN_00436214` case 2: the **left** control
+/// (region 20) is **Ok** (click case `0x14` sets mode 8, `FUN_0042EA6C(1)` shows
+/// the pressed Ok image `#12`), and the **right** control (region 21) is
+/// **Отмена** (click case `0x15` returns to mode 7, `FUN_0042EA6C(-1)` shows the
+/// pressed Cancel image `#10`).
+pub const BOTTOM_OK_REGION: usize = 20;
+pub const BOTTOM_CANCEL_REGION: usize = 21;
+/// Bottom-control ordinals used by [`BOTTOM_IMAGE_PAIRS`]: 0 = Ok, 1 = Cancel.
+pub const BOTTOM_REGIONS: [usize; 2] = [BOTTOM_OK_REGION, BOTTOM_CANCEL_REGION];
+
+/// Zero-size draw point (region 22) used by the original as the character
+/// preview origin: `(470,127)` @640 and `(570,160)` @800.
+pub const NEWH_PREVIEW_REGION: usize = 22;
+/// Big description panel (region 23) where `FUN_0042F578` draws the hovered
+/// control's description text (`0x46331C` table).
+pub const NEWH_DESCRIPTION_REGION: usize = 23;
 
 /// `NEWH_DRAW_640`: original image placement rectangles (even records of the
 /// 0x4629C table). Hero draw rects equal the `NEWH640R.RES` portrait sizes.
@@ -414,6 +428,16 @@ impl FrontendRes {
     /// Draw rect of the top free-parameter-points box (`NEWH` region 24).
     pub fn newh_points_box(self) -> Rect {
         self.newh_draw()[NEWH_POINTS_REGION]
+    }
+
+    /// Origin of the 160x160 character preview (`NEWH` region 22, zero-size).
+    pub fn newh_preview(self) -> Rect {
+        self.newh_draw()[NEWH_PREVIEW_REGION]
+    }
+
+    /// Rect of the big New-Hero description panel (`NEWH` region 23).
+    pub fn newh_description(self) -> Rect {
+        self.newh_draw()[NEWH_DESCRIPTION_REGION]
     }
 
     /// `(minus, plus)` hit rects for primary stat `i` (0 = CHA, 1 = STR,

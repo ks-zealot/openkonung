@@ -116,13 +116,15 @@ impl CharacterClass {
         CharacterClass::Chief,
     ];
 
-    /// `Entity+0x04` class value.
+    /// `Entity+0x04` class value. Verified against the class-name table
+    /// (`0x45ADC0`, record `Entity+0x04 - 1`): 2 = Купец (Merchant),
+    /// 3 = Охотник (Hunter), 4 = Вождь (Chief), 5 = Воин (Warrior).
     pub fn entity_class(self) -> u8 {
         match self {
             CharacterClass::Warrior => 5,
             CharacterClass::Hunter => 3,
-            CharacterClass::Merchant => 4,
-            CharacterClass::Chief => 2,
+            CharacterClass::Merchant => 2,
+            CharacterClass::Chief => 4,
         }
     }
 
@@ -150,17 +152,19 @@ impl CharacterClass {
                 strength: 3,
                 endurance: 10,
             },
+            // Class 2 (Купец): `FUN_00436214` case 3 / region 3.
             CharacterClass::Merchant => ClassPreset {
-                dexterity: 3,
-                charisma: 25,
-                strength: 7,
-                endurance: 7,
-            },
-            CharacterClass::Chief => ClassPreset {
                 dexterity: 3,
                 charisma: 3,
                 strength: 10,
                 endurance: 12,
+            },
+            // Class 4 (Вождь): `FUN_00436214` case 5 / region 5.
+            CharacterClass::Chief => ClassPreset {
+                dexterity: 3,
+                charisma: 25,
+                strength: 7,
+                endurance: 7,
             },
         }
     }
@@ -172,16 +176,16 @@ impl CharacterClass {
     /// `inc eax`, and indexes the draw table with `entity_class + 1`. Hence:
     ///
     /// ```text
-    /// class 2 (Chief)    -> region 3
-    /// class 3 (Hunter)   -> region 4
-    /// class 4 (Merchant) -> region 5
-    /// class 5 (Warrior)  -> region 6
+    /// class 2 (Merchant / Купец)   -> region 3
+    /// class 3 (Hunter / Охотник)   -> region 4
+    /// class 4 (Chief / Вождь)      -> region 5
+    /// class 5 (Warrior / Воин)     -> region 6
     /// ```
     pub fn from_region(region: usize) -> Option<CharacterClass> {
         match region {
-            3 => Some(CharacterClass::Chief),
+            3 => Some(CharacterClass::Merchant),
             4 => Some(CharacterClass::Hunter),
-            5 => Some(CharacterClass::Merchant),
+            5 => Some(CharacterClass::Chief),
             6 => Some(CharacterClass::Warrior),
             _ => None,
         }
@@ -194,13 +198,14 @@ impl CharacterClass {
 
     /// The primary stat this class is specialized in (cheaper to raise).
     ///
-    /// `KONUNG_SOURCE_OF_TRUTH.md` §0 label: **ORIGINAL-CODE VERIFIED**
-    /// (Chief→Endurance, Hunter→Dexterity, Merchant→Charisma, Warrior→Strength).
+    /// Original specialized-stat byte table `0x45AE28 + (Entity+0x04 - 1)`
+    /// (`FUN_00410B08`): class 2 → Endurance, class 3 → Dexterity,
+    /// class 4 → Charisma, class 5 → Strength.
     pub fn specialization(self) -> PrimaryStat {
         match self {
-            CharacterClass::Chief => PrimaryStat::Endurance,
+            CharacterClass::Merchant => PrimaryStat::Endurance,
             CharacterClass::Hunter => PrimaryStat::Dexterity,
-            CharacterClass::Merchant => PrimaryStat::Charisma,
+            CharacterClass::Chief => PrimaryStat::Charisma,
             CharacterClass::Warrior => PrimaryStat::Strength,
         }
     }

@@ -14,9 +14,11 @@ mod screens;
 
 pub use self::screens::*;
 
+pub mod description;
 pub mod layout;
 pub mod main_menu;
 pub mod new_hero;
+pub mod previews;
 
 use crate::app::TextItem;
 use crate::font::{Fonts, OriginalFont};
@@ -75,6 +77,9 @@ pub struct Frontend {
     /// Last logical mouse position.
     pub mouse: (i32, i32),
     pub new_hero: NewHeroState,
+    /// Pre-rendered 160x160 preview frames, flat-indexed
+    /// `hero_index * previews::PREVIEW_SLOTS + weapon_slot`.
+    hero_previews: Vec<crate::res::Img>,
     pub frame: Vec<u8>,
     pub texts: Vec<TextItem>,
     /// Debug overlay: draw every original hit rectangle with its index.
@@ -137,6 +142,7 @@ impl Frontend {
             save_slot_hover: None,
             mouse: (0, 0),
             new_hero: NewHeroState::default(),
+            hero_previews: Vec::new(),
             frame: vec![0u8; w * h * 4],
             texts: Vec::new(),
             debug_regions: false,
@@ -145,6 +151,13 @@ impl Frontend {
             host_h: res.height(),
             quit: false,
         })
+    }
+
+    /// Attach pre-rendered character preview frames (built once at frontend
+    /// boot). The vector is flat-indexed by hero and weapon slot; an empty
+    /// vector simply skips the preview.
+    pub fn set_hero_previews(&mut self, previews: Vec<crate::res::Img>) {
+        self.hero_previews = previews;
     }
 
     pub fn logical_w(&self) -> i32 {
@@ -242,7 +255,21 @@ impl Frontend {
                 self.hovered = main_menu::hit_test(self.res, self.game_active, mx, my);
             }
             FrontendScreen::NewHero => {
-                self.new_hero.hovered_region = NewHeroState::hit_test(self.res, mx, my);
+                let region = NewHeroState::hit_test(self.res, mx, my);
+                self.new_hero.hovered_region = region;
+                // `FUN_00436214` case 2: hover over 0..19 (or a stat stepper,
+                // normalised to 7..10) updates the big-panel description. The
+                // other regions leave the last shown text untouched.
+                if let Some(region) = region {
+                    if description::description_for_region(region).is_some() {
+                        self.new_hero.description_region =
+                            Some(if (25..=32).contains(&region) {
+                                7 + (region - 25) / 2
+                            } else {
+                                region
+                            });
+                    }
+                }
             }
             FrontendScreen::SaveGame | FrontendScreen::LoadGame => {
                 self.save_slot_hover = self.res.save_slot_hit_test(mx, my);
@@ -297,6 +324,16 @@ impl Frontend {
             }
             FrontendScreen::NewHero => {
                 let region = NewHeroState::hit_test(self.res, mx, my)?;
+                // `FUN_00436214` case 2 also calls `FUN_0042F578` after a click
+                // on every control that has a description (0..19); a stepper
+                // click shows its stat-row description (7..10).
+                if description::description_for_region(region).is_some() {
+                    self.new_hero.description_region = Some(if (25..=32).contains(&region) {
+                        7 + (region - 25) / 2
+                    } else {
+                        region
+                    });
+                }
                 if let Some(hero) = NewHeroState::hero_index_for_region(region) {
                     self.new_hero.select_hero(hero);
                 } else if let Some(class) = crate::character::CharacterClass::from_region(region) {
@@ -307,16 +344,27 @@ impl Frontend {
                     // Secondary-skill selectors: #15/#16 combat, #17/#18/#19
                     // civil. Regions #13/#14 (Smithing/Building) are original
                     // no-op handlers and are intentionally not handled here.
-                    use crate::character::{CivilSpecialization, CombatSpecialization};
-                    if let Some(build) = self.new_hero.build.as_mut() {
-                        match region {
-                            15 => build.select_combat(CombatSpecialization::Fencing),
-                            16 => build.select_combat(CombatSpecialization::Marksmanship),
-                            17 => build.select_civil(CivilSpecialization::Identification),
-                            18 => build.select_civil(CivilSpecialization::Trade),
-                            19 => build.select_civil(CivilSpecialization::Healing),
-                            _ => {}
+                    use crate::character::CivilSpecialization;
+                    match region {
+                        15 | 16 => {
+                            let spec = if region == 15 {
+                                crate::character::CombatSpecialization::Fencing
+                            } else {
+                                crate::character::CombatSpecialization::Marksmanship
+                            };
+                            self.new_hero.select_combat(spec);
                         }
+                        17 | 18 | 19 => {
+                            let spec = match region {
+                                17 => CivilSpecialization::Identification,
+                                18 => CivilSpecialization::Trade,
+                                _ => CivilSpecialization::Healing,
+                            };
+                            if let Some(build) = self.new_hero.build.as_mut() {
+                                build.select_civil(spec);
+                            }
+                        }
+                        _ => {}
                     }
                 } else if (layout::NEWH_STEPPER_FIRST_REGION..layout::NEWH_STEPPER_FIRST_REGION + 8)
                     .contains(&region)
@@ -331,23 +379,19 @@ impl Frontend {
                             build.try_increase(stat);
                         }
                     }
-                } else if let Some(bottom) = NewHeroState::bottom_index_for_region(region) {
-                    if bottom == 1 {
-                        // Right control ("Ok", #11/#12) -> confirm. Requires both
-                        // a hero identity and a class/build (no default class).
-                        if self.new_hero.can_confirm() {
-                            let hero = self.new_hero.selected_hero.unwrap() as u32;
-                            let build = self.new_hero.build.unwrap();
-                            return Some(FrontendCommand::StartGame {
-                                hero_index: hero,
-                                build,
-                            });
-                        }
-                    } else {
-                        // Left control ("Отмена", #9/#10) -> back.
-                        self.screen = FrontendScreen::MainMenu;
-                        self.hovered = None;
+                } else if region == layout::BOTTOM_OK_REGION {
+                    if self.new_hero.can_confirm() {
+                        let hero = self.new_hero.selected_hero.unwrap() as u32;
+                        let build = self.new_hero.build.unwrap();
+                        return Some(FrontendCommand::StartGame {
+                            hero_index: hero,
+                            build,
+                        });
                     }
+                } else if region == layout::BOTTOM_CANCEL_REGION {
+                        // Left control ("Отмена", #9/#10) -> back.
+                    self.screen = FrontendScreen::MainMenu;
+                    self.hovered = None;
                 }
             }
             FrontendScreen::SaveGame | FrontendScreen::LoadGame => {

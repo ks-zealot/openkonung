@@ -147,6 +147,13 @@ impl Res {
         }
     }
 
+    /// Return the four large original resource buffers and drop the decoded
+    /// caches. Used by the frontend to compose one-time hero previews without
+    /// cloning GRAPH/OBJECTS (the live game reloads them from the same buffers).
+    pub fn into_parts(self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
+        (self.game, self.graph, self.objects, self.exe)
+    }
+
     pub fn variant(&self, variant_id: usize) -> &[u8] {
         let o = GAME_VARIANTS_OFF + variant_id * GAME_VARIANT_SIZE;
         &self.game[o..o + GAME_VARIANT_SIZE]

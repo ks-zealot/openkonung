@@ -35,8 +35,8 @@ fn additional_and_special_match_verified_tables() {
 }
 
 #[test]
-fn starting_bow_draws_in_storage_slot_two() {
-    // Shipped starting equipment; the bow is storage slot 2.
+fn starting_knife_draws_in_storage_slot_two() {
+    // Shipped starting equipment: item instance 1 (Нож) is in storage slot 2.
     let eq = [0u16, 0, 1, 0, 0, 0];
     assert!(!main_slot_drawn(&eq, 2, 0));
     assert!(main_slot_drawn(&eq, 2, 2));
@@ -104,9 +104,9 @@ fn needed_raise_matches_tier_cost_gated_by_available_xp() {
         needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 0),
         0
     );
-    // Merchant CHA=25 is specialized -> cost 11.
+    // Chief CHA=25 is specialized -> cost 11.
     assert_eq!(
-        needed_raise(CharacterClass::Merchant, PrimaryStat::Charisma, 25, 11),
+        needed_raise(CharacterClass::Chief, PrimaryStat::Charisma, 25, 11),
         11
     );
     // Non-specialized Warrior CHA=8 -> normal tier cost 2.

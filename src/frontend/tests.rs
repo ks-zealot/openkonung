@@ -69,23 +69,39 @@ fn new_game_switches_to_new_hero() {
 }
 
 #[test]
+fn new_hero_defaults_match_original_init() {
+    use crate::character::CharacterClass;
+    let s = NewHeroState::default();
+    assert_eq!(s.selected_hero, Some(0)); // Dragomir
+    assert_eq!(s.selected_class, Some(CharacterClass::Warrior));
+    let b = s.build.unwrap();
+    assert_eq!(
+        (b.charisma, b.strength, b.dexterity, b.endurance),
+        (3, 15, 3, 10)
+    );
+    assert_eq!(b.melee_mastery, 100);
+    assert_eq!(b.archery_mastery, 0);
+    assert_eq!(b.identification, 20);
+}
+
+#[test]
 fn hero_and_class_selection_then_confirm_starts() {
     use crate::character::CharacterClass;
     let mut f = synthetic_frontend();
     f.screen = FrontendScreen::NewHero;
+    f.new_hero = NewHeroState::default();
     f.on_resize(640, 480);
     let ok = layout::NEWH_HIT_640[layout::BOTTOM_OK_REGION];
     let click = |f: &mut Frontend, r: crate::frontend::layout::Rect| {
         f.pointer_down(1, r.x as f64 + 1.0, r.y as f64 + 1.0)
     };
 
-    // Confirm with neither hero nor class is a no-op.
-    assert_eq!(click(&mut f, ok), None);
+    // Original defaults are already confirmable.
+    assert!(f.new_hero.can_confirm());
 
-    // Select hero 1; still no class -> no confirm.
+    // Select hero 1 (Mikhail).
     assert_eq!(click(&mut f, NEWH_HIT_640[1]), None);
     assert_eq!(f.new_hero.selected_hero, Some(1));
-    assert_eq!(click(&mut f, ok), None);
 
     // Select Merchant (region 3) -> preset applied.
     assert_eq!(
@@ -116,6 +132,7 @@ fn hero_and_class_selection_then_confirm_starts() {
 fn cancel_returns_to_main_menu() {
     let mut f = synthetic_frontend();
     f.screen = FrontendScreen::NewHero;
+    f.new_hero = NewHeroState::default();
     f.on_resize(640, 480);
     let cancel = layout::NEWH_HIT_640[layout::BOTTOM_CANCEL_REGION];
     let cmd = f.pointer_down(1, cancel.x as f64 + 1.0, cancel.y as f64 + 1.0);
@@ -124,14 +141,96 @@ fn cancel_returns_to_main_menu() {
 }
 
 #[test]
-fn hero_regions_pick_distinct_images() {
+fn bottom_controls_are_ok_left_cancel_right() {
+    // Original `FUN_0042EA6C`: region 20 (left) = Ok, region 21 (right) = Cancel.
+    assert_eq!(layout::BOTTOM_OK_REGION, 20);
+    assert_eq!(layout::BOTTOM_CANCEL_REGION, 21);
+    assert_eq!(NEWH_HIT_640[layout::BOTTOM_OK_REGION].x, 65);
+    assert_eq!(NEWH_HIT_640[layout::BOTTOM_CANCEL_REGION].x, 175);
+    assert_eq!(layout::BOTTOM_IMAGE_PAIRS[0], (11, 12)); // Ok
+    assert_eq!(layout::BOTTOM_IMAGE_PAIRS[1], (9, 10)); // Отмена
+}
+
+#[test]
+fn hero_regions_pick_distinct_images_without_hover() {
     let mut s = NewHeroState::default();
-    assert_eq!(s.hero_image(0, 0), 3);
-    s.selected_hero = Some(0);
+    // Default selection = Dragomir.
     assert_eq!(s.hero_image(0, 0), 4);
     assert_eq!(s.hero_image(1, 1), 5);
     s.hovered_region = Some(1);
+    assert_eq!(s.hero_image(1, 1), 5); // hover does not change the artwork
+    s.selected_hero = Some(1);
+    assert_eq!(s.hero_image(0, 0), 3);
     assert_eq!(s.hero_image(1, 1), 6);
+}
+
+#[test]
+fn description_hover_normalises_and_persists() {
+    let mut f = synthetic_frontend();
+    f.screen = FrontendScreen::NewHero;
+    f.new_hero = NewHeroState::default();
+    f.on_resize(640, 480);
+    let center = |r: crate::frontend::layout::Rect| {
+        (r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 / 2.0)
+    };
+
+    // Hero 0 description.
+    let (x, y) = center(NEWH_HIT_640[0]);
+    f.pointer_move(x, y);
+    assert_eq!(f.new_hero.description_region, Some(0));
+
+    // Stepper 25/26 -> Charisma row 7.
+    let (x, y) = center(NEWH_HIT_640[25]);
+    f.pointer_move(x, y);
+    assert_eq!(f.new_hero.description_region, Some(7));
+
+    // Moving over the big panel (region 23) keeps the last description.
+    let (x, y) = center(NEWH_HIT_640[23]);
+    f.pointer_move(x, y);
+    assert_eq!(f.new_hero.description_region, Some(7));
+
+    // Skill selector 15.
+    let (x, y) = center(NEWH_HIT_640[15]);
+    f.pointer_move(x, y);
+    assert_eq!(f.new_hero.description_region, Some(15));
+}
+
+#[test]
+fn skill_markers_follow_skill_values() {
+    use crate::character::CharacterClass;
+    let mut s = NewHeroState::default();
+    // Default Fencing + Identification: boxes 15 and 17.
+    assert_eq!(s.skill_marker_regions().unwrap(), vec![15, 17]);
+
+    s.select_class(CharacterClass::Hunter); // class does not change skills
+    assert_eq!(s.skill_marker_regions().unwrap(), vec![15, 17]);
+
+    s.select_combat(crate::character::CombatSpecialization::Marksmanship);
+    assert_eq!(s.skill_marker_regions().unwrap(), vec![16, 17]);
+
+    s.build.as_mut().unwrap().healing = 100;
+    s.build.as_mut().unwrap().trade = 20;
+    s.build.as_mut().unwrap().identification = 10;
+    assert_eq!(s.skill_marker_regions().unwrap(), vec![16, 18, 19]);
+}
+
+#[test]
+fn preview_weapon_slot_matches_original_handlers() {
+    use crate::character::CombatSpecialization;
+    let mut s = NewHeroState::default();
+    assert_eq!(s.preview_weapon_slot, 0);
+    s.select_hero(1);
+    assert_eq!(s.preview_weapon_slot, 2);
+    s.select_hero(0);
+    assert_eq!(s.preview_weapon_slot, 0);
+    s.select_combat(CombatSpecialization::Marksmanship);
+    assert_eq!(s.preview_weapon_slot, 1);
+    s.select_combat(CombatSpecialization::Fencing);
+    assert_eq!(s.preview_weapon_slot, 2);
+    s.select_hero(1);
+    assert_eq!(s.preview_weapon_slot, 2);
+    s.select_combat(CombatSpecialization::Fencing);
+    assert_eq!(s.preview_weapon_slot, 0);
 }
 
 #[test]

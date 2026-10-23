@@ -23,7 +23,15 @@ fn starting_loadout_is_the_loaded_game_entity_for_each_hero() {
         let mut pc =
             PlayerCharacter::from_build(*h, CharacterBuild::from_class(CharacterClass::Warrior));
         pc.attach_starting_items(&t.entities[0]);
+        // Only the knife (instance id 1) is equipped, in storage slot 2.
+        // Body-armor / helmet / shield slots (3..=5) are empty: the original
+        // new-game loadout has **no armor and no shield**.
         assert_eq!(pc.equipment, [0, 0, 1, 0, 0, 0], "hero {idx} equipment");
+        assert_eq!(
+            &pc.equipment[3..],
+            &[0, 0, 0],
+            "hero {idx} starts without armor/shield"
+        );
         assert_eq!(
             &pc.inventory[0..7],
             &[2, 3, 4, 5, 6, 7, 0],
@@ -69,8 +77,8 @@ fn attach_starting_items_copies_and_keeps_equipment_separate() {
 fn exact_class_presets() {
     assert_eq!(CharacterClass::Warrior.entity_class(), 5);
     assert_eq!(CharacterClass::Hunter.entity_class(), 3);
-    assert_eq!(CharacterClass::Merchant.entity_class(), 4);
-    assert_eq!(CharacterClass::Chief.entity_class(), 2);
+    assert_eq!(CharacterClass::Merchant.entity_class(), 2); // Купец
+    assert_eq!(CharacterClass::Chief.entity_class(), 4); // Вождь
 
     let w = CharacterClass::Warrior.preset();
     assert_eq!(
@@ -85,12 +93,12 @@ fn exact_class_presets() {
     let m = CharacterClass::Merchant.preset();
     assert_eq!(
         (m.dexterity, m.charisma, m.strength, m.endurance),
-        (3, 25, 7, 7)
+        (3, 3, 10, 12)
     );
     let c = CharacterClass::Chief.preset();
     assert_eq!(
         (c.dexterity, c.charisma, c.strength, c.endurance),
-        (3, 3, 10, 12)
+        (3, 25, 7, 7)
     );
 }
 
@@ -122,41 +130,39 @@ fn initial_skill_values() {
 
 #[test]
 fn modified_build_survives_without_preset_regeneration() {
-    // §10: choose Merchant, then edit charisma 25 -> 24 and trade 10 -> 11.
-    let mut build = CharacterBuild::from_class(CharacterClass::Merchant);
+    // §10: choose Chief (cha 25), then edit charisma 25 -> 24 and trade 10 -> 11.
+    let mut build = CharacterBuild::from_class(CharacterClass::Chief);
     build.charisma = 24;
     build.trade = 11;
     let pc = PlayerCharacter::from_build(*hero(1).unwrap(), build);
-    assert_eq!(pc.class, CharacterClass::Merchant);
+    assert_eq!(pc.class, CharacterClass::Chief);
     assert_eq!(pc.entity_class(), 4);
     assert_eq!(pc.charisma_base, 24);
     assert_eq!(pc.charisma_current, 24);
     assert_eq!(pc.trade, 11);
     // The class preset (charisma 25) must not have been regenerated.
-    assert_ne!(
-        pc.charisma_current,
-        CharacterClass::Merchant.preset().charisma
-    );
+    assert_ne!(pc.charisma_current, CharacterClass::Chief.preset().charisma);
 }
 
 #[test]
 fn class_region_mapping() {
-    // Original: region = entity_class + 1.
-    assert_eq!(CharacterClass::from_region(3), Some(CharacterClass::Chief));
-    assert_eq!(CharacterClass::from_region(4), Some(CharacterClass::Hunter));
+    // Original: region = entity_class + 1. The class-name table makes 2 =
+    // Купец (Merchant) and 4 = Вождь (Chief).
     assert_eq!(
-        CharacterClass::from_region(5),
+        CharacterClass::from_region(3),
         Some(CharacterClass::Merchant)
     );
+    assert_eq!(CharacterClass::from_region(4), Some(CharacterClass::Hunter));
+    assert_eq!(CharacterClass::from_region(5), Some(CharacterClass::Chief));
     assert_eq!(
         CharacterClass::from_region(6),
         Some(CharacterClass::Warrior)
     );
     assert_eq!(CharacterClass::from_region(0), None);
     assert_eq!(CharacterClass::from_region(7), None);
-    assert_eq!(CharacterClass::Chief.region(), 3);
+    assert_eq!(CharacterClass::Merchant.region(), 3);
     assert_eq!(CharacterClass::Hunter.region(), 4);
-    assert_eq!(CharacterClass::Merchant.region(), 5);
+    assert_eq!(CharacterClass::Chief.region(), 5);
     assert_eq!(CharacterClass::Warrior.region(), 6);
     for class in CharacterClass::ALL {
         assert_eq!(
@@ -196,8 +202,9 @@ fn debug_block_contains_expected_fields() {
 
 #[test]
 fn specialization_mapping() {
+    // Specialized-stat byte table 0x45AE28 + (Entity+0x04 - 1).
     assert_eq!(
-        CharacterClass::Chief.specialization(),
+        CharacterClass::Merchant.specialization(),
         PrimaryStat::Endurance
     );
     assert_eq!(
@@ -205,7 +212,7 @@ fn specialization_mapping() {
         PrimaryStat::Dexterity
     );
     assert_eq!(
-        CharacterClass::Merchant.specialization(),
+        CharacterClass::Chief.specialization(),
         PrimaryStat::Charisma
     );
     assert_eq!(
@@ -226,11 +233,11 @@ fn stat_cost_worked_examples() {
         5
     );
     assert_eq!(
-        stat_cost(CharacterClass::Merchant, PrimaryStat::Charisma, 24),
+        stat_cost(CharacterClass::Chief, PrimaryStat::Charisma, 24),
         11
     );
     assert_eq!(
-        stat_cost(CharacterClass::Chief, PrimaryStat::Endurance, 11),
+        stat_cost(CharacterClass::Merchant, PrimaryStat::Endurance, 11),
         2
     );
 }
@@ -341,7 +348,7 @@ fn decrease_at_zero_is_a_noop() {
 
 #[test]
 fn available_xp_persists_into_the_runtime_player() {
-    let mut b = CharacterBuild::from_class(CharacterClass::Merchant);
+    let mut b = CharacterBuild::from_class(CharacterClass::Chief);
     b.decrease(PrimaryStat::Charisma); // 25 -> 24, refund 11
     assert_eq!((b.charisma, b.available_xp), (24, 11));
     let pc = PlayerCharacter::from_build(*hero(0).unwrap(), b);
