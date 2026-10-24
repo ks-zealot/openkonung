@@ -17,6 +17,9 @@ if ! command -v cargo >/dev/null 2>&1; then
     exit 1
 fi
 
+# Resolve web/rust-toolchain.toml (pinned channel + wasm target) from here.
+cd "$ROOT"
+
 if command -v rustup >/dev/null 2>&1; then
     rustup target add wasm32-unknown-unknown >/dev/null 2>&1 || true
 fi

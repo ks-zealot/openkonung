@@ -8,6 +8,7 @@ mod ops;
 mod party;
 mod portals;
 mod save;
+mod sound;
 mod trade;
 mod ui;
 mod world_items;

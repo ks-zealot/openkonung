@@ -583,11 +583,7 @@ impl PlayableApp {
             // explicit binding). Escape also closes it.
             KEY_C => {
                 if !self.mode_graph {
-                    self.character_screen = !self.character_screen;
-                    self.hovered_slot = None;
-                    if self.character_screen {
-                        self.sweep_all_owners();
-                    }
+                    self.toggle_character_screen();
                 }
             }
             // `V` toggles camera follow (moved off `C`).

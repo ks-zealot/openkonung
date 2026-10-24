@@ -5,7 +5,6 @@ use super::*;
 impl PlayableApp {
     pub(super) fn draw_detail(&mut self) {
         self.texts.clear();
-        self.sounds.clear();
         let fw = VIRTUAL_W as usize;
         let fh = VIRTUAL_H as usize;
         for px in self.frame.iter_mut() {

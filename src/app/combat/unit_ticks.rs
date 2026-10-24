@@ -1,4 +1,4 @@
-//! `combat` subsystem of [`crate::app`]: melee orchestration, HP/death and the
+﻿//! `combat` subsystem of [`crate::app`]: melee orchestration, HP/death and the
 //! fixed-rate poison tick.
 //!
 //! Rules live in [`crate::combat`]; this module only maps the runtime player,
@@ -68,6 +68,14 @@ impl PlayableApp {
                 .unwrap_or(1)
                 .min(u8::MAX as usize) as u8;
             let spawn_at = self.player_ranged_frames.saturating_sub(6);
+            if self.player_ranged_frame == 0 {
+                self.play_actor_action(
+                    self.player.entity_class(),
+                    crate::anim::ACT_RANGED as u8,
+                    self.player.raw_0x12,
+                    true,
+                );
+            }
             self.player_ranged_frame = self.player_ranged_frame.saturating_add(1);
             if self.player_ranged_frame > self.player_ranged_frames {
                 self.player_ranged_frame = 1;
@@ -98,6 +106,15 @@ impl PlayableApp {
                 self.player_attack_frames = self.player_attack_frames();
             }
             self.player_attack_frames = self.player_attack_frames.max(1);
+            if self.player_attack_frame == 0 {
+                self.play_actor_action(
+                    self.player.entity_class(),
+                    crate::anim::attack_action(crate::anim::battle_from_flags(self.player.flags_b))
+                        as u8,
+                    self.player.raw_0x12,
+                    true,
+                );
+            }
             self.player_attack_frame = self.player_attack_frame.saturating_add(1);
             if self.player_attack_frame >= self.player_attack_frames {
                 self.player_attack_frame = 0;
@@ -160,6 +177,7 @@ impl PlayableApp {
         occupied.insert(player_cell);
         let mut attacks: Vec<(usize, CombatTarget)> = Vec::new();
         let mut shots: Vec<(usize, (i32, i32), Option<usize>)> = Vec::new();
+        let mut action_sounds: Vec<(u8, u8, u8)> = Vec::new();
         for (i, m) in party.iter_mut().enumerate() {
             if m.motion.dead {
                 continue;
@@ -197,6 +215,11 @@ impl PlayableApp {
                 m.motion.facing = dir;
                 m.motion.action = crate::anim::ACT_RANGED as u8;
                 if m.motion.attack_frames == 0 {
+                    action_sounds.push((
+                        m.entity.archetype,
+                        crate::anim::ACT_RANGED as u8,
+                        m.entity.raw_0x12,
+                    ));
                     m.motion.attack_frames = world
                         .res
                         .action_cycle_frames(
@@ -252,6 +275,13 @@ impl PlayableApp {
                         .min(u8::MAX as usize) as u8;
                 }
                 m.motion.action = crate::anim::attack_action(battle) as u8;
+                if m.motion.frame == 0 {
+                    action_sounds.push((
+                        m.entity.archetype,
+                        crate::anim::attack_action(battle) as u8,
+                        m.entity.raw_0x12,
+                    ));
+                }
                 m.motion.frame = m.motion.frame.saturating_add(1);
                 if m.motion.frame >= m.motion.attack_frames.max(1) {
                     m.motion.frame = 0;
@@ -269,6 +299,9 @@ impl PlayableApp {
                 }
                 Self::advance_motion_walk(&mut m.motion, collision, &mut occupied);
             }
+        }
+        for (archetype, action, weapon_slot) in action_sounds {
+            self.play_actor_action(archetype, action, weapon_slot, false);
         }
         for (i, tc, prop) in shots {
             if !self.spawn_projectile(CombatTarget::Party(i), tc, prop) {
@@ -313,6 +346,7 @@ impl PlayableApp {
         }
         let mut attacks: Vec<(usize, CombatTarget)> = Vec::new();
         let mut shots: Vec<(usize, (i32, i32), Option<usize>)> = Vec::new();
+        let mut action_sounds: Vec<(u8, u8, u8)> = Vec::new();
         let PopulationBuild { actors, motion, .. } = pop;
         for a in actors.iter_mut() {
             let id = a.entity.index;
@@ -355,6 +389,11 @@ impl PlayableApp {
                 m.facing = dir;
                 m.action = crate::anim::ACT_RANGED as u8;
                 if m.attack_frames == 0 {
+                    action_sounds.push((
+                        a.entity.archetype,
+                        crate::anim::ACT_RANGED as u8,
+                        a.entity.raw_0x12,
+                    ));
                     m.attack_frames = world
                         .res
                         .action_cycle_frames(
@@ -410,6 +449,13 @@ impl PlayableApp {
                         .min(u8::MAX as usize) as u8;
                 }
                 m.action = crate::anim::attack_action(battle) as u8;
+                if m.frame == 0 {
+                    action_sounds.push((
+                        a.entity.archetype,
+                        crate::anim::attack_action(battle) as u8,
+                        a.entity.raw_0x12,
+                    ));
+                }
                 m.frame = m.frame.saturating_add(1);
                 if m.frame >= m.attack_frames.max(1) {
                     m.frame = 0;
@@ -427,6 +473,9 @@ impl PlayableApp {
                 }
                 Self::advance_motion_walk(m, collision, &mut occupied);
             }
+        }
+        for (archetype, action, weapon_slot) in action_sounds {
+            self.play_actor_action(archetype, action, weapon_slot, false);
         }
         for (id, tc, prop) in shots {
             if !self.spawn_projectile(CombatTarget::World(id), tc, prop) {

@@ -36,6 +36,12 @@ impl PlayableApp {
                     )
                     .unwrap_or(1)
                     .min(u8::MAX as usize) as u8;
+                self.play_actor_action(
+                    self.player.entity_class(),
+                    crate::anim::death_action(battle) as u8,
+                    self.player.raw_0x12,
+                    true,
+                );
             }
             CombatTarget::Party(i) => {
                 let battle = self
@@ -66,6 +72,14 @@ impl PlayableApp {
                     m.motion.action = crate::anim::death_action(battle) as u8;
                     m.motion.frame = 0;
                     m.motion.death_frames = frames;
+                }
+                if let Some(m) = self.party.get(i) {
+                    self.play_actor_action(
+                        m.entity.archetype,
+                        crate::anim::death_action(battle) as u8,
+                        m.entity.raw_0x12,
+                        false,
+                    );
                 }
             }
             CombatTarget::World(id) => {
@@ -103,6 +117,12 @@ impl PlayableApp {
                         m.death_frames = frames;
                     }
                 }
+                self.play_actor_action(
+                    entity.archetype,
+                    crate::anim::death_action(battle) as u8,
+                    entity.raw_0x12,
+                    false,
+                );
             }
             CombatTarget::Prop(_) => {}
         }

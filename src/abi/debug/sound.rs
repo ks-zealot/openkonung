@@ -80,23 +80,32 @@ pub extern "C" fn debug_sound_rate(_id: u32) -> u32 {
 // Sound playback queue (requested ids, drained by the browser shell)
 // --------------------------------------------------------------------------
 
-/// Number of sound ids requested by the active game this frame.
+/// Number of sound ids requested by the active frontend/game this frame.
 #[no_mangle]
 pub extern "C" fn sound_count() -> u32 {
-    runtime_mut()
-        .game
-        .as_deref()
-        .map(|g| g.sounds.len() as u32)
-        .unwrap_or(0)
+    let rt = runtime_mut();
+    let len = match rt.active {
+        ActiveMode::Frontend => rt.frontend.as_ref().map(|f| f.sounds.len()).unwrap_or(0),
+        ActiveMode::Game => rt.game.as_deref().map(|g| g.sounds.len()).unwrap_or(0),
+    };
+    len as u32
 }
 
-/// Requested sound id `i`.
+/// Requested sound id `i` from the active frontend/game.
 #[no_mangle]
 pub extern "C" fn sound_id(i: u32) -> u32 {
-    runtime_mut()
-        .game
-        .as_deref()
-        .and_then(|g| g.sounds.get(i as usize))
-        .map(|&id| id as u32)
-        .unwrap_or(0)
+    let rt = runtime_mut();
+    let id = match rt.active {
+        ActiveMode::Frontend => rt
+            .frontend
+            .as_ref()
+            .and_then(|f| f.sounds.get(i as usize))
+            .copied(),
+        ActiveMode::Game => rt
+            .game
+            .as_deref()
+            .and_then(|g| g.sounds.get(i as usize))
+            .copied(),
+    };
+    id.map(|id| id as u32).unwrap_or(0)
 }

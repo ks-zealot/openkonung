@@ -150,6 +150,9 @@ impl PlayableApp {
             (roll, armor)
         };
         if !roll.hit {
+            if roll.dodged {
+                self.play_dodge();
+            }
             return;
         }
         if roll.lethal {

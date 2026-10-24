@@ -38,11 +38,13 @@ impl PlayableApp {
         };
         if !roll.hit {
             if roll.dodged {
-                self.set_combat_message("Уклонение");
+                self.play_dodge();
+                self.set_combat_message("D�D�D�D_D�D�D�D,D�");
             }
             return Some(roll);
         }
         self.combat_hits = self.combat_hits.saturating_add(1);
+        self.play_melee_impact(a.archetype, a.weapon_slot);
         let hp_before = d.hp;
         if roll.lethal {
             self.kill_combatant(defender, self.combatant_level(attacker), 0);

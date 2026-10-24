@@ -305,6 +305,7 @@ impl PlayableApp {
         };
         let mut message: Option<&'static str> = None;
         let mut moved = false;
+        let mut displaced_class: Option<u8> = None;
         {
             let PlayableApp {
                 world,
@@ -330,6 +331,7 @@ impl PlayableApp {
                 moved = true;
                 if let Some(old) = displaced {
                     if old != 0 {
+                        displaced_class = world.res.item_class(old);
                         if try_stack_ammo(&mut world.res, &mut slots, old) {
                             // consumed by merge
                         } else if !insert_inventory_front(slots.inventory, old) {
@@ -346,7 +348,16 @@ impl PlayableApp {
         }
         if moved {
             self.held_item = None;
-            self.sounds.push(4);
+            let sound = match dest {
+                ItemLocation::Main(_) => {
+                    crate::sound::events::equip_main(class, displaced_class)
+                }
+                ItemLocation::Additional(_) | ItemLocation::Special => {
+                    crate::sound::events::EQUIP_OTHER
+                }
+                ItemLocation::Inventory(_) => crate::sound::events::UI_CLICK,
+            };
+            self.sounds.push(sound);
             self.sweep_owner(owner);
         }
         moved
@@ -527,7 +538,7 @@ impl PlayableApp {
         self.map_overlay = None;
         self.world.res.set_item_class(id, 0xFF);
         self.sweep_all_owners();
-        self.sounds.push(9);
+        self.sounds.push(crate::sound::events::MAP_ITEM);
         true
     }
 

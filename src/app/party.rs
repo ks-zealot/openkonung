@@ -43,6 +43,13 @@ impl PlayableApp {
     /// Companion action rows and walk/idle cycle lengths are updated immediately
     /// so the pose changes on the same frame (`FUN_00414078`/`FUN_0041435C`).
     pub(super) fn toggle_selected_battle_stance(&mut self) {
+        self.sounds.push(crate::sound::events::UI_CLICK);
+        self.toggle_selected_battle_stance_silent();
+    }
+
+    /// Stance toggle without its own click sound (used by `party_engage`, which
+    /// already queues the single `FUN_00421458` click).
+    pub(super) fn toggle_selected_battle_stance_silent(&mut self) {
         let leader_selected = self.party_selected.get(0).copied().unwrap_or(false);
         let first_battle = if leader_selected {
             crate::anim::battle_from_flags(self.player.flags_b)

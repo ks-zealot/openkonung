@@ -82,6 +82,8 @@ pub struct Frontend {
     hero_previews: Vec<crate::res::Img>,
     pub frame: Vec<u8>,
     pub texts: Vec<TextItem>,
+    /// Sound ids requested this frame (original main-menu click `4`).
+    pub sounds: Vec<u16>,
     /// Debug overlay: draw every original hit rectangle with its index.
     pub debug_regions: bool,
     /// Whether a live game exists (drives the startup menu visibility).
@@ -145,6 +147,7 @@ impl Frontend {
             hero_previews: Vec::new(),
             frame: vec![0u8; w * h * 4],
             texts: Vec::new(),
+            sounds: Vec::new(),
             debug_regions: false,
             game_active: false,
             host_w: res.width(),
@@ -287,6 +290,10 @@ impl Frontend {
         match self.screen {
             FrontendScreen::MainMenu => {
                 let i = main_menu::hit_test(self.res, self.game_active, mx, my)?;
+                // `FUN_00436214` case 1: valid menu click -> sound 4.
+                if button == 1 {
+                    self.sounds.push(crate::sound::events::UI_CLICK);
+                }
                 match MAIN_MENU[i].action {
                     MainMenuAction::Resume => {
                         if self.game_active {
@@ -444,6 +451,8 @@ impl Frontend {
     // --- drawing ------------------------------------------------------------
 
     pub fn step(&mut self) {
+        // One-frame queue: the shell drains it before this call.
+        self.sounds.clear();
         self.draw();
     }
 

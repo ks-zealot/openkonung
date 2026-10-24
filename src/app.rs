@@ -1,4 +1,4 @@
-//! OpenKonung live-game state machine: [`PlayableApp`] and its subsystem modules.
+﻿//! OpenKonung live-game state machine: [`PlayableApp`] and its subsystem modules.
 
 use std::collections::{HashMap, HashSet};
 
@@ -34,6 +34,7 @@ mod portals;
 mod quest_log;
 mod save;
 mod settlement_trade;
+mod sound;
 mod text;
 mod trade;
 mod world_draw;
@@ -174,7 +175,7 @@ pub struct PlayableApp {
     population_debug: bool,
     population_rejected: Vec<String>,
 
-    /// Authored `Game.N +0x21900` WorldObject source records (500 × 0x40).
+    /// Authored `Game.N +0x21900` WorldObject source records (500 Ã— 0x40).
     world_object_sources: Vec<WorldObjectSource>,
     /// Records active on the current map (runtime marker pool `0x785BB4`).
     active_world_objects: Vec<ActiveWorldObject>,
@@ -287,6 +288,9 @@ pub struct PlayableApp {
     pub(super) combat_step_t: f64,
     /// Original LCG stream used by hit/dodge/loot rolls.
     pub(super) combat_rng: crate::combat::OriginalRng,
+    /// Cosmetic-only LCG for ambient/action chance gates. Kept separate from
+    /// `combat_rng` so adding sound rolls cannot change combat outcomes.
+    pub(super) sound_rng: crate::combat::OriginalRng,
     /// Logic-frame counter; the DOT pass runs on `& 0xF == 0` (every 16 frames).
     pub(super) combat_frame: u64,
     /// Protagonist melee target (`None` = not fighting).
@@ -432,6 +436,7 @@ impl PlayableApp {
             cursor_virtual: (-1.0, -1.0),
             combat_step_t: 0.0,
             combat_rng: crate::combat::OriginalRng::new(0x4B4F_4E55),
+            sound_rng: crate::combat::OriginalRng::new(0x534F_554E),
             combat_frame: 0,
             player_attack_target: None,
             player_attack_frame: 0,
@@ -474,6 +479,10 @@ impl PlayableApp {
     // --- camera ---
 
     pub fn step(&mut self, dt: f64) {
+        // One-frame sound queue: input events pushed since the last drain are
+        // preserved by the shell before this call; sounds produced below are
+        // drained on the next frame.
+        self.sounds.clear();
         self.advance_world_frame(dt);
         if let Some((code, t)) = self.hud_press {
             let remaining = t - dt.max(0.0);
@@ -496,6 +505,7 @@ impl PlayableApp {
             }
         }
         if !self.mode_graph {
+            self.tick_ambient_sound();
             self.ensure_population(self.current_map);
             self.update_actors(dt);
             self.update_player(dt);

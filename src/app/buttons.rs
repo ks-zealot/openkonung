@@ -46,6 +46,7 @@ impl PlayableApp {
         if self.mode_graph {
             return;
         }
+        self.sounds.push(crate::sound::events::UI_CLICK);
         self.character_screen = !self.character_screen;
         if self.character_screen {
             self.map_open = false;
@@ -61,6 +62,7 @@ impl PlayableApp {
     /// only touches the leader (loop bound 1); with Shift it scans up to 10
     /// selected units.
     fn cycle_weapon_slots(&mut self) {
+        self.sounds.push(crate::sound::events::UI_CLICK);
         let mut changed = false;
         if self.party_selected.first().copied().unwrap_or(false) {
             let eq = self.player.equipment;
@@ -88,6 +90,12 @@ impl PlayableApp {
 
     /// `FUN_0042246C`: stop selected units (`order 0x60`, clear route).
     fn party_halt(&mut self) {
+        self.sounds.push(crate::sound::events::UI_CLICK);
+        self.party_halt_silent();
+    }
+
+    /// Halt without its own click sound (used by `party_engage`).
+    fn party_halt_silent(&mut self) {
         if self.party_selected.first().copied().unwrap_or(false) {
             self.target = None;
             self.player_path.clear();
@@ -110,6 +118,7 @@ impl PlayableApp {
     /// `FUN_00421458`: put every selected living unit into battle stance and
     /// set its engage order (`'D'`/`'A'` by weapon slot, queue cleared).
     fn party_engage(&mut self) {
+        self.sounds.push(crate::sound::events::UI_CLICK);
         let any = self.party_selected.iter().any(|&s| s);
         if !any {
             return;
@@ -125,9 +134,9 @@ impl PlayableApp {
                 .unwrap_or(false)
         };
         if !first_battle {
-            self.toggle_selected_battle_stance();
+            self.toggle_selected_battle_stance_silent();
         }
-        self.party_halt();
+        self.party_halt_silent();
     }
 }
 
