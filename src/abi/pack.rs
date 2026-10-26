@@ -11,11 +11,12 @@
 
 use super::*;
 
-use crate::resource_pack::{MusicBlob, ResourcePack, PACK_ENTRY};
+use crate::resource_pack::{MusicBlob, ResourcePack, VideoBlob, PACK_ENTRY};
 
 pub struct PackState {
     pub build: Vec<u8>,
     pub music: Vec<MusicBlob>,
+    pub videos: Vec<VideoBlob>,
 }
 
 pub static mut PACK: Option<PackState> = None;
@@ -42,6 +43,7 @@ pub extern "C" fn load_pack(ptr: *mut u8, len: u32) -> u32 {
         Ok(PackState {
             build: applied.build.into_bytes(),
             music: applied.music,
+            videos: applied.videos,
         })
     })();
 
@@ -50,8 +52,9 @@ pub extern "C" fn load_pack(ptr: *mut u8, len: u32) -> u32 {
     match result {
         Ok(state) => {
             eprintln!(
-                "pack: loaded {} music track(s), build {}",
+                "pack: loaded {} music track(s), {} video(s), build {}",
                 state.music.len(),
+                state.videos.len(),
                 String::from_utf8_lossy(&state.build)
             );
             unsafe { *addr_of_mut!(PACK) = Some(state) };
@@ -121,5 +124,46 @@ pub extern "C" fn pack_music_name_len(i: u32) -> u32 {
     pack_state()
         .and_then(|s| s.music.get(i as usize))
         .map(|m| m.name.len() as u32)
+        .unwrap_or(0)
+}
+
+// --------------------------------------------------------------------------
+// Browser-playable movie payloads (packed H.264/AAC MP4)
+// --------------------------------------------------------------------------
+
+#[no_mangle]
+pub extern "C" fn pack_video_count() -> u32 {
+    pack_state().map(|s| s.videos.len() as u32).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn pack_video_ptr(i: u32) -> *const u8 {
+    pack_state()
+        .and_then(|s| s.videos.get(i as usize))
+        .map(|v| v.bytes.as_ptr())
+        .unwrap_or(std::ptr::null())
+}
+
+#[no_mangle]
+pub extern "C" fn pack_video_len(i: u32) -> u32 {
+    pack_state()
+        .and_then(|s| s.videos.get(i as usize))
+        .map(|v| v.bytes.len() as u32)
+        .unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn pack_video_name_ptr(i: u32) -> *const u8 {
+    pack_state()
+        .and_then(|s| s.videos.get(i as usize))
+        .map(|v| v.name.as_ptr())
+        .unwrap_or(std::ptr::null())
+}
+
+#[no_mangle]
+pub extern "C" fn pack_video_name_len(i: u32) -> u32 {
+    pack_state()
+        .and_then(|s| s.videos.get(i as usize))
+        .map(|v| v.name.len() as u32)
         .unwrap_or(0)
 }

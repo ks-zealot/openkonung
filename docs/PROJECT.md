@@ -64,6 +64,9 @@ generated — never hand-edit.
 | Headless wasm smoke (raw fallback) | `node tools/smoke.mjs` |
 | Pack-only acceptance smoke (only `web/www` served) | `node tools/pack_smoke.mjs` |
 | Frontend smoke (menu → New Game → New Hero → confirm → game) | `node tools/frontend_smoke.mjs` |
+| Settings / KONUNG.CFG smoke | `node tools/settings_smoke.mjs` |
+| Lighting / LIGHTS.N smoke | `node tools/lighting_smoke.mjs` |
+| Movie / packed-video smoke | `node tools/video_smoke.mjs` |
 | Page smoke over HTTP | start `serve.ps1`/`serve.sh`, then `node tools/page_smoke.mjs [url]` |
 | Run in a browser | `.\serve.ps1` or `bash serve.sh` → http://localhost:8000/ |
 | Rust↔Python parity | `python tools/parity.py [base] [profile] [variant]` vs `cargo run --release --example dump -- <base> [profile] [variant]` |
@@ -76,9 +79,10 @@ native packer target. The build copies `target/…/openkonung.wasm` into
 `tools/make_manifest.py`.
 
 **Current verified state:** `cargo check --all-targets` clean; `cargo test` →
-**311 passed, 0 failed**; `smoke`, `pack_smoke`, `frontend_smoke`, `combat_smoke`
-and `ranged_smoke` → OK; release wasm builds (~667 KB) and the manifest lists
-43 Konung maps plus the pack.
+**401 passed, 0 failed**; `smoke`, `pack_smoke`, `frontend_smoke`, `combat_smoke`,
+`ranged_smoke`, `mob_ai_smoke`, `settings_smoke`, `lighting_smoke` and
+`video_smoke` → OK; release wasm builds (~1.01 MB) and the manifest lists 43
+Konung maps, 40 LIGHTS.N maps, 19 movies and the pack.
 
 ## 4. Runtime architecture
 
@@ -107,11 +111,16 @@ renders 640×480 / 800×600, the game 800×600.
 - **Input:** `pointer_down`, `pointer_up`, `pointer_move`, `wheel`, `key_down`, `on_resize`
 - **Frontend queries:** `frontend_is_active`, `frontend_state`, `frontend_selected_hero`, `frontend_selected_class`, `frontend_hover`
 - **Text overlay:** `text_count`, `text_x`, `text_y`, `text_rgb`, `text_scale`, `text_ptr`, `text_len`
+- **Config:** `config_load`, `config_write`, `config_revision`
+- **Movies:** `start_intro_video`, `video_pending`, `video_name_ptr/len`, `video_finish`
 - **Debug (diagnostics):** `debug_*` (player/entity state, decoded MENU/INTR images, HUD preview)
 
 `load_resource(kind, ptr, len)` where `kind` is `KIND_GAME=0`, `KIND_GRAPH=1`,
 `KIND_OBJECTS=2`, `KIND_EXE=3`, `KIND_NAMES=4`, `KIND_MENU640/800=5/6`,
-`KIND_NEWH640/800=7/8`, `KIND_SAVE640/800=9/10`, `KIND_INTR640/800=11/12`.
+`KIND_NEWH640/800=7/8`, `KIND_SAVE640/800=9/10`, `KIND_INTR640/800=11/12`,
+`KIND_QUEST=13`, `KIND_SOUNDS=14`, `KIND_FLAMES=15`, `KIND_LIGHTS=16`.
+Per-map `LIGHTS.N` payloads use `load_light_map(id, ptr, len)`. Pack format 3
+also carries 19 H.264 movies through `pack_video_*`.
 
 ## 5. Systems overview
 
@@ -129,7 +138,11 @@ renders 640×480 / 800×600, the game 800×600.
 - **Population (`population`, `actors`).** `Game.N` Group/Entity/Settlement
   parsing; runtime placement from Group rectangle A (≤100 attempts, **no center
   fallback**); A* over the parity-selected direction tables; citizen movement
-  with settlement-waypoint ownership.
+  with settlement-waypoint ownership. **Mob AI (`app/combat/ai.rs`):**
+  `FUN_00412C30` group relations every 16 ticks, exact `FUN_004245B4` wake,
+  autonomous target acquisition (shared/unengaged/nearest/8-neighbour),
+  citizen combat without wander frame reset, and the M/O `Entity+0x12` walk
+  delay.
 - **Portals (`edges`, `app::portals`).** `Game.N` transition records; gameplay
   trigger detection uses the trigger rectangle in runtime coordinates. The
   244/245 visual gate props are cosmetic only.

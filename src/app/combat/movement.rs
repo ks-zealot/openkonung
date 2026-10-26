@@ -65,4 +65,32 @@ impl PlayableApp {
             }
         }
     }
+
+    /// Advance one walk cycle but stop at the cycle boundary instead of starting
+    /// the next queue segment. Used by the M/O AI delay (`FUN_004123BC`).
+    pub(super) fn advance_motion_walk_cycle(
+        m: &mut ActorMotion,
+        _collision: &[u16],
+        _occupied: &mut HashSet<(i32, i32)>,
+    ) -> bool {
+        if !m.walking {
+            return false;
+        }
+        let wf = if m.walk_frames == 0 {
+            crate::actors::FALLBACK_WALK_FRAMES
+        } else {
+            m.walk_frames
+        };
+        m.frame = m.frame.saturating_add(1);
+        if m.frame >= wf {
+            m.frame = 0;
+            m.walking = false;
+            m.render_cell = m.cell;
+            if m.path.is_empty() {
+                m.target = None;
+            }
+        }
+        m.walking
+    }
 }
+

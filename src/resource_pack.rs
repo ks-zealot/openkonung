@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 pub mod zip;
 
 /// Archive format version. Bump when the serialized layout changes.
-pub const PACK_FORMAT: u32 = 1;
+pub const PACK_FORMAT: u32 = 3;
 
 /// ZIP entry holding the serialized [`ResourcePack`].
 pub const PACK_ENTRY: &str = "bundle.bin";
@@ -59,6 +59,13 @@ pub struct MusicBlob {
     pub bytes: Vec<u8>,
 }
 
+/// One browser-playable movie (transcoded H.264/AAC MP4 bytes).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VideoBlob {
+    pub name: String,
+    pub bytes: Vec<u8>,
+}
+
 /// The complete serialized resource bundle.
 ///
 /// `source` maps a stable logical key (for example `"graph"`) to the original
@@ -72,7 +79,9 @@ pub struct ResourcePack {
     pub resources: Vec<NamedBlob>,
     pub profiles: Vec<IdBlob>,
     pub konungs: Vec<IdBlob>,
+    pub light_maps: Vec<IdBlob>,
     pub music: Vec<MusicBlob>,
+    pub videos: Vec<VideoBlob>,
 }
 
 /// A rejected or unreadable pack.
@@ -114,6 +123,7 @@ impl From<std::io::Error> for PackError {
 pub struct AppliedPack {
     pub build: String,
     pub music: Vec<MusicBlob>,
+    pub videos: Vec<VideoBlob>,
 }
 
 impl ResourcePack {
@@ -157,9 +167,18 @@ impl ResourcePack {
             h.write_str(&k.name);
             h.write_bytes(&k.bytes);
         }
+        for m in &self.light_maps {
+            h.write_u32(m.id);
+            h.write_str(&m.name);
+            h.write_bytes(&m.bytes);
+        }
         for m in &self.music {
             h.write_str(&m.name);
             h.write_bytes(&m.bytes);
+        }
+        for v in &self.videos {
+            h.write_str(&v.name);
+            h.write_bytes(&v.bytes);
         }
         format!("{:012x}", h.finish() & 0x0000_FFFF_FFFF_FFFF)
     }
@@ -174,7 +193,7 @@ impl ResourcePack {
             )));
         }
 
-        let mut kinds = [false; 15];
+        let mut kinds = [false; 17];
         for r in &self.resources {
             let k = r.kind as usize;
             if k >= kinds.len() {
@@ -218,6 +237,21 @@ impl ResourcePack {
         if !kinds[11] && !kinds[12] {
             return Err(PackError::new("missing INTR interface archive"));
         }
+        if !kinds[16] {
+            return Err(PackError::new("missing LIGHTS.RES resource"));
+        }
+        if self.light_maps.is_empty() {
+            return Err(PackError::new("no LIGHTS.N maps"));
+        }
+        let mut light_ids = std::collections::BTreeSet::new();
+        for m in &self.light_maps {
+            if m.bytes.is_empty() {
+                return Err(PackError::new(format!("light map '{}' is empty", m.name)));
+            }
+            if !light_ids.insert(m.id) {
+                return Err(PackError::new(format!("duplicate light map id {}", m.id)));
+            }
+        }
 
         let mut profile_ids = [false; 3];
         for p in &self.profiles {
@@ -253,6 +287,19 @@ impl ResourcePack {
             }
         }
 
+        let mut video_names = std::collections::BTreeSet::new();
+        for v in &self.videos {
+            if v.name.is_empty() || v.bytes.is_empty() {
+                return Err(PackError::new("empty video payload"));
+            }
+            if !video_names.insert(v.name.as_str()) {
+                return Err(PackError::new(format!(
+                    "duplicate video '{}'",
+                    v.name
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -265,7 +312,9 @@ impl ResourcePack {
             resources,
             profiles,
             konungs,
+            light_maps,
             music,
+            videos,
             ..
         } = self;
 
@@ -288,6 +337,8 @@ impl ResourcePack {
                 12 => loader.intr800 = bytes,
                 13 => loader.quest = bytes,
                 14 => loader.sounds = bytes,
+                15 => loader.flames = bytes,
+                16 => loader.lights = bytes,
                 _ => unreachable!("validated above"),
             }
         }
@@ -297,9 +348,16 @@ impl ResourcePack {
         for k in konungs {
             loader.konungs.push((k.id, k.bytes));
         }
+        for m in light_maps {
+            loader.light_maps.insert(m.id, m.bytes);
+        }
         *crate::loader_mut() = loader;
 
-        Ok(AppliedPack { build, music })
+        Ok(AppliedPack {
+            build,
+            music,
+            videos,
+        })
     }
 }
 

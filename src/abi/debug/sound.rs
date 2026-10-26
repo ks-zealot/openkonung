@@ -95,17 +95,63 @@ pub extern "C" fn sound_count() -> u32 {
 #[no_mangle]
 pub extern "C" fn sound_id(i: u32) -> u32 {
     let rt = runtime_mut();
-    let id = match rt.active {
+    match rt.active {
         ActiveMode::Frontend => rt
             .frontend
             .as_ref()
             .and_then(|f| f.sounds.get(i as usize))
-            .copied(),
+            .map(|id| *id as u32)
+            .unwrap_or(0),
         ActiveMode::Game => rt
             .game
             .as_deref()
             .and_then(|g| g.sounds.get(i as usize))
-            .copied(),
-    };
-    id.map(|id| id as u32).unwrap_or(0)
+            .map(|e| e.id as u32)
+            .unwrap_or(0),
+    }
+}
+
+/// Positional pan (`-10000..10000`) of sound `i`; `0` for the frontend.
+#[no_mangle]
+pub extern "C" fn sound_pan(i: u32) -> i32 {
+    let rt = runtime_mut();
+    match rt.active {
+        ActiveMode::Game => rt
+            .game
+            .as_deref()
+            .and_then(|g| g.sounds.get(i as usize))
+            .map(|e| e.pan)
+            .unwrap_or(0),
+        ActiveMode::Frontend => 0,
+    }
+}
+
+/// Volume in hundredths of a decibel (`0` full, `-10000` silent) of sound `i`.
+#[no_mangle]
+pub extern "C" fn sound_volume(i: u32) -> i32 {
+    let rt = runtime_mut();
+    match rt.active {
+        ActiveMode::Game => rt
+            .game
+            .as_deref()
+            .and_then(|g| g.sounds.get(i as usize))
+            .map(|e| e.volume)
+            .unwrap_or(0),
+        ActiveMode::Frontend => 0,
+    }
+}
+
+/// Secondary-buffer sample rate of sound `i` (22050/19050/25050).
+#[no_mangle]
+pub extern "C" fn sound_rate(i: u32) -> u32 {
+    let rt = runtime_mut();
+    match rt.active {
+        ActiveMode::Game => rt
+            .game
+            .as_deref()
+            .and_then(|g| g.sounds.get(i as usize))
+            .map(|e| e.rate)
+            .unwrap_or(crate::sound::SAMPLE_RATES[0]),
+        ActiveMode::Frontend => crate::sound::SAMPLE_RATES[0],
+    }
 }

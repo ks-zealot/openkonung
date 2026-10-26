@@ -16,32 +16,40 @@ pub fn parse_groups(data: &[u8]) -> Result<Vec<Group>, String> {
     let mut groups = Vec::with_capacity(GROUP_COUNT);
     for index in 0..GROUP_COUNT {
         let o = GROUP_OFF + index * GROUP_STRIDE;
-        let r = &data[o..o + GROUP_STRIDE];
-        groups.push(Group {
-            index,
-            first_entity: u16(r, 0x00) as u16,
-            rect_a: Rect {
-                x1: u16(r, 0x08) as u16,
-                x2: u16(r, 0x0C) as u16,
-                y1: u16(r, 0x10) as u16,
-                y2: u16(r, 0x14) as u16,
-            },
-            rect_b: Rect {
-                x1: u16(r, 0x0A) as u16,
-                x2: u16(r, 0x0E) as u16,
-                y1: u16(r, 0x12) as u16,
-                y2: u16(r, 0x16) as u16,
-            },
-            count_18: r[0x18],
-            capacity: r[0x19],
-            loc_id: r[0x1B],
-            entity_count: r[0x1C],
-            class_1e: r[0x1E],
-            activity_1d: r[0x1D],
-            visited: false,
-        });
+        groups.push(parse_group_record(index, &data[o..o + GROUP_STRIDE]));
     }
     Ok(groups)
+}
+
+/// Parse one 0x20-byte `Group` record. Shared by `Game.N` and legacy snapshot
+/// blocks (both use the runtime layout).
+pub fn parse_group_record(index: usize, r: &[u8]) -> Group {
+    Group {
+        index,
+        first_entity: u16(r, 0x00) as u16,
+        rect_a: Rect {
+            x1: u16(r, 0x08) as u16,
+            x2: u16(r, 0x0C) as u16,
+            y1: u16(r, 0x10) as u16,
+            y2: u16(r, 0x14) as u16,
+        },
+        rect_b: Rect {
+            x1: u16(r, 0x0A) as u16,
+            x2: u16(r, 0x0E) as u16,
+            y1: u16(r, 0x12) as u16,
+            y2: u16(r, 0x16) as u16,
+        },
+        growth_timer: i32v(r, 0x02),
+        growth_countdown: (u16(r, 0x06) as u16) as i16,
+        count_18: r[0x18],
+        capacity: r[0x19],
+        loc_id: r[0x1B],
+        target_group: r[0x1A],
+        entity_count: r[0x1C],
+        class_1e: r[0x1E],
+        activity_1d: r[0x1D],
+        visited: false,
+    }
 }
 
 /// Parse the Entity table. Fails loudly on a truncated file.
@@ -57,75 +65,80 @@ pub fn parse_entities(data: &[u8]) -> Result<Vec<Entity>, String> {
     let mut entities = Vec::with_capacity(ENTITY_COUNT);
     for index in 0..ENTITY_COUNT {
         let o = ENTITY_OFF + index * ENTITY_STRIDE;
-        let b = &data[o..o + ENTITY_STRIDE];
-        let stats = EntityStats {
-            raw_0x11: b[0x11],
-            level: b[0x33],
-            money: i32v(b, 0x34),
-            available_xp: u32(b, 0x38),
-            invested_xp: u32(b, 0x3C),
-            melee_mastery: u16(b, 0x40) as u16,
-            trade: u16(b, 0x42) as u16,
-            archery_mastery: u16(b, 0x44) as u16,
-            building: u16(b, 0x46) as u16,
-            healing: u16(b, 0x48) as u16,
-            identification: u16(b, 0x4A) as u16,
-            smithing: u16(b, 0x4C) as u16,
-            base_armor: u16(b, 0x4E) as u16,
-            periodic_damage: u16(b, 0x50) as u16,
-            raw_0x52: u16(b, 0x52) as u16,
-            dexterity_base: u16(b, 0x54) as u16,
-            dexterity_current: u16(b, 0x56) as u16,
-            charisma_base: u16(b, 0x58) as u16,
-            charisma_current: u16(b, 0x5A) as u16,
-            hp_internal: u16(b, 0x5C) as u16,
-            strength_base: u16(b, 0x5E) as u16,
-            strength_current: u16(b, 0x60) as u16,
-            endurance_base: u16(b, 0x62) as u16,
-            endurance_current: u16(b, 0x64) as u16,
-            saved_dexterity: u16(b, 0xBC) as u16,
-            saved_charisma: u16(b, 0xBE) as u16,
-            saved_strength: u16(b, 0xC0) as u16,
-            saved_endurance: u16(b, 0xC2) as u16,
-            temp_effect_id: u16(b, 0xCA) as u16,
-            temp_effect_timer: u16(b, 0xCE) as u16,
-        };
-        let mut equipment = [0u16; 6];
-        for (i, slot) in equipment.iter_mut().enumerate() {
-            *slot = u16(b, 0x66 + i * 2) as u16;
-        }
-        let mut inventory = [0u16; 32];
-        for (i, slot) in inventory.iter_mut().enumerate() {
-            *slot = u16(b, 0x72 + i * 2) as u16;
-        }
-        let mut additional_equipment = [0u16; 5];
-        for (i, slot) in additional_equipment.iter_mut().enumerate() {
-            *slot = u16(b, 0xB2 + i * 2) as u16;
-        }
-        entities.push(Entity {
-            index,
-            kind: b[0x00],
-            facing: b[0x01],
-            flags_a: b[0x02],
-            flags_b: b[0x03],
-            archetype: b[0x04],
-            group_id: b[0x05],
-            raw_0x12: b[0x12],
-            x: u16(b, 0x08) as u16,
-            y: u16(b, 0x0A) as u16,
-            stats,
-            equipment,
-            inventory,
-            dialogue_id: b[0xD0],
-            name_id: b[0xD4],
-            nickname_id: b[0xD5],
-            visual_index: b[0xD6],
-            palette_offset: u32(b, 0xD8),
-            additional_equipment,
-            special_equipment: u16(b, 0xCC) as u16,
-        });
+        entities.push(parse_entity_record(index, &data[o..o + ENTITY_STRIDE]));
     }
     Ok(entities)
+}
+
+/// Parse one 0x100-byte `Entity` record. Shared by `Game.N` and legacy snapshot
+/// blocks; both store the runtime `Entity` layout.
+pub fn parse_entity_record(index: usize, b: &[u8]) -> Entity {
+    let stats = EntityStats {
+        raw_0x11: b[0x11],
+        level: b[0x33],
+        money: i32v(b, 0x34),
+        available_xp: u32(b, 0x38),
+        invested_xp: u32(b, 0x3C),
+        melee_mastery: u16(b, 0x40) as u16,
+        trade: u16(b, 0x42) as u16,
+        archery_mastery: u16(b, 0x44) as u16,
+        building: u16(b, 0x46) as u16,
+        healing: u16(b, 0x48) as u16,
+        identification: u16(b, 0x4A) as u16,
+        smithing: u16(b, 0x4C) as u16,
+        base_armor: u16(b, 0x4E) as u16,
+        periodic_damage: u16(b, 0x50) as u16,
+        raw_0x52: u16(b, 0x52) as u16,
+        dexterity_base: u16(b, 0x54) as u16,
+        dexterity_current: u16(b, 0x56) as u16,
+        charisma_base: u16(b, 0x58) as u16,
+        charisma_current: u16(b, 0x5A) as u16,
+        hp_internal: u16(b, 0x5C) as u16,
+        strength_base: u16(b, 0x5E) as u16,
+        strength_current: u16(b, 0x60) as u16,
+        endurance_base: u16(b, 0x62) as u16,
+        endurance_current: u16(b, 0x64) as u16,
+        saved_dexterity: u16(b, 0xBC) as u16,
+        saved_charisma: u16(b, 0xBE) as u16,
+        saved_strength: u16(b, 0xC0) as u16,
+        saved_endurance: u16(b, 0xC2) as u16,
+        temp_effect_id: u16(b, 0xCA) as u16,
+        temp_effect_timer: u16(b, 0xCE) as u16,
+    };
+    let mut equipment = [0u16; 6];
+    for (i, slot) in equipment.iter_mut().enumerate() {
+        *slot = u16(b, 0x66 + i * 2) as u16;
+    }
+    let mut inventory = [0u16; 32];
+    for (i, slot) in inventory.iter_mut().enumerate() {
+        *slot = u16(b, 0x72 + i * 2) as u16;
+    }
+    let mut additional_equipment = [0u16; 5];
+    for (i, slot) in additional_equipment.iter_mut().enumerate() {
+        *slot = u16(b, 0xB2 + i * 2) as u16;
+    }
+    Entity {
+        index,
+        kind: b[0x00],
+        facing: b[0x01],
+        flags_a: b[0x02],
+        flags_b: b[0x03],
+        archetype: b[0x04],
+        group_id: b[0x05],
+        raw_0x12: b[0x12],
+        x: u16(b, 0x08) as u16,
+        y: u16(b, 0x0A) as u16,
+        stats,
+        equipment,
+        inventory,
+        dialogue_id: b[0xD0],
+        name_id: b[0xD4],
+        nickname_id: b[0xD5],
+        visual_index: b[0xD6],
+        palette_offset: u32(b, 0xD8),
+        additional_equipment,
+        special_equipment: u16(b, 0xCC) as u16,
+    }
 }
 
 /// Parse both Group and Entity tables.
@@ -197,55 +210,67 @@ pub fn parse_settlements(data: &[u8]) -> Result<Vec<Settlement>, String> {
     let mut out = Vec::with_capacity(SETTLEMENT_COUNT);
     for index in 0..SETTLEMENT_COUNT {
         let o = SETTLEMENT_OFF + index * SETTLEMENT_STRIDE;
-        let loc_id = data[o + 3];
-        let group_id = data[o + 2];
-        let flags_4b2 = data[o + 0x4B2];
-        // `FUN_00420F30`: target count = u8[+0] + u8[+1] + 7; entries at +0x18.
-        let target_count = data[o] as usize + data[o + 1] as usize + 7;
-        let mut targets = Vec::with_capacity(target_count.min(120));
-        for t in 0..target_count {
-            let to = o + 0x18 + t * 8;
-            if to + 8 > o + SETTLEMENT_STRIDE {
-                break;
-            }
-            targets.push(SettlementTarget {
-                key: data[to],
-                state: data[to + 1],
-                prop_index: u16(data, to + 2) as u16,
-                timer: u16(data, to + 6) as u16,
-            });
-        }
-        let mut waypoints = Vec::new();
-        for w in 0..WAYPOINT_MAX {
-            let wo = o + WAYPOINT_OFF + w * WAYPOINT_STRIDE;
-            let facing = data[wo];
-            let owner = u16(data, wo + 2) as u16;
-            let x = u16(data, wo + 4) as u16;
-            let y = u16(data, wo + 6) as u16;
-            if facing == 0 && owner == 0 && x == 0 && y == 0 {
-                break;
-            }
-            waypoints.push(Waypoint {
-                facing,
-                owner,
-                x,
-                y,
-            });
-        }
-        out.push(Settlement {
+        out.push(parse_settlement_record(
             index,
-            loc_id,
-            group_id,
-            progress_14: u16(data, o + 0x14) as u16,
-            money_pool_10: i32v(data, o + 0x10),
-            target_base0: data[o],
-            target_base1: data[o + 1],
-            flags_4b2,
-            targets,
-            waypoints,
-        });
+            &data[o..o + SETTLEMENT_STRIDE],
+        ));
     }
     Ok(out)
+}
+
+/// Parse one 0x4B5-byte `Settlement` record (same layout in `Game.N` and the
+/// legacy runtime snapshot).
+pub fn parse_settlement_record(index: usize, data: &[u8]) -> Settlement {
+    let loc_id = data[3];
+    let group_id = data[2];
+    let flags_4b2 = data[0x4B2];
+    // `FUN_00420F30`: target count = u8[+0] + u8[+1] + 7; entries at +0x18.
+    let target_count = data[0] as usize + data[1] as usize + 7;
+    let mut targets = Vec::with_capacity(target_count.min(120));
+    for t in 0..target_count {
+        let to = 0x18 + t * 8;
+        if to + 8 > data.len() {
+            break;
+        }
+        targets.push(SettlementTarget {
+            key: data[to],
+            state: data[to + 1],
+            prop_index: u16(data, to + 2) as u16,
+            timer: u16(data, to + 6) as u16,
+        });
+    }
+    let mut waypoints = Vec::new();
+    for w in 0..WAYPOINT_MAX {
+        let wo = WAYPOINT_OFF + w * WAYPOINT_STRIDE;
+        if wo + WAYPOINT_STRIDE > data.len() {
+            break;
+        }
+        let facing = data[wo];
+        let owner = u16(data, wo + 2) as u16;
+        let x = u16(data, wo + 4) as u16;
+        let y = u16(data, wo + 6) as u16;
+        if facing == 0 && owner == 0 && x == 0 && y == 0 {
+            break;
+        }
+        waypoints.push(Waypoint {
+            facing,
+            owner,
+            x,
+            y,
+        });
+    }
+    Settlement {
+        index,
+        loc_id,
+        group_id,
+        progress_14: u16(data, 0x14) as u16,
+        money_pool_10: i32v(data, 0x10),
+        target_base0: data[0],
+        target_base1: data[1],
+        flags_4b2,
+        targets,
+        waypoints,
+    }
 }
 
 /// Parse the settlement merchant stock lists and restock state
@@ -265,37 +290,46 @@ pub fn parse_settlement_trade(data: &[u8]) -> Result<Vec<SettlementTrade>, Strin
     let mut out = Vec::with_capacity(SETTLEMENT_COUNT);
     for index in 0..SETTLEMENT_COUNT {
         let o = SETTLEMENT_OFF + index * SETTLEMENT_STRIDE;
-        let mut stock2 = [0u16; TRADE_STOCK2_COUNT];
-        for (i, slot) in stock2.iter_mut().enumerate() {
-            *slot = u16(data, o + TRADE_STOCK2_OFF + i * 2) as u16;
-        }
-        let mut stock3 = [0u16; TRADE_STOCK3_COUNT];
-        for (i, slot) in stock3.iter_mut().enumerate() {
-            *slot = u16(data, o + TRADE_STOCK3_OFF + i * 2) as u16;
-        }
-        let mut stock4 = [0u16; TRADE_STOCK4_COUNT];
-        for (i, slot) in stock4.iter_mut().enumerate() {
-            *slot = u16(data, o + TRADE_STOCK4_OFF + i * 2) as u16;
-        }
-        out.push(SettlementTrade {
+        out.push(parse_settlement_trade_record(
             index,
-            loc_id: data[o + 3],
-            flags_4b2: data[o + 0x4B2],
-            stock2,
-            stock3,
-            stock4,
-            prod_role2: u16(data, o + TRADE_PROD2_OFF) as u16,
-            prod_role3: u16(data, o + TRADE_PROD3_OFF) as u16,
-            prod_role4: u16(data, o + TRADE_PROD4_OFF) as u16,
-            prod_role5: u16(data, o + TRADE_PROD5_OFF) as u16,
-            timer2: i32v(data, o + TRADE_TIMER2_OFF),
-            timer3: i32v(data, o + TRADE_TIMER3_OFF),
-            timer4: i32v(data, o + TRADE_TIMER4_OFF),
-            last_slot: data[o + TRADE_LAST_SLOT_OFF] as i8,
-            quota0: u16(data, o + TRADE_QUOTA0_OFF) as u16,
-            quota1: u16(data, o + TRADE_QUOTA1_OFF) as u16,
-            quota2: u16(data, o + TRADE_QUOTA2_OFF) as u16,
-        });
+            &data[o..o + SETTLEMENT_STRIDE],
+        ));
     }
     Ok(out)
+}
+
+/// Parse one 0x4B5-byte settlement record's trade fields (same layout in
+/// `Game.N` and the legacy runtime snapshot).
+pub fn parse_settlement_trade_record(index: usize, data: &[u8]) -> SettlementTrade {
+    let mut stock2 = [0u16; TRADE_STOCK2_COUNT];
+    for (i, slot) in stock2.iter_mut().enumerate() {
+        *slot = u16(data, TRADE_STOCK2_OFF + i * 2) as u16;
+    }
+    let mut stock3 = [0u16; TRADE_STOCK3_COUNT];
+    for (i, slot) in stock3.iter_mut().enumerate() {
+        *slot = u16(data, TRADE_STOCK3_OFF + i * 2) as u16;
+    }
+    let mut stock4 = [0u16; TRADE_STOCK4_COUNT];
+    for (i, slot) in stock4.iter_mut().enumerate() {
+        *slot = u16(data, TRADE_STOCK4_OFF + i * 2) as u16;
+    }
+    SettlementTrade {
+        index,
+        loc_id: data[3],
+        flags_4b2: data[0x4B2],
+        stock2,
+        stock3,
+        stock4,
+        prod_role2: u16(data, TRADE_PROD2_OFF) as u16,
+        prod_role3: u16(data, TRADE_PROD3_OFF) as u16,
+        prod_role4: u16(data, TRADE_PROD4_OFF) as u16,
+        prod_role5: u16(data, TRADE_PROD5_OFF) as u16,
+        timer2: i32v(data, TRADE_TIMER2_OFF),
+        timer3: i32v(data, TRADE_TIMER3_OFF),
+        timer4: i32v(data, TRADE_TIMER4_OFF),
+        last_slot: data[TRADE_LAST_SLOT_OFF] as i8,
+        quota0: u16(data, TRADE_QUOTA0_OFF) as u16,
+        quota1: u16(data, TRADE_QUOTA1_OFF) as u16,
+        quota2: u16(data, TRADE_QUOTA2_OFF) as u16,
+    }
 }

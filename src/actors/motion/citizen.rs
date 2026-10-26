@@ -73,6 +73,15 @@ pub fn update_population(
             if build.motion.get(&eid).is_some_and(|m| m.dead) {
                 continue;
             }
+            // A citizen that has a live combat target is driven by the combat
+            // action path; do not let the wander pass reset its attack frame.
+            if build
+                .motion
+                .get(&eid)
+                .is_some_and(|m| m.combat_target.is_some())
+            {
+                continue;
+            }
             // Only citizen groups (group class `& 0x80`, `& 0x40 == 0`) run the
             // waypoint/wander AI. Object/enemy groups (`class & 0x40`) idle in
             // place (`FUN_00412E00`, `+0x1D == 0`) and must not wander.

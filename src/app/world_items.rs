@@ -27,7 +27,82 @@ impl PlayableApp {
         if whole >= 1.0 {
             self.world_frame = self.world_frame.saturating_add(whole as u64);
             self.world_frame_accum -= whole;
+            for _ in 0..whole as u64 {
+                self.world.tick_prop_flames(self.current_map);
+            }
             self.tick_settlement_trade(whole as u64);
+        }
+    }
+
+    /// Apply the original settlement target → prop variant linkage
+    /// (`FUN_0043ADF0` `0x43B7A7`) for the current map:
+    /// `object_id = table[key] + target.state + 30`, then initialize the prop
+    /// animation frame and its FLAMES emitter phases.
+    ///
+    /// The original runs this at map load only; a state change (the 21 % prop
+    /// hit) is therefore applied on the next map entry, not immediately.
+    pub(super) fn apply_settlement_props(&mut self) {
+        let loc = self.current_map;
+        let updates: Vec<(usize, usize, u8, Vec<crate::res::FlameEmitter>, Vec<u8>)> = {
+            let Some(db) = self.world.res.item_db.as_ref() else {
+                return;
+            };
+            let mut updates = Vec::new();
+            for settlement in self.settlements.iter().filter(|s| s.loc_id as u32 == loc) {
+                for target in &settlement.targets {
+                    let Some(base) = db.settlement_prop_base(target.key as usize) else {
+                        continue;
+                    };
+                    let object_id = base as usize + target.state as usize + 30;
+                    if !(30..512).contains(&object_id) {
+                        continue;
+                    }
+                    let frame_count = self.world.res.object_frame_count(object_id).max(1);
+                    let frame =
+                        (prop_variant_hash(loc, target.prop_index, object_id, 0) % frame_count as u32)
+                            as u8;
+                    let emitters: Vec<crate::res::FlameEmitter> = self
+                        .world
+                        .res
+                        .object_flames(object_id)
+                        .into_iter()
+                        .filter(|e| crate::res::flame_range(e.selector).is_some())
+                        .collect();
+                    let mut frames = Vec::with_capacity(emitters.len());
+                    for (i, emitter) in emitters.iter().enumerate() {
+                        let (min, max) =
+                            crate::res::flame_range(emitter.selector).expect("filtered");
+                        let span = (max - min) as u32;
+                        frames.push(
+                            min + (prop_variant_hash(
+                                loc,
+                                target.prop_index,
+                                object_id,
+                                i as u32 + 1,
+                            ) % span) as u8,
+                        );
+                    }
+                    updates.push((
+                        target.prop_index as usize,
+                        object_id,
+                        frame,
+                        emitters,
+                        frames,
+                    ));
+                }
+            }
+            updates
+        };
+        let Some(loc_data) = self.world.loc_mut(loc) else {
+            return;
+        };
+        for (ri, object_id, frame, emitters, frames) in updates {
+            if let Some(prop) = loc_data.props.iter_mut().find(|p| p.ri == ri) {
+                prop.object_id = object_id;
+                prop.frame = frame;
+                prop.flame_emitters = emitters;
+                prop.flame_frames = frames;
+            }
         }
     }
 
@@ -70,6 +145,18 @@ impl PlayableApp {
         else {
             return;
         };
+
+        // `0x41115B`: a WorldObject whose runtime `+0x0E` source index is 0
+        // starts the victory movie instead of the ordinary pickup path.
+        if self.active_world_objects[index].source == 0 {
+            if crate::video::request(
+                crate::video::VideoClip::Win,
+                crate::video::VideoAfter::Menu { game_active: false },
+            ) {
+                self.game_over = true;
+            }
+            return;
+        }
 
         // Money is transferred first (`0x411181..0x411190`) and cleared even if
         // the item transfer later fails.
@@ -307,4 +394,17 @@ fn world_object_sprite(first: Option<crate::item::ItemInfo>, items: &[u16], mone
     } else {
         WORLD_OBJECT_GENERIC_SPRITE
     }
+}
+
+/// Deterministic visual-only hash for per-prop animation phases. The original
+/// uses the game RNG at map load; using a stable hash keeps combat deterministic
+/// while still varying the flame/prop start frames.
+fn prop_variant_hash(loc: u32, prop_index: u16, object_id: usize, salt: u32) -> u32 {
+    let mut h = 0x811C_9DC5u32;
+    for value in [loc, prop_index as u32, object_id as u32, salt] {
+        h ^= value;
+        h = h.wrapping_mul(0x0100_0193);
+        h ^= h >> 13;
+    }
+    h
 }

@@ -131,6 +131,9 @@ impl PlayableApp {
         if self.combatant_dead(defender) {
             return;
         }
+        // `FUN_00420F30`: an arrow touching an actor wakes the victim's group
+        // (`FUN_004245B4`) before the hit/dodge roll.
+        self.wake_combatant_group(defender, shooter);
         let Some(dstats) = self.combatant_stats(defender) else {
             return;
         };
@@ -151,7 +154,7 @@ impl PlayableApp {
         };
         if !roll.hit {
             if roll.dodged {
-                self.play_dodge();
+                self.play_dodge(self.combatant_cell(shooter));
             }
             return;
         }

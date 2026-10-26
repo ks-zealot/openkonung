@@ -259,6 +259,9 @@ impl PlayableApp {
         }
         self.current_map = dst;
         self.selected = Some(dst);
+        // Original mode-0 map entry rebuilds the population and applies growth;
+        // cached motion from the previous visit must not suppress that pass.
+        self.population_cache.remove(&dst);
         self.player_x = ax as f64;
         self.player_y = ay as f64;
         self.player_render_x = ax as f64;
@@ -279,6 +282,8 @@ impl PlayableApp {
         self.player_active = false;
         self.player_step_t = 0.0;
         self.player_interact = false;
+        self.reset_object_group_activity();
+        self.apply_settlement_props();
         self.rebuild_world_objects();
         self.dialog = None;
         self.teleport_cooldown = 0.9;
@@ -311,7 +316,7 @@ impl PlayableApp {
             (crate::anim::ACT_RANGED, self.player_ranged_frame as usize)
         } else if !moving && !self.player_active && self.player_attack_target.is_some() {
             (
-                crate::anim::attack_action(battle),
+                crate::anim::ACT_MELEE,
                 self.player_attack_frame as usize,
             )
         } else {

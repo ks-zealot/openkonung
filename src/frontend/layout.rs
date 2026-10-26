@@ -143,9 +143,38 @@ pub const MENU_IMAGE_A: usize = 0;
 pub const MENU_IMAGE_SETTINGS: usize = 1;
 pub const MENU_IMAGE_SMALL: usize = 2;
 
+/// `SETTINGS_HIT` from `konung.res` VA `0x46257C`: 10 records of
+/// `{x1,y1,x2,y2}` (inclusive), 640 first then 800. Order: 640 video,
+/// 800 video, transparency, shadows, day/night, light effects, music, sound,
+/// OK, Cancel. `Rect` widths convert the inclusive right/bottom edge.
+pub const SETTINGS_HIT_640: [Rect; 10] = [
+    Rect::new(351, 112, 31, 31),
+    Rect::new(474, 112, 31, 31),
+    Rect::new(413, 166, 31, 31),
+    Rect::new(413, 202, 31, 31),
+    Rect::new(413, 236, 31, 31),
+    Rect::new(413, 272, 31, 31),
+    Rect::new(413, 306, 31, 31),
+    Rect::new(413, 342, 31, 31),
+    Rect::new(250, 420, 70, 61),
+    Rect::new(320, 420, 71, 61),
+];
+pub const SETTINGS_HIT_800: [Rect; 10] = [
+    Rect::new(435, 144, 41, 41),
+    Rect::new(588, 144, 41, 41),
+    Rect::new(513, 206, 41, 41),
+    Rect::new(513, 250, 41, 41),
+    Rect::new(513, 294, 41, 41),
+    Rect::new(513, 338, 41, 41),
+    Rect::new(513, 382, 41, 41),
+    Rect::new(513, 426, 41, 41),
+    Rect::new(300, 510, 100, 91),
+    Rect::new(400, 510, 100, 91),
+];
+
 /// `SAVE{width}R.RES` images. Confirmed from the decoded artwork: `#0` is the
-/// **Load** screen ("Загрузка игры") and `#1` is the **Save** screen
-/// ("Сохранение игры").
+/// **Load** screen ("D-D�D3�?��D�D�D� D,D3�?�<") and `#1` is the **Save** screen
+/// ("D�D_�.�?D�D�D�D�D,D� D,D3�?�<").
 pub const SAVE_IMAGE_LOAD: usize = 0;
 pub const SAVE_IMAGE_SAVE: usize = 1;
 
@@ -455,6 +484,21 @@ impl FrontendRes {
             FrontendRes::R640 => &SAVE_SLOT_RECTS_640,
             FrontendRes::R800 => &SAVE_SLOT_RECTS_800,
         }
+    }
+
+    /// Original Settings control hit rectangles (`0x46257C`, 10 controls).
+    pub fn settings_hit_rects(self) -> &'static [Rect] {
+        match self {
+            FrontendRes::R640 => &SETTINGS_HIT_640,
+            FrontendRes::R800 => &SETTINGS_HIT_800,
+        }
+    }
+
+    /// Control index under a logical pointer position, if any.
+    pub fn settings_hit_test(self, x: i32, y: i32) -> Option<usize> {
+        self.settings_hit_rects()
+            .iter()
+            .position(|r| r.contains(x, y))
     }
 
     /// Slot index under a logical pointer position, if any.

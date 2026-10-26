@@ -12,6 +12,8 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+#[path = "abi/config.rs"]
+mod config_api;
 #[path = "abi/debug.rs"]
 mod debug;
 #[path = "abi/frame.rs"]
@@ -30,7 +32,10 @@ mod pack_api;
 mod resource;
 #[path = "abi/save_api.rs"]
 mod save_api;
+#[path = "abi/video.rs"]
+mod video_api;
 
+pub use self::config_api::*;
 pub use self::debug::*;
 pub use self::frame::*;
 pub use self::frontend_api::*;
@@ -40,6 +45,7 @@ pub use self::memory::*;
 pub use self::pack_api::*;
 pub use self::resource::*;
 pub use self::save_api::*;
+pub use self::video_api::*;
 
 pub mod actors;
 pub mod anim;
@@ -47,6 +53,7 @@ pub mod app;
 pub mod character;
 pub mod character_screen;
 pub mod combat;
+pub mod config;
 pub mod constants;
 pub mod coords;
 pub mod dialog;
@@ -58,6 +65,8 @@ pub mod hud;
 pub mod intr;
 pub mod inventory;
 pub mod item;
+pub mod legacy_save;
+pub mod lighting;
 pub mod loc;
 pub mod menu_res;
 pub mod names;
@@ -71,6 +80,7 @@ pub mod script;
 pub mod sound;
 pub mod trade;
 pub mod trade_screen;
+pub mod video;
 pub mod world_map;
 pub mod world_objects;
 
@@ -156,3 +166,4 @@ pub extern "C" fn debug_player_y() -> f32 {
         .map(|g| g.player_y as f32)
         .unwrap_or(0.0)
 }
+

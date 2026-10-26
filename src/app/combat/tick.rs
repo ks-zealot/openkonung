@@ -15,9 +15,20 @@ impl PlayableApp {
         self.update_projectiles();
         self.combat_frame = self.combat_frame.wrapping_add(1);
         if self.combat_frame & DOT_INTERVAL_MASK == 0 {
+            // `FUN_0041D048` calls `FUN_0041BD3C` for every active object group
+            // in the table, not only the current location's groups.
+            if let Some(tables) = self.tables.as_mut() {
+                for g in tables.groups.iter_mut() {
+                    if g.class_1e & 0x40 != 0 {
+                        crate::actors::update_group_growth(g);
+                    }
+                }
+            }
+            self.update_group_relations();
             self.apply_dot();
         }
         self.advance_all_death_frames();
+        self.update_world_ai();
         self.update_player_combat();
         self.update_party_combat();
         self.update_world_combat();

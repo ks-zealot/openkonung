@@ -22,12 +22,15 @@
 //! - The held item is hidden from the equipment slots and previewed at
 //!   `(167,322)` @640 / `(215,393)` @800 (`0x465C44`/`0x465C48`).
 
-use crate::character::{stat_cost, CharacterClass, PrimaryStat};
+use crate::character::{can_raise_any, stat_cost, stat_growth_cap, CharacterClass, PrimaryStat};
 use crate::inventory::{item_weight, OwnerSnapshot};
 use crate::res::{blit, Res};
 
 /// `INTR` index of the character-window background.
 pub const WINDOW_SPRITE: usize = 2;
+/// `INTR[171]`: the 10x10 "raise stat / level up" cross drawn in the
+/// `0x465B34` column (`FUN_0042cbd0` case 3).
+pub const RAISE_ICON: usize = 171;
 
 /// Live animation pose used by the paper doll (`FUN_0042ea6c` draws the
 /// currently selected entity's action/direction/frame).
@@ -146,6 +149,10 @@ pub enum ScreenHit {
     Additional(usize),
     Special,
     Inventory(usize),
+    /// The icon-only "level up" row (`FUN_00410B08(entity, 0)` / command 0).
+    RaiseLevel,
+    /// One of the four stat rows in the "raise" column (command 3/5/2/6).
+    Raise(PrimaryStat),
     None,
 }
 
@@ -173,6 +180,29 @@ pub fn hit_test(x: i32, y: i32, logical_w: i32, equipment: &[u16; 6], raw_0x12: 
     let (sx, sy) = special_base(sel);
     if x >= sx && x < sx + MAIN_CELL && y >= sy && y < sy + MAIN_CELL {
         return ScreenHit::Special;
+    }
+    // `0x465B34` raise column. The original dispatches these rows through its
+    // mode-7 widget table; the remake uses the drawn glyph extent (documented
+    // approximation, like the equipment cells above).
+    for (slot, stat) in [
+        (0usize, None),
+        (1, Some(PrimaryStat::Charisma)),
+        (2, Some(PrimaryStat::Strength)),
+        (3, Some(PrimaryStat::Dexterity)),
+        (4, Some(PrimaryStat::Endurance)),
+    ] {
+        let (x0, y0) = if sel == 0 {
+            TABLE2_640[slot]
+        } else {
+            TABLE2_800[slot]
+        };
+        let (w, h) = if stat.is_none() { (14, 14) } else { (36, 14) };
+        if x >= x0 && x < x0 + w && y >= y0 && y < y0 + h {
+            return match stat {
+                Some(stat) => ScreenHit::Raise(stat),
+                None => ScreenHit::RaiseLevel,
+            };
+        }
     }
     let l = crate::hud::layout(logical_w);
     for slot in 0..l.visible_slots {
@@ -457,9 +487,9 @@ const TABLE2_800: [(i32, i32); 5] = [(722, 89), (716, 138), (716, 158), (716, 18
 
 fn class_from_entity(class: u8) -> Option<CharacterClass> {
     match class {
-        2 => Some(CharacterClass::Chief),
+        2 => Some(CharacterClass::Merchant),
         3 => Some(CharacterClass::Hunter),
-        4 => Some(CharacterClass::Merchant),
+        4 => Some(CharacterClass::Chief),
         5 => Some(CharacterClass::Warrior),
         _ => None,
     }
@@ -469,6 +499,7 @@ fn class_from_entity(class: u8) -> Option<CharacterClass> {
 /// original **absolute** screen anchors and the original **small** font
 /// (`0x58BC34`) is used, matching `FUN_0042cbd0` case 3 exactly.
 fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &CharacterSheet) {
+    let raise_icon = res.intr_sprite(RAISE_ICON);
     let Some(font) = res.fonts.small.as_ref() else {
         return;
     };
@@ -553,25 +584,83 @@ fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &Cha
     // «поднять» column (the 5-slot loop): `FUN_00410b08` returns the tier cost to
     // raise the stat (`character::stat_cost`) when the player can afford it.
     if let Some(class) = class_from_entity(sheet.class) {
+        // Row 0 is the icon-only "level up" control: `FUN_00410b08(entity, 0)`
+        // gates it and the number slot is skipped.
+        if can_raise_any(
+            class,
+            s.level,
+            s.dexterity_current,
+            s.charisma_current,
+            s.strength_current,
+            s.endurance_current,
+        ) {
+            if let Some(icon) = raise_icon.as_ref() {
+                let (x, y) = t2(0);
+                blit(frame, fw, fh, &icon.data, icon.w, icon.h, x, y + 2);
+            }
+        }
         for (slot, stat, value) in [
             (1usize, PrimaryStat::Charisma, s.charisma_current),
             (2, PrimaryStat::Strength, s.strength_current),
             (3, PrimaryStat::Dexterity, s.dexterity_current),
             (4, PrimaryStat::Endurance, s.endurance_current),
         ] {
-            let cost = needed_raise(class, stat, value, s.available_xp);
+            let cost = needed_raise(class, stat, value, s.level, s.available_xp);
             if cost != 0 {
                 let (x, y) = t2(slot);
                 let text = format!("{}", cost);
                 let _ = font.draw(frame, fw, fh, &text, x, y, Some([235, 235, 210]));
+                if let Some(icon) = raise_icon.as_ref() {
+                    blit(frame, fw, fh, &icon.data, icon.w, icon.h, x + 0x18, y + 2);
+                }
             }
         }
     }
 }
 
-/// `FUN_00410b08` value for a non-specialized stat request: the cost returned by
-/// the tier table (`character::stat_cost`) when `available_xp` covers it, else 0.
-fn needed_raise(class: CharacterClass, stat: PrimaryStat, value: u16, available_xp: u32) -> u32 {
+/// `FUN_00410b08` value for one stat request (commands 2/3/5/6): `0` when the
+/// level cap for the stat is already reached, otherwise the tier cost when
+/// `available_xp` covers it.
+pub fn stat_raise_cost(sheet: &CharacterSheet, stat: PrimaryStat) -> u32 {
+    let Some(class) = class_from_entity(sheet.class) else {
+        return 0;
+    };
+    let s = &sheet.snapshot;
+    let value = match stat {
+        PrimaryStat::Charisma => s.charisma_current,
+        PrimaryStat::Strength => s.strength_current,
+        PrimaryStat::Dexterity => s.dexterity_current,
+        PrimaryStat::Endurance => s.endurance_current,
+    };
+    needed_raise(class, stat, value, s.level, s.available_xp)
+}
+
+/// `FUN_00410b08(entity, 0)`: whether the icon-only level-up row is available.
+pub fn level_up_available(sheet: &CharacterSheet) -> bool {
+    let Some(class) = class_from_entity(sheet.class) else {
+        return false;
+    };
+    let s = &sheet.snapshot;
+    can_raise_any(
+        class,
+        s.level,
+        s.dexterity_current,
+        s.charisma_current,
+        s.strength_current,
+        s.endurance_current,
+    )
+}
+
+fn needed_raise(
+    class: CharacterClass,
+    stat: PrimaryStat,
+    value: u16,
+    level: u8,
+    available_xp: u32,
+) -> u32 {
+    if stat_growth_cap(class, stat, level) as u16 <= value {
+        return 0;
+    }
     let cost = stat_cost(class, stat, value);
     if available_xp >= cost {
         cost

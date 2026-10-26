@@ -3,7 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::actors::{
-    build_population, find_path, sort_actors, update_population, PopulationBuild, LOGIC_TICK_HZ,
+    build_population, find_path, sort_actors, update_population, ActorMotion, PopulationBuild,
+    LOGIC_TICK_HZ,
 };
 use crate::character::PlayerCharacter;
 use crate::coords::{
@@ -26,6 +27,7 @@ mod graph;
 mod buttons;
 mod input;
 mod inventory;
+mod lighting;
 mod map;
 mod party;
 mod player;
@@ -37,6 +39,7 @@ mod settlement_trade;
 mod sound;
 mod text;
 mod trade;
+mod video_triggers;
 mod world_draw;
 mod world_items;
 
@@ -190,6 +193,9 @@ pub struct PlayableApp {
     /// Timed feedback text for the original pickup messages.
     pickup_message: Option<String>,
     pickup_message_t: f64,
+    /// Original leader final/game-over flag (`Entity+0x04 & 0x80`); the movie
+    /// trigger is latched once so it is not requested every frame.
+    pub(super) game_over: bool,
 
     // R2 render-layer diagnostics.
     layer_debug: bool,
@@ -211,9 +217,14 @@ pub struct PlayableApp {
     // presentation
     pub frame: Vec<u8>,
     pub texts: Vec<TextItem>,
-    /// Sound ids requested this frame (drained by the browser shell). Mirrors
-    /// the original `FUN_0042A13C(id, ...)` playback calls.
-    pub sounds: Vec<u16>,
+    /// Sound requests queued this frame (drained by the browser shell). Mirrors
+    /// the original `FUN_0042A13C(id, volume, pan, loop)` playback calls,
+    /// including the positional volume/pan and secondary-buffer rate.
+    pub sounds: Vec<crate::sound::SoundEvent>,
+    /// `Entity` index the protagonist was loaded from. The shipped party always
+    /// uses `0`; a legacy `KONUNG.SAn` header stores it explicitly and the
+    /// exporter writes it back (`_DAT_0081D56C - 0x78A250) / 0x100`).
+    pub leader_entity_index: usize,
     /// Visible inventory slot under the mouse (HUD hover; read-only).
     hovered_slot: Option<usize>,
     /// Character screen (`INTR[2]`) open. Escape closes it.
@@ -389,6 +400,7 @@ impl PlayableApp {
             player_interact: false,
             pickup_message: None,
             pickup_message_t: 0.0,
+            game_over: false,
             layer_debug: false,
             layer_counts: LayerCounts::default(),
             props_drawn: 0,
@@ -403,6 +415,7 @@ impl PlayableApp {
             frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H * 4) as usize],
             texts: Vec::new(),
             sounds: Vec::new(),
+            leader_entity_index: 0,
             hovered_slot: None,
             character_screen: false,
             map_open: false,
@@ -458,10 +471,12 @@ impl PlayableApp {
         // The protagonist/leader (party slot 0) starts selected (`FUN_004246C0`
         // sets `selection[0] = leader` after loading the save).
         app.party_selected[0] = true;
+        app.reset_object_group_activity();
         // New games start with the 56-byte mask cleared (`FUN_00436214` case 8
         // memsets `0x81CF80`); locations are revealed only by map items.
         app.sweep_all_owners();
         app.rebuild_portal_bindings();
+        app.apply_settlement_props();
         app.rebuild_world_objects();
         app.center_camera_on_player(true, 0.0);
         app.fit_graph();
@@ -511,6 +526,8 @@ impl PlayableApp {
             self.update_player(dt);
             self.update_party(dt);
             self.update_combat(dt);
+            self.check_game_over_video();
+            self.check_defeat_video();
             self.tick_temp_effects(dt);
             if self.camera_follow {
                 self.center_camera_on_player(false, dt);

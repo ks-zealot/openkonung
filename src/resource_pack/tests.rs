@@ -29,6 +29,7 @@ fn minimal_pack() -> ResourcePack {
             named(12, "INTR800R.RES", 12),
             named(13, "Quest_r.res", 13),
             named(14, "SOUNDS.RES", 14),
+            named(16, "LIGHTS.RES", 16),
         ],
         profiles: vec![
             IdBlob {
@@ -52,9 +53,18 @@ fn minimal_pack() -> ResourcePack {
             name: "Konung.1".into(),
             bytes: vec![1; 8],
         }],
+        light_maps: vec![IdBlob {
+            id: 1,
+            name: "LIGHTS.1".into(),
+            bytes: vec![1; 8],
+        }],
         music: vec![MusicBlob {
             name: "music/track02.ogg".into(),
             bytes: vec![9; 8],
+        }],
+        videos: vec![VideoBlob {
+            name: "poster".into(),
+            bytes: vec![7; 8],
         }],
     }
 }

@@ -50,7 +50,8 @@ pub struct ActorMotion {
     pub citizen: bool,
     /// Current melee target. `None` for ordinary citizens/wanderers.
     pub combat_target: Option<crate::combat::CombatTarget>,
-    /// Attack-cycle length (`Res::action_cycle_frames` for the attack row).
+    /// Cycle length for the active attack: melee row `5`
+    /// (`FUN_0041EB48`/`FUN_004123BC` case 5) or ranged row `4`.
     pub attack_frames: u8,
     /// Ranged order (action row 4) for bow-armed actors.
     pub ranged_order: bool,

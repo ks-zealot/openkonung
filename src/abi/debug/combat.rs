@@ -80,3 +80,43 @@ pub extern "C" fn debug_combat_state_len() -> u32 {
         None => 0,
     }
 }
+
+#[no_mangle]
+pub extern "C" fn debug_ai_setup() -> u32 {
+    match runtime_mut().game.as_mut() {
+        Some(g) => g.ai_test_setup(),
+        None => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_world_target(entity_id: u32) -> i32 {
+    match runtime_mut().game.as_deref() {
+        Some(g) => g.world_target_code(entity_id as usize),
+        None => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_group_activity(group_id: u32) -> u32 {
+    match runtime_mut().game.as_deref() {
+        Some(g) => g.group_activity(group_id as usize),
+        None => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_set_group_activity(group_id: u32, activity: u32) -> u32 {
+    match runtime_mut().game.as_mut() {
+        Some(g) => g.set_group_activity(group_id as usize, activity as u8),
+        None => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_world_group(entity_id: u32) -> i32 {
+    match runtime_mut().game.as_deref() {
+        Some(g) => g.world_group_id(entity_id as usize),
+        None => -1,
+    }
+}

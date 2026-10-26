@@ -194,3 +194,123 @@ pub extern "C" fn take_load_request() -> i32 {
 pub extern "C" fn debug_save_slot_named(slot: u32) -> u32 {
     save_slot_named(slot) as u32
 }
+
+// --- Legacy `KONUNG.SAV` / `KONUNG.SA0..9` import and export -----------------
+
+static mut LEGACY_FILE: Vec<u8> = Vec::new();
+static mut LEGACY_TEXT: Vec<u8> = Vec::new();
+
+/// Build the live game's original `KONUNG.SAn` payload. Returns its length, or
+/// 0 when no game is running.
+#[no_mangle]
+pub extern "C" fn legacy_export_size() -> u32 {
+    let Some(game) = super::runtime_mut().game.as_deref() else {
+        return 0;
+    };
+    let bytes = game.export_legacy_snapshot();
+    let len = bytes.len() as u32;
+    unsafe {
+        LEGACY_FILE = bytes;
+    }
+    len
+}
+
+#[no_mangle]
+pub extern "C" fn legacy_export_ptr() -> *const u8 {
+    unsafe { (*std::ptr::addr_of!(LEGACY_FILE)).as_ptr() }
+}
+
+/// Import an original snapshot into the live game. Returns 1 on success.
+#[no_mangle]
+pub extern "C" fn legacy_import(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() || len == 0 {
+        return 0;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    if super::runtime_mut().game.is_none() {
+        // Match `load_snapshot`: start a base game first, then apply the
+        // snapshot. The leader's class comes from the snapshot record.
+        let class = match crate::legacy_save::LegacySnapshot::parse(bytes)
+            .ok()
+            .and_then(|s| s.leader())
+            .and_then(|e| crate::character::CharacterClass::from_entity_class(e.archetype & 7))
+        {
+            Some(c) => c,
+            None => return 0,
+        };
+        let build = CharacterBuild::from_class(class);
+        if super::lifecycle::start_game(0, build, -1) == 0 {
+            return 0;
+        }
+    }
+    let rt = super::runtime_mut();
+    let Some(game) = rt.game.as_deref_mut() else {
+        return 0;
+    };
+    match game.import_legacy_snapshot(bytes) {
+        Ok(()) => {
+            rt.active = super::ActiveMode::Game;
+            1
+        }
+        Err(e) => {
+            eprintln!("legacy_import: {e}");
+            0
+        }
+    }
+}
+
+/// Parse a 500-byte `KONUNG.SAV` table into NUL-separated UTF-8. Returns 1.
+#[no_mangle]
+pub extern "C" fn legacy_names_parse(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() || len == 0 {
+        return 0;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    match crate::legacy_save::parse_slot_names(bytes) {
+        Ok(names) => {
+            let text = names.join("\0");
+            unsafe {
+                LEGACY_TEXT = text.into_bytes();
+            }
+            1
+        }
+        Err(e) => {
+            eprintln!("legacy_names_parse: {e}");
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn legacy_names_text_ptr() -> *const u8 {
+    unsafe { (*std::ptr::addr_of!(LEGACY_TEXT)).as_ptr() }
+}
+
+#[no_mangle]
+pub extern "C" fn legacy_names_text_len() -> u32 {
+    unsafe { (*std::ptr::addr_of!(LEGACY_TEXT)).len() as u32 }
+}
+
+/// Encode NUL-separated UTF-8 slot names into a 500-byte `KONUNG.SAV` payload.
+/// Returns the byte length, or 0 on a malformed request.
+#[no_mangle]
+pub extern "C" fn legacy_names_build(ptr: *const u8, len: u32) -> u32 {
+    if ptr.is_null() || len == 0 {
+        return 0;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    let text = match std::str::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(_) => return 0,
+    };
+    let mut names: [String; crate::legacy_save::SLOT_COUNT] = Default::default();
+    for (i, part) in text.split('\0').take(crate::legacy_save::SLOT_COUNT).enumerate() {
+        names[i] = part.to_string();
+    }
+    let out = crate::legacy_save::write_slot_names(&names);
+    let n = out.len() as u32;
+    unsafe {
+        LEGACY_FILE = out;
+    }
+    n
+}

@@ -48,6 +48,10 @@ pub const ITEM_LIFETIME_OFF: usize = 0x08;
 pub const ITEM_MODIFIER_TABLE_VA: u32 = 0x462798;
 pub const ITEM_MODIFIER_STRIDE: usize = 0x40;
 pub const ITEM_MODIFIER_COUNT: usize = 18;
+/// Settlement target → prop object table (`FUN_0043adf0`), stride `0x40`;
+/// the base object record index is the `u16` at `+0x02`.
+pub const SETTLEMENT_PROP_TABLE_VA: u32 = 0x458A02;
+pub const SETTLEMENT_PROP_STRIDE: usize = 0x40;
 pub const SMALL_FONT_OFF: usize = 0x171E34;
 pub const LARGE_FONT_OFF: usize = 0x16193C;
 /// Highlight/selected variant of the small font (VA `0x58B8F0`), used by the

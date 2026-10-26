@@ -88,6 +88,21 @@ pub fn find_path(
     goal: (i32, i32),
     bounds: (i32, i32, i32, i32),
 ) -> Option<Vec<u8>> {
+    find_path_with_exception(collision, occupied, start, goal, bounds, None)
+}
+
+/// As [`find_path`], with the original `FUN_0043DA1F` blocked-goal exception:
+/// an occupied destination is accepted when its low 12 bits equal Entity+0x06
+/// (the ordered target's entity index) and the order byte's low three bits are
+/// non-zero. The all-ones collision marker (`0xFFF`) is never a target.
+pub fn find_path_with_exception(
+    collision: &[u16],
+    occupied: &HashSet<(i32, i32)>,
+    start: (i32, i32),
+    goal: (i32, i32),
+    bounds: (i32, i32, i32, i32),
+    exception_id: Option<u16>,
+) -> Option<Vec<u8>> {
     let (x0, y0, x1, y1) = bounds;
     let w = (x1 - x0 + 1).max(1) as usize;
     let h = (y1 - y0 + 1).max(1) as usize;
@@ -102,8 +117,14 @@ pub fn find_path(
         return Some(Vec::new());
     }
     // The destination must be an "acceptable" (passable) point; the original
-    // aborts the command otherwise.
-    if !is_free(collision, goal.0, goal.1) {
+    // aborts the command otherwise. `Entity+0x06` is the ordered target id and
+    // is the sole exception.
+    let goal_blocked = !is_free(collision, goal.0, goal.1);
+    let allowed = exception_id.is_some_and(|id| {
+        let marker = collision[goal.0 as usize * 160 + goal.1 as usize] & 0x0FFF;
+        marker != 0 && marker != 0x0FFF && marker == id
+    });
+    if goal_blocked && !allowed {
         return None;
     }
     let idx = |x: i32, y: i32| ((y - y0) as usize) * w + ((x - x0) as usize);
@@ -125,10 +146,13 @@ pub fn find_path(
         let cx = x0 + (u % w) as i32;
         let cy = y0 + (u / w) as i32;
         for (dir, nx, ny) in neighbors(cx, cy) {
-            if !in_bounds(nx, ny) || !is_free(collision, nx, ny) {
+            if !in_bounds(nx, ny) {
                 continue;
             }
             let ni = idx(nx, ny);
+            if !is_free(collision, nx, ny) && !(ni == gi && allowed) {
+                continue;
+            }
             if ni != gi && occupied.contains(&(nx, ny)) {
                 continue;
             }

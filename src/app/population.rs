@@ -16,6 +16,36 @@ impl PlayableApp {
                 _ => PopulationBuild::default(),
             }
         };
+        // `FUN_0043ADF0(mode 0)` population growth: consume every negative
+        // `Group+0x02` accumulator and fill the target count before actors are
+        // sorted. Save mode 1 never reaches this path because its cache exists.
+        let grown = {
+            let collision = self.world.loc(loc_id).map(|l| l.collision.as_slice());
+            match (self.tables.as_mut(), collision) {
+                (Some(t), Some(c)) => crate::actors::grow_map(t, loc_id as u8, c, &mut build.rng),
+                _ => Vec::new(),
+            }
+        };
+        for a in grown {
+            let rect = self
+                .tables
+                .as_ref()
+                .and_then(|t| t.groups.get(a.source_group_id))
+                .map(|g| g.rect_a)
+                .unwrap_or_default();
+            let cell = (a.entity.x as i32, a.entity.y as i32);
+            build.motion.insert(
+                a.entity.index,
+                ActorMotion {
+                    cell,
+                    render_cell: cell,
+                    facing: a.entity.facing,
+                    rect_a: rect,
+                    ..Default::default()
+                },
+            );
+            build.actors.push(a);
+        }
         // A recruited companion left its location group (original `0x123` moves
         // the entity into the party group 0), so it must not be rebuilt as a
         // world NPC at its location.

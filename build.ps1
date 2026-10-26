@@ -16,6 +16,12 @@ try {
     if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
     if (-not $py) { throw 'python not found (needed to generate manifest.json)' }
 
+    # 0) Browser-playable movies (original .flm are AVI/Indeo-5). Missing
+    #    ffmpeg is non-fatal: the shell simply skips unavailable clips.
+    Write-Host 'Transcoding videos...'
+    & $py.Source (Join-Path $root 'tools\transcode_videos.py') --base $base
+    if ($LASTEXITCODE -ne 0) { throw 'video transcode failed' }
+
     # 1) Raw manifest (file selection for the packer + fallback metadata).
     $rawManifest = Join-Path $root 'www\manifest.raw.json'
     & $py.Source (Join-Path $root 'tools\make_manifest.py') --base $base --out $rawManifest

@@ -338,3 +338,27 @@ fn paper_doll_peace_frame_is_nonempty() {
         }
     }
 }
+
+#[test]
+fn object_flame_descriptors_match_the_record() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |n: &str| std::fs::read(dir.join(n)).ok();
+    let (Some(game), Some(graph), Some(objects), Some(exe)) = (
+        read("Game.res"),
+        read("GRAPH.RES"),
+        read("Objects.res"),
+        read("CLIENT.EXE"),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let res = Res::new(game, graph, objects, exe);
+    // Object 41 is a prop with 7 flame emitters (selectors seen 2/3/4).
+    let emitters = res.object_flames(41);
+    assert_eq!(emitters.len(), 7);
+    assert!(emitters.iter().all(|e| e.selector <= 6));
+    assert!(emitters.iter().any(|e| e.x != 0 || e.y != 0));
+    assert_eq!(res.object_frame_count(41), 1);
+    // Actor blocks (id < 30) never report flame emitters.
+    assert!(res.object_flames(0).is_empty());
+}

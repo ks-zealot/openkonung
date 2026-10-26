@@ -1,4 +1,4 @@
-﻿//! `combat` subsystem of [`crate::app`]: melee orchestration, HP/death and the
+//! `combat` subsystem of [`crate::app`]: melee orchestration, HP/death and the
 //! fixed-rate poison tick.
 //!
 //! Rules live in [`crate::combat`]; this module only maps the runtime player,
@@ -16,14 +16,13 @@ use crate::coords::direction_from_cells;
 
 impl PlayableApp {
     fn player_attack_frames(&self) -> u8 {
-        let battle = crate::anim::battle_from_flags(self.player.flags_b);
         self.world
             .res
             .action_cycle_frames(
                 self.player.entity_class(),
                 self.player.hero.visual_index,
                 (self.player_dir.max(0) as usize) & 7,
-                crate::anim::attack_action(battle),
+                crate::anim::ACT_MELEE,
             )
             .unwrap_or(1)
             .min(u8::MAX as usize) as u8
@@ -74,6 +73,10 @@ impl PlayableApp {
                     crate::anim::ACT_RANGED as u8,
                     self.player.raw_0x12,
                     true,
+                    Some((
+                        self.player_x.round() as i32,
+                        self.player_y.round() as i32,
+                    )),
                 );
             }
             self.player_ranged_frame = self.player_ranged_frame.saturating_add(1);
@@ -109,10 +112,13 @@ impl PlayableApp {
             if self.player_attack_frame == 0 {
                 self.play_actor_action(
                     self.player.entity_class(),
-                    crate::anim::attack_action(crate::anim::battle_from_flags(self.player.flags_b))
-                        as u8,
+                    crate::anim::ACT_MELEE as u8,
                     self.player.raw_0x12,
                     true,
+                    Some((
+                        self.player_x.round() as i32,
+                        self.player_y.round() as i32,
+                    )),
                 );
             }
             self.player_attack_frame = self.player_attack_frame.saturating_add(1);
@@ -177,7 +183,7 @@ impl PlayableApp {
         occupied.insert(player_cell);
         let mut attacks: Vec<(usize, CombatTarget)> = Vec::new();
         let mut shots: Vec<(usize, (i32, i32), Option<usize>)> = Vec::new();
-        let mut action_sounds: Vec<(u8, u8, u8)> = Vec::new();
+        let mut action_sounds: Vec<(u8, u8, u8, (i32, i32))> = Vec::new();
         for (i, m) in party.iter_mut().enumerate() {
             if m.motion.dead {
                 continue;
@@ -219,6 +225,7 @@ impl PlayableApp {
                         m.entity.archetype,
                         crate::anim::ACT_RANGED as u8,
                         m.entity.raw_0x12,
+                        m.motion.cell,
                     ));
                     m.motion.attack_frames = world
                         .res
@@ -269,17 +276,18 @@ impl PlayableApp {
                             m.entity.archetype,
                             m.entity.visual_index,
                             dir as usize,
-                            crate::anim::attack_action(battle),
+                            crate::anim::ACT_MELEE,
                         )
                         .unwrap_or(1)
                         .min(u8::MAX as usize) as u8;
                 }
-                m.motion.action = crate::anim::attack_action(battle) as u8;
+                m.motion.action = crate::anim::ACT_MELEE as u8;
                 if m.motion.frame == 0 {
                     action_sounds.push((
                         m.entity.archetype,
-                        crate::anim::attack_action(battle) as u8,
+                        crate::anim::ACT_MELEE as u8,
                         m.entity.raw_0x12,
+                        m.motion.cell,
                     ));
                 }
                 m.motion.frame = m.motion.frame.saturating_add(1);
@@ -300,8 +308,8 @@ impl PlayableApp {
                 Self::advance_motion_walk(&mut m.motion, collision, &mut occupied);
             }
         }
-        for (archetype, action, weapon_slot) in action_sounds {
-            self.play_actor_action(archetype, action, weapon_slot, false);
+        for (archetype, action, weapon_slot, cell) in action_sounds {
+            self.play_actor_action(archetype, action, weapon_slot, false, Some(cell));
         }
         for (i, tc, prop) in shots {
             if !self.spawn_projectile(CombatTarget::Party(i), tc, prop) {
@@ -316,15 +324,28 @@ impl PlayableApp {
         }
     }
 
-    pub(super) fn update_world_combat(&mut self) {
+    pub(in crate::app) fn update_world_combat(&mut self) {
         let loc = self.current_map;
         let player_cell = (self.player_x.round() as i32, self.player_y.round() as i32);
         let player_dead = self.player.dead;
         let party_cells: Vec<(i32, i32)> = self.party.iter().map(|m| m.motion.cell).collect();
         let party_dead: Vec<bool> = self.party.iter().map(|m| m.motion.dead).collect();
+        // `FUN_00412E00`: a humanoid actor holding a bow + ammo switches to the
+        // ranged action row (4) as soon as it owns a combat target. Resolve the
+        // capability before taking the mutable population borrow.
+        let world_ids: Vec<usize> = self
+            .population_cache
+            .get(&loc)
+            .map(|p| p.actors.iter().map(|a| a.entity.index).collect())
+            .unwrap_or_default();
+        let ranged_caps: HashSet<usize> = world_ids
+            .into_iter()
+            .filter(|&id| self.ranged_ready(CombatTarget::World(id), false))
+            .collect();
         let PlayableApp {
             world,
             population_cache,
+            combat_rng,
             ..
         } = self;
         let collision = world
@@ -346,7 +367,12 @@ impl PlayableApp {
         }
         let mut attacks: Vec<(usize, CombatTarget)> = Vec::new();
         let mut shots: Vec<(usize, (i32, i32), Option<usize>)> = Vec::new();
-        let mut action_sounds: Vec<(u8, u8, u8)> = Vec::new();
+        let mut action_sounds: Vec<(u8, u8, u8, (i32, i32))> = Vec::new();
+        let world_state: HashMap<usize, ((i32, i32), bool)> = pop
+            .motion
+            .iter()
+            .map(|(&id, m)| (id, (m.cell, m.dead)))
+            .collect();
         let PopulationBuild { actors, motion, .. } = pop;
         for a in actors.iter_mut() {
             let id = a.entity.index;
@@ -362,7 +388,7 @@ impl PlayableApp {
             let target_cell = match target {
                 CombatTarget::Player => Some(player_cell),
                 CombatTarget::Party(j) => party_cells.get(j).copied(),
-                CombatTarget::World(_) => None,
+                CombatTarget::World(id) => world_state.get(&id).map(|&(cell, _)| cell),
                 CombatTarget::Prop(index) => world
                     .loc(loc)
                     .and_then(|l| l.props.iter().find(|p| p.ri == index))
@@ -374,12 +400,22 @@ impl PlayableApp {
             let target_dead = match target {
                 CombatTarget::Player => player_dead,
                 CombatTarget::Party(j) => party_dead.get(j).copied().unwrap_or(true),
-                CombatTarget::World(_) => true,
+                CombatTarget::World(id) => world_state.get(&id).map(|&(_, dead)| dead).unwrap_or(true),
                 CombatTarget::Prop(_) => false,
             };
             if target_dead {
                 m.combat_target = None;
                 continue;
+            }
+            if !m.ranged_order && ranged_caps.contains(&id) {
+                m.ranged_order = true;
+                m.ranged_fired = false;
+                m.attack_frames = 0;
+                m.frame = 0;
+                m.path.clear();
+                m.target = None;
+                m.walking = false;
+                m.render_cell = m.cell;
             }
             if m.ranged_order {
                 m.path.clear();
@@ -393,6 +429,7 @@ impl PlayableApp {
                         a.entity.archetype,
                         crate::anim::ACT_RANGED as u8,
                         a.entity.raw_0x12,
+                        m.cell,
                     ));
                     m.attack_frames = world
                         .res
@@ -443,17 +480,18 @@ impl PlayableApp {
                             a.entity.archetype,
                             a.entity.visual_index,
                             dir as usize,
-                            crate::anim::attack_action(battle),
+                            crate::anim::ACT_MELEE,
                         )
                         .unwrap_or(1)
                         .min(u8::MAX as usize) as u8;
                 }
-                m.action = crate::anim::attack_action(battle) as u8;
+                m.action = crate::anim::ACT_MELEE as u8;
                 if m.frame == 0 {
                     action_sounds.push((
                         a.entity.archetype,
-                        crate::anim::attack_action(battle) as u8,
+                        crate::anim::ACT_MELEE as u8,
                         a.entity.raw_0x12,
+                        m.cell,
                     ));
                 }
                 m.frame = m.frame.saturating_add(1);
@@ -463,19 +501,58 @@ impl PlayableApp {
                 }
             } else {
                 let battle = crate::anim::battle_from_flags(a.entity.flags_b);
-                m.action = crate::anim::walk_action(battle) as u8;
-                if !m.walking && m.path.is_empty() {
+                let is_mo = matches!(a.entity.archetype, 0x4D | 0x4F);
+                let was_walking = m.walking;
+                let mut hold = false;
+                if is_mo && !m.walking {
+                    if a.entity.raw_0x12 > 0 {
+                        a.entity.raw_0x12 -= 1;
+                        hold = a.entity.raw_0x12 > 0;
+                    }
+                    if !hold {
+                        if !m.path.is_empty() {
+                            crate::actors::begin_actor_segment(m, &mut occupied, collision);
+                        } else if let Some(goal) =
+                            Self::melee_goal(m.cell, tc, collision, &occupied)
+                        {
+                            if goal != m.cell {
+                                Self::start_motion_walk(m, collision, &mut occupied, goal);
+                            }
+                        }
+                    }
+                } else if !is_mo && !m.walking && m.path.is_empty() {
                     if let Some(goal) = Self::melee_goal(m.cell, tc, collision, &occupied) {
                         if goal != m.cell {
                             Self::start_motion_walk(m, collision, &mut occupied, goal);
                         }
                     }
                 }
-                Self::advance_motion_walk(m, collision, &mut occupied);
+                let walking = if is_mo {
+                    Self::advance_motion_walk_cycle(m, collision, &mut occupied)
+                } else {
+                    Self::advance_motion_walk(m, collision, &mut occupied)
+                };
+                if is_mo && was_walking && !walking && a.entity.raw_0x12 == 0 {
+                    // `FUN_004123BC` walk-case M/O delay: ceiling is authored
+                    // `Entity+0xD7`; one random sign draw then one modulus.
+                    let ceiling = world.res.entity_raw_d7(id) as u32;
+                    let span = if ceiling < 2 {
+                        0
+                    } else {
+                        combat_rng.next_u32() % ceiling
+                    };
+                    a.entity.raw_0x12 = (combat_rng.next_u32() % 2) as u8 * span as u8 + 1;
+                }
+                if walking {
+                    m.action = crate::anim::walk_action(battle) as u8;
+                } else {
+                    m.action = crate::anim::idle_action(battle) as u8;
+                    m.frame = 0;
+                }
             }
         }
-        for (archetype, action, weapon_slot) in action_sounds {
-            self.play_actor_action(archetype, action, weapon_slot, false);
+        for (archetype, action, weapon_slot, cell) in action_sounds {
+            self.play_actor_action(archetype, action, weapon_slot, false, Some(cell));
         }
         for (id, tc, prop) in shots {
             if !self.spawn_projectile(CombatTarget::World(id), tc, prop) {
@@ -492,3 +569,4 @@ impl PlayableApp {
         }
     }
 }
+

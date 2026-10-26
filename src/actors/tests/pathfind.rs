@@ -45,6 +45,21 @@ fn find_path_rejects_blocked_goal() {
 }
 
 #[test]
+fn find_path_accepts_entity_six_exception_only() {
+    let mut c = free_collision();
+    c[10 * 160] = 0x0003;
+    let occ = std::collections::HashSet::new();
+    assert!(find_path(&c, &occ, (0, 0), (10, 0), (0, 0, 20, 20)).is_none());
+    assert!(find_path_with_exception(&c, &occ, (0, 0), (10, 0), (0, 0, 20, 20), Some(3))
+        .is_some());
+    assert!(find_path_with_exception(&c, &occ, (0, 0), (10, 0), (0, 0, 20, 20), Some(4))
+        .is_none());
+    c[10 * 160] = 0x0FFF;
+    assert!(find_path_with_exception(&c, &occ, (0, 0), (10, 0), (0, 0, 20, 20), Some(0xFFF))
+        .is_none());
+}
+
+#[test]
 fn dup_column_and_row_walks_keep_constant_direction() {
     let c = free_collision();
     let occ = std::collections::HashSet::new();

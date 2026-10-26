@@ -26,12 +26,24 @@ pub struct Group {
     pub rect_a: Rect,
     /// `+0A/+0E/+12/+16` — second rectangle B (role unresolved, §15).
     pub rect_b: Rect,
+    /// `+0x02` i32 — signed population-growth accumulator. Negative when the
+    /// active count is below the current target; consumed on map entry.
+    #[serde(skip)]
+    pub growth_timer: i32,
+    /// `+0x06` i16 — population-target countdown; when it rolls negative the
+    /// target `count_18` grows by one and this is reset from `0x45E31E`.
+    #[serde(skip)]
+    pub growth_countdown: i16,
     /// `+0x18` u8 — current/population-related count.
     pub count_18: u8,
     /// `+0x19` u8 — capacity / maximum-related count.
     pub capacity: u8,
     /// `+0x1B` u8 — location id this group belongs to.
     pub loc_id: u8,
+    /// `+0x1A` u8 — target group id (`FUN_00412C30` writes the party group id;
+    /// shipped data uses `0`). Authoring data, rehydrated from `Game.N`.
+    #[serde(skip)]
+    pub target_group: u8,
     /// `+0x1C` u8 — active contiguous entity count used by original traversal.
     pub entity_count: u8,
     /// `+0x1E` u8 — group archetype/class/flags; `0` marks inactive (§4.2).

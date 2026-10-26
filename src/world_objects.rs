@@ -139,6 +139,21 @@ pub fn parse_sources(save: &[u8]) -> Vec<WorldObjectSource> {
     out
 }
 
+/// Parse a standalone 500 x 0x40 runtime WorldObject block (legacy snapshot
+/// block). Unlike [`parse_sources`] this keeps every record, including removed
+/// ones (`+0x12 == 0`), because the runtime table is a fixed array.
+pub fn parse_source_block(block: &[u8]) -> Vec<WorldObjectSource> {
+    let mut out = Vec::with_capacity(WORLD_OBJECT_COUNT);
+    for i in 0..WORLD_OBJECT_COUNT {
+        let o = i * WORLD_OBJECT_STRIDE;
+        if o + WORLD_OBJECT_STRIDE > block.len() {
+            break;
+        }
+        out.push(WorldObjectSource::from_record(i, &block[o..o + WORLD_OBJECT_STRIDE]));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

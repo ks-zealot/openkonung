@@ -23,6 +23,9 @@ impl PlayableApp {
         if self.combatant_dead(attacker) || self.combatant_dead(defender) {
             return None;
         }
+        // `FUN_00421B50` case 5: entering the melee row wakes the target's
+        // group (`FUN_004245B4`) before damage is resolved.
+        self.wake_combatant_group(defender, attacker);
         self.combat_attacks = self.combat_attacks.saturating_add(1);
         let a = self.combatant_stats(attacker)?;
         let d = self.combatant_stats(defender)?;
@@ -38,16 +41,22 @@ impl PlayableApp {
         };
         if !roll.hit {
             if roll.dodged {
-                self.play_dodge();
+                self.play_dodge(self.combatant_cell(attacker));
                 self.set_combat_message("D�D�D�D_D�D�D�D,D�");
             }
             return Some(roll);
         }
         self.combat_hits = self.combat_hits.saturating_add(1);
-        self.play_melee_impact(a.archetype, a.weapon_slot);
+        self.play_melee_impact(
+            a.archetype,
+            a.weapon_slot,
+            self.combatant_cell(attacker),
+        );
         let hp_before = d.hp;
         if roll.lethal {
-            self.kill_combatant(defender, self.combatant_level(attacker), 0);
+            // `FUN_004123BC` case 5 calls `FUN_00418480(defender, 0, 0)`:
+            // melee kills never generate a random item (killer level 0).
+            self.kill_combatant(defender, 0, 0);
         } else {
             self.set_combat_hp(defender, hp_before.saturating_sub(roll.damage));
             self.add_combat_poison(defender, roll.poison);

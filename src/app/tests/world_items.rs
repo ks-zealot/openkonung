@@ -143,3 +143,94 @@ fn herb_world_object_pickup_and_respawn() {
         .unwrap();
     assert_eq!((info.class, info.subtype), (9, 1));
 }
+
+#[test]
+fn settlement_linkage_and_prop_flames_tick() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let dir = install_dir();
+    let Ok(flames) = std::fs::read(dir.join("FLAMES.RES")) else {
+        eprintln!("skipping: FLAMES.RES not present");
+        return;
+    };
+    let (Ok(game), Ok(graph), Ok(objects), Ok(exe), Ok(konung), Ok(save)) = (
+        std::fs::read(dir.join("Game.res")),
+        std::fs::read(dir.join("GRAPH.RES")),
+        std::fs::read(dir.join("Objects.res")),
+        std::fs::read(dir.join("CLIENT.EXE")),
+        std::fs::read(dir.join("konung.res")),
+        std::fs::read(dir.join("Game.1")),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let mut res = crate::res::Res::new(game, graph, objects, exe);
+    res.load_items_and_fonts(&konung);
+    res.set_save_game(&save);
+    if res.load_flames(&flames).is_err() {
+        eprintln!("skipping: FLAMES.RES did not decode");
+        return;
+    }
+    app.world.res = res;
+
+    let prop = crate::loc::Prop {
+        ri: 1,
+        object_id: 0,
+        grid_x: 10,
+        grid_y: 10,
+        palette: 0,
+        frame: 0,
+        flame_emitters: Vec::new(),
+        flame_frames: Vec::new(),
+    };
+    let loc = crate::loc::Location {
+        loc_id: 4,
+        data: Vec::new(),
+        props: vec![prop],
+        gates: Vec::new(),
+        graph_placements: Vec::new(),
+        collision: vec![0u16; 320 * 160],
+        max_x: 319,
+        max_y: 159,
+    };
+    app.world.loc_index.insert(4, app.world.locs.len());
+    app.world.locs.push(loc);
+    app.current_map = 4;
+
+    // key 0 base = 7; state 3 -> object record index 10 -> object id 40.
+    let mut settlement = crate::population::Settlement::default();
+    settlement.loc_id = 4;
+    settlement.group_id = 1;
+    settlement.targets = vec![crate::population::SettlementTarget {
+        key: 0,
+        state: 3,
+        prop_index: 1,
+        timer: 0,
+    }];
+    app.settlements = vec![settlement];
+    app.apply_settlement_props();
+    assert_eq!(app.world.locs[0].props[0].object_id, 40);
+
+    // Object 41 has 7 flame emitters; ticking must advance their phases.
+    let emitters = app.world.res.object_flames(41);
+    assert_eq!(emitters.len(), 7);
+    {
+        let p = &mut app.world.locs[0].props[0];
+        p.object_id = 41;
+        p.flame_emitters = emitters;
+        p.flame_frames = vec![0; 7];
+    }
+    let before = app.world.locs[0].props[0].flame_frames.clone();
+    app.world.tick_prop_flames(4);
+    let after = app.world.locs[0].props[0].flame_frames.clone();
+    assert_ne!(before, after, "flame frames did not advance");
+
+    let sprites = app.world.collect_props(4);
+    assert!(
+        sprites.len() >= 8,
+        "expected the prop plus 7 flame sprites, got {}",
+        sprites.len()
+    );
+}

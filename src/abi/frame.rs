@@ -4,6 +4,9 @@ use super::*;
 
 #[no_mangle]
 pub extern "C" fn step(dt: f32) {
+    if crate::video::is_pending() {
+        return;
+    }
     let rt = runtime_mut();
     match rt.active {
         ActiveMode::Frontend => {

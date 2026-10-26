@@ -36,6 +36,15 @@ pub const KIND_QUEST: u32 = 13;
 /// `SOUNDS.RES` sound archive (see `sound.rs`).
 pub const KIND_SOUNDS: u32 = 14;
 
+/// `FLAMES.RES` prop fire frames (see `res/flames.rs`).
+pub const KIND_FLAMES: u32 = 15;
+
+/// `LIGHTS.RES` global light masks/tiles (see `res/lights.rs`).
+pub const KIND_LIGHTS: u32 = 16;
+
+/// Per-map `LIGHTS.N` light-index maps.
+pub const KIND_LIGHT_MAP: u32 = 17;
+
 #[derive(Default)]
 pub struct Loader {
     pub(super) game: Vec<u8>,
@@ -53,6 +62,9 @@ pub struct Loader {
     pub(super) intr800: Vec<u8>,
     pub(super) quest: Vec<u8>,
     pub(super) sounds: Vec<u8>,
+    pub(super) flames: Vec<u8>,
+    pub(super) lights: Vec<u8>,
+    pub(super) light_maps: HashMap<u32, Vec<u8>>,
     pub(super) profiles: HashMap<u32, Vec<u8>>,
     pub(super) konungs: Vec<(u32, Vec<u8>)>,
     /// One-time pre-rendered New-Hero paper-doll frames (hero x weapon slot).
@@ -86,8 +98,17 @@ pub extern "C" fn load_resource(kind: u32, ptr: *mut u8, len: u32) {
         KIND_INTR800 => l.intr800 = data,
         KIND_QUEST => l.quest = data,
         KIND_SOUNDS => l.sounds = data,
+        KIND_FLAMES => l.flames = data,
+        KIND_LIGHTS => l.lights = data,
         _ => {}
     }
+    dealloc(ptr, len);
+}
+
+#[no_mangle]
+pub extern "C" fn load_light_map(id: u32, ptr: *mut u8, len: u32) {
+    let data = unsafe { take_bytes(ptr, len) };
+    loader_mut().light_maps.insert(id, data);
     dealloc(ptr, len);
 }
 

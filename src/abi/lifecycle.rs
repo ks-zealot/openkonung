@@ -108,12 +108,29 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
     // Item templates + original fonts from konung.res (used by the HUD labels).
     res.load_items_and_fonts(&l.names);
 
+    // Prop fire animation (FLAMES.RES). Absence or a decode error is
+    // non-fatal: props simply render without flames.
+    if !l.flames.is_empty() {
+        match res.load_flames(&l.flames) {
+            Ok(n) => eprintln!("FLAMES: loaded {n} frames"),
+            Err(e) => eprintln!("FLAMES: {e}"),
+        }
+    }
+
     // Dialogue/quest database (QUEST_R.RES). Absence or a bad image is
     // non-fatal: NPCs simply do not open a dialogue.
     if !l.quest.is_empty() {
         match res.load_quest(&l.quest) {
             Ok(()) => eprintln!("QUEST: dialogue database loaded"),
             Err(e) => eprintln!("QUEST: {e}"),
+        }
+    }
+
+    // Global lighting masks/tiles (LIGHTS.RES).
+    if !l.lights.is_empty() {
+        match res.load_lights(&l.lights) {
+            Ok(n) => eprintln!("LIGHTS: loaded {n} tiles"),
+            Err(e) => eprintln!("LIGHTS: {e}"),
         }
     }
 
@@ -193,7 +210,13 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
     let layout = edges::spring_layout(&locs, &edges_vec, &pairs);
 
     let location_names = names::parse_location_names(&l.names);
-    let world = World::new(res, locs);
+    let light_maps = std::mem::take(&mut l.light_maps);
+    let mut world = World::new(res, locs);
+    for (id, data) in light_maps {
+        if let Err(e) = world.attach_light_map(id, &data) {
+            eprintln!("LIGHTS.{id}: {e}");
+        }
+    }
 
     let mut app = PlayableApp::new(
         world,
@@ -239,7 +262,14 @@ pub extern "C" fn boot(hero_index: u32, variant: i32) -> u32 {
 pub extern "C" fn frontend_boot(width: u32) -> u32 {
     let res = match width {
         640 => FrontendRes::R640,
-        _ => FrontendRes::R800,
+        800 => FrontendRes::R800,
+        _ => {
+            if crate::config::config().width() == 640 {
+                FrontendRes::R640
+            } else {
+                FrontendRes::R800
+            }
+        }
     };
     match build_frontend(res) {
         Ok(mut f) => {
@@ -352,6 +382,18 @@ pub fn resolve_input(action: InputAction) {
         InputAction::None => {}
         InputAction::Command(c) => handle_frontend_command(c),
         InputAction::OpenMenu => open_frontend_from_game(),
+    }
+}
+
+/// Settings **Ok** may request a frontend-only resolution change. The game
+/// itself stays at its own fixed logical size (800x600).
+pub fn apply_pending_frontend_resolution() {
+    let pending = runtime_mut()
+        .frontend
+        .as_mut()
+        .and_then(|f| f.pending_resolution.take());
+    if let Some(res) = pending {
+        frontend_set_resolution(res.width() as u32);
     }
 }
 

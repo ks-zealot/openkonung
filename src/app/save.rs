@@ -104,6 +104,7 @@ impl PlayableApp {
         self.player.dialogue_id = extra.player_dialogue_id;
         self.player.interface_mode_d2 = extra.player_interface_mode_d2;
         self.player.state_d3 = extra.player_state_d3;
+        self.leader_entity_index = extra.leader_entity_index as usize;
         self.player_x = save.player_x;
         self.player_y = save.player_y;
         self.player_render_x = save.player_x;
@@ -115,11 +116,20 @@ impl PlayableApp {
             entities: save.entities,
         });
         self.settlements = save.settlements;
+        let authored_groups =
+            crate::population::parse_groups(&self.world.res.save_game).ok();
         if let Some(tables) = self.tables.as_mut() {
+            for (i, g) in tables.groups.iter_mut().enumerate() {
+                if let Some(authored) = authored_groups.as_ref().and_then(|v| v.get(i)) {
+                    g.target_group = authored.target_group;
+                }
+            }
             for (i, ge) in extra.groups.iter().enumerate() {
                 if let Some(g) = tables.groups.get_mut(i) {
                     g.activity_1d = ge.activity_1d;
                     g.visited = ge.visited;
+                    g.growth_timer = ge.growth_timer;
+                    g.growth_countdown = ge.growth_countdown;
                 }
             }
         }
@@ -212,7 +222,291 @@ impl PlayableApp {
             self.ensure_population(self.current_map);
         }
         self.sweep_all_owners();
+        self.apply_settlement_props();
         self.center_camera_on_player(true, 0.0);
         Ok(())
     }
+
+    /// Export the live game as an original `KONUNG.SA0..9` payload
+    /// (`0xB07A4` bytes).
+    ///
+    /// The `Game.N`-shaped blocks are copied from the loaded `Game.N` bytes and
+    /// patched with every field the remake models, so bytes the remake does not
+    /// interpret keep the original values. The projectile pool has no recovered
+    /// field map, so the export carries an empty pool (count `0`).
+    pub fn export_legacy_snapshot(&self) -> Vec<u8> {
+        use crate::legacy_save::*;
+        let env = self.capture_save();
+        let game = env.game;
+        let save = self.world.res.save_game.as_slice();
+        let base = |off: usize, len: usize| -> Vec<u8> {
+            if save.len() >= off + len {
+                save[off..off + len].to_vec()
+            } else {
+                vec![0u8; len]
+            }
+        };
+        let groups = patch_groups(
+            base(crate::constants::game_layout::GROUP_OFF, GROUP_BLOCK_LEN),
+            &game.groups,
+        );
+        // Party members and the protagonist live outside `tables.entities` in
+        // the remake; patch their canonical records before writing the block.
+        let mut entities = game.entities.clone();
+        for m in &game.party {
+            if let Some(e) = entities.get_mut(m.entity.index) {
+                *e = m.entity.clone();
+            }
+        }
+        if let Some(e) = entities.get(self.leader_entity_index).cloned() {
+            let patched = entity_from_player_save(&e, &game.player);
+            entities[self.leader_entity_index] = patched;
+        }
+        let entities = patch_entities(
+            base(crate::constants::game_layout::ENTITY_OFF, ENTITY_BLOCK_LEN),
+            &entities,
+        );
+        let world_objects = patch_world_objects(
+            base(crate::constants::game_layout::WORLD_OBJECT_OFF, WORLD_OBJECT_BLOCK_LEN),
+            &game.world_object_sources,
+        );
+        let settlements = patch_settlements(
+            base(crate::constants::game_layout::SETTLEMENT_OFF, SETTLEMENT_BLOCK_LEN),
+            &game.settlements,
+            &game.settlement_trade,
+        );
+        let markers = build_markers(
+            &world_objects,
+            &game.world_object_sources,
+            &game.active_world_objects,
+        );
+        let mut snap = LegacySnapshot::empty();
+        snap.opt2 = 1;
+        snap.opt3 = 1;
+        snap.world_tick = game.world_frame as u32;
+        snap.leader_index = self.leader_entity_index as u32;
+        snap.projectile_count = 0;
+        snap.marker_count = game.active_world_objects.len().min(200) as u32;
+        snap.quest_flags = game.quest_flags;
+        snap.item_table = game.item_table;
+        snap.markers = markers;
+        snap.groups = groups;
+        snap.world_objects = world_objects;
+        snap.entities = entities;
+        snap.settlements = settlements;
+        snap.discovered = game.discovered_locations;
+        snap.write()
+    }
+
+    /// Load an original `KONUNG.SA0..9` snapshot (load mode `1`: no growth, no
+    /// population re-placement).
+    pub fn import_legacy_snapshot(&mut self, bytes: &[u8]) -> Result<(), String> {
+        use crate::legacy_save::LegacySnapshot;
+        let snap = LegacySnapshot::parse(bytes)?;
+        let leader = snap
+            .leader()
+            .ok_or_else(|| format!("legacy leader index {} out of range", snap.leader_index))?;
+        let class = crate::character::CharacterClass::from_entity_class(leader.archetype & 7)
+            .ok_or_else(|| {
+                format!(
+                    "legacy leader entity {} is class {}",
+                    snap.leader_index,
+                    leader.archetype
+                )
+            })?;
+        let groups = snap.groups();
+        let entities = snap.entities();
+        let current_map = groups
+            .get(leader.group_id as usize)
+            .map(|g| g.loc_id as u32)
+            .filter(|loc| *loc != 0 && self.world.loc(*loc).is_some())
+            .ok_or_else(|| {
+                format!(
+                    "legacy leader group {} has no valid location",
+                    leader.group_id
+                )
+            })?;
+        let settlements = snap.settlements();
+        let settlement_trade = snap.trades();
+        let active_world_objects = snap.markers();
+        let world_object_sources = crate::world_objects::parse_source_block(&snap.world_objects);
+        let player = crate::save::PlayerSave {
+            class,
+            level: leader.stats.level,
+            money: leader.stats.money,
+            available_xp: leader.stats.available_xp,
+            invested_xp: leader.stats.invested_xp,
+            melee_mastery: leader.stats.melee_mastery,
+            trade: leader.stats.trade,
+            archery_mastery: leader.stats.archery_mastery,
+            building: leader.stats.building,
+            healing: leader.stats.healing,
+            identification: leader.stats.identification,
+            smithing: leader.stats.smithing,
+            dexterity_base: leader.stats.dexterity_base,
+            dexterity_current: leader.stats.dexterity_current,
+            charisma_base: leader.stats.charisma_base,
+            charisma_current: leader.stats.charisma_current,
+            strength_base: leader.stats.strength_base,
+            strength_current: leader.stats.strength_current,
+            endurance_base: leader.stats.endurance_base,
+            endurance_current: leader.stats.endurance_current,
+            equipment: leader.equipment,
+            inventory: leader.inventory,
+            additional_equipment: leader.additional_equipment,
+            special_equipment: leader.special_equipment,
+            hp_internal: leader.stats.hp_internal,
+            periodic_damage: leader.stats.periodic_damage,
+            base_armor: leader.stats.base_armor,
+            raw_0x12: leader.raw_0x12,
+            flags_b: leader.flags_b,
+            dead: false,
+            temp_effect_timer: leader.stats.temp_effect_timer,
+            temp_effect_id: leader.stats.temp_effect_id,
+            saved_dexterity: leader.stats.saved_dexterity,
+            saved_charisma: leader.stats.saved_charisma,
+            saved_strength: leader.stats.saved_strength,
+            saved_endurance: leader.stats.saved_endurance,
+        };
+        let hero_index = self.player.hero.hero_index;
+
+        // Group 0 holds the party: every member except the leader becomes a
+        // companion with a motion state at its authored cell.
+        let party = groups
+            .first()
+            .map(|g| {
+                let start = g.first_entity as usize;
+                let end = start
+                    .saturating_add(g.entity_count as usize)
+                    .min(entities.len());
+                entities[start..end]
+                    .iter()
+                    .filter(|e| e.index != snap.leader_index as usize)
+                    .map(|e| crate::actors::PartyMember {
+                        entity: e.clone(),
+                        motion: crate::actors::ActorMotion {
+                            cell: (e.x as i32, e.y as i32),
+                            render_cell: (e.x as i32, e.y as i32),
+                            facing: e.facing,
+                            ..Default::default()
+                        },
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let mut extra = self.quest_extra();
+        extra.player_dialogue_id = leader.dialogue_id;
+        extra.leader_entity_index = snap.leader_index;
+        extra.settlements = settlements
+            .iter()
+            .map(|s| crate::save::SettlementExtra {
+                money_pool_10: s.money_pool_10,
+                target_base0: s.target_base0,
+                target_base1: s.target_base1,
+            })
+            .collect();
+        extra.groups = groups
+            .iter()
+            .map(|g| crate::save::GroupExtra {
+                activity_1d: g.activity_1d,
+                visited: g.visited,
+                growth_timer: g.growth_timer,
+                growth_countdown: g.growth_countdown,
+            })
+            .collect();
+
+        let mut party_selected = vec![false; crate::hud::PARTY_CELLS];
+        party_selected[0] = true;
+        let game = crate::save::SaveGame {
+            meta: crate::save::SaveMeta {
+                profile: self.profile,
+                hero_index,
+                current_map,
+            },
+            player,
+            player_x: leader.x as f64,
+            player_y: leader.y as f64,
+            player_dir: leader.facing as i32 & 7,
+            groups: groups.clone(),
+            entities: entities.clone(),
+            settlements,
+            settlement_trade,
+            world_object_sources,
+            active_world_objects,
+            population: Vec::new(),
+            party,
+            party_selected,
+            quest_flags: snap.quest_flags.clone(),
+            discovered_locations: snap.discovered.clone(),
+            world_frame: snap.world_tick as u64,
+            item_table: snap.item_table.clone(),
+            projectiles: Vec::new(),
+            rng: self.combat_rng.clone(),
+        };
+        self.apply_save(crate::save::SaveEnvelope { game, extra })?;
+        self.leader_entity_index = snap.leader_index as usize;
+        // `apply_save` refreshes `target_group` from the authored Game.N table;
+        // the snapshot's runtime target is authoritative for a legacy load.
+        if let Some(tables) = self.tables.as_mut() {
+            for (i, g) in groups.iter().enumerate() {
+                if let Some(dst) = tables.groups.get_mut(i) {
+                    dst.target_group = g.target_group;
+                }
+            }
+        }
+        // Original load mode 1 keeps the snapshot state and never re-places
+        // actors: replace the growth-aware cache `apply_save` may have built.
+        if let Some(tables) = self.tables.as_ref() {
+            if let Some(loc) = self.world.loc(self.current_map) {
+                let collision = loc.collision.clone();
+                let build = crate::actors::build_population(tables, self.current_map as u8, &collision);
+                self.population_cache.insert(self.current_map, build);
+            }
+        }
+        Ok(())
+    }
 }
+
+/// Write the protagonist's live `PlayerCharacter` fields into its `Entity`
+/// record (the original leader entity is mutated in place).
+fn entity_from_player_save(base: &crate::population::Entity, p: &crate::save::PlayerSave) -> crate::population::Entity {
+    let mut e = base.clone();
+    e.archetype = p.class.entity_class();
+    e.raw_0x12 = p.raw_0x12;
+    e.flags_b = p.flags_b;
+    e.equipment = p.equipment;
+    e.inventory = p.inventory;
+    e.additional_equipment = p.additional_equipment;
+    e.special_equipment = p.special_equipment;
+    e.stats.level = p.level;
+    e.stats.money = p.money;
+    e.stats.available_xp = p.available_xp;
+    e.stats.invested_xp = p.invested_xp;
+    e.stats.melee_mastery = p.melee_mastery;
+    e.stats.trade = p.trade;
+    e.stats.archery_mastery = p.archery_mastery;
+    e.stats.building = p.building;
+    e.stats.healing = p.healing;
+    e.stats.identification = p.identification;
+    e.stats.smithing = p.smithing;
+    e.stats.dexterity_base = p.dexterity_base;
+    e.stats.dexterity_current = p.dexterity_current;
+    e.stats.charisma_base = p.charisma_base;
+    e.stats.charisma_current = p.charisma_current;
+    e.stats.strength_base = p.strength_base;
+    e.stats.strength_current = p.strength_current;
+    e.stats.endurance_base = p.endurance_base;
+    e.stats.endurance_current = p.endurance_current;
+    e.stats.hp_internal = p.hp_internal;
+    e.stats.periodic_damage = p.periodic_damage;
+    e.stats.base_armor = p.base_armor;
+    e.stats.temp_effect_timer = p.temp_effect_timer;
+    e.stats.temp_effect_id = p.temp_effect_id;
+    e.stats.saved_dexterity = p.saved_dexterity;
+    e.stats.saved_charisma = p.saved_charisma;
+    e.stats.saved_strength = p.saved_strength;
+    e.stats.saved_endurance = p.saved_endurance;
+    e
+}
+

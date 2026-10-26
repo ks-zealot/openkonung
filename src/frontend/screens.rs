@@ -69,9 +69,8 @@ pub fn rect_outline(frame: &mut [u8], fw: usize, fh: usize, r: Rect, c: [u8; 4])
 }
 
 impl Frontend {
-    /// Original Settings screen: `MENU{width}R.RES` image #1. Individual
-    /// controls (640x480/800x600 toggles, option rows, Ok/Отмена) have no
-    /// recovered hitboxes yet, so only Escape/Back is implemented.
+    /// Original Settings screen: `MENU{width}R.RES` image #1 plus the 13x13
+    /// `MENU#2` marker centered in every enabled control (`FUN_0043060C`).
     pub(super) fn draw_settings(&mut self) {
         let fw = self.res.width() as usize;
         let fh = self.res.height() as usize;
@@ -83,6 +82,17 @@ impl Frontend {
             0,
             0,
         );
+        let rects = self.res.settings_hit_rects();
+        for control in 0..rects.len() {
+            if !self.settings.marker(control) {
+                continue;
+            }
+            let r = rects[control];
+            let marker = &self.menu.images[MENU_IMAGE_SMALL];
+            let mx = r.x as i32 + (r.w as i32 - marker.width as i32) / 2;
+            let my = r.y as i32 + (r.h as i32 - marker.height as i32) / 2;
+            draw_image(&mut self.frame, fw, fh, marker, mx, my);
+        }
     }
 
     /// Original Save/Load screen (`SAVE{width}R.RES`): `#0` = "Загрузка игры"

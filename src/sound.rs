@@ -154,6 +154,41 @@ impl SoundArchive {
 }
 
 pub mod events;
+pub mod position;
+
+pub use position::*;
+
+/// One queued `FUN_0042A13C` playback request.
+///
+/// `volume` and `pan` are the original hundredths-of-a-decibel / -10000..10000
+/// arguments (`0` = full volume, centred); `rate` is the sample rate of the
+/// secondary buffer the original would have copied the clip into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SoundEvent {
+    pub id: u16,
+    pub volume: i32,
+    pub pan: i32,
+    pub rate: u32,
+}
+
+impl SoundEvent {
+    /// Non-positional request at buffer 0 (the original call sites that pass
+    /// `volume = 0`, `pan = 0`).
+    pub fn centred(id: u16) -> SoundEvent {
+        SoundEvent {
+            id,
+            volume: 0,
+            pan: 0,
+            rate: SAMPLE_RATES[0],
+        }
+    }
+}
+
+impl From<u16> for SoundEvent {
+    fn from(id: u16) -> Self {
+        SoundEvent::centred(id)
+    }
+}
 
 #[cfg(test)]
 mod tests;

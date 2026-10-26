@@ -91,29 +91,64 @@ fn value_anchors_match_recovered_tables() {
 
 #[test]
 fn needed_raise_matches_tier_cost_gated_by_available_xp() {
-    // Warrior STR=15 is specialized -> next cost is 5.
+    // Warrior STR=15 is specialized -> next cost is 5, and the level-1
+    // specialized cap (19) still allows it.
     assert_eq!(
-        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 5),
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 1, 5),
         5
     );
     assert_eq!(
-        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 4),
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 1, 4),
         0
     );
     assert_eq!(
-        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 0),
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Strength, 15, 1, 0),
         0
     );
-    // Chief CHA=25 is specialized -> cost 11.
+    // Level 0 caps (0x45B0AB) are far above any starting value.
     assert_eq!(
-        needed_raise(CharacterClass::Chief, PrimaryStat::Charisma, 25, 11),
+        needed_raise(CharacterClass::Chief, PrimaryStat::Charisma, 25, 0, 11),
         11
     );
-    // Non-specialized Warrior CHA=8 -> normal tier cost 2.
     assert_eq!(
-        needed_raise(CharacterClass::Warrior, PrimaryStat::Charisma, 8, 2),
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Charisma, 8, 0, 2),
         2
     );
+}
+
+#[test]
+fn level_caps_hide_raise_costs() {
+    // `0x45B0AB`: at level 1 the normal cap is 7 and the specialized cap is 19.
+    assert_eq!(stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Dexterity, 1), 7);
+    assert_eq!(stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Strength, 1), 19);
+    // DEX 10 is already above the level-1 cap -> the cost is hidden.
+    assert_eq!(
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Dexterity, 10, 1, 100),
+        0
+    );
+    // Chief CHA=25 is above the specialized level-1 cap (19).
+    assert_eq!(
+        needed_raise(CharacterClass::Chief, PrimaryStat::Charisma, 25, 1, 100),
+        0
+    );
+    // Warrior CHA=8 is above the normal level-1 cap (7).
+    assert_eq!(
+        needed_raise(CharacterClass::Warrior, PrimaryStat::Charisma, 8, 1, 100),
+        0
+    );
+    // Level 0 has no practical cap.
+    assert_eq!(stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Dexterity, 0), 120);
+}
+
+#[test]
+fn raise_anything_requires_level_minimums() {
+    // Warrior level 1 minima: DEX 5, CHA 5, STR 16, END 5.
+    assert!(!can_raise_any(CharacterClass::Warrior, 1, 10, 10, 15, 10));
+    assert!(can_raise_any(CharacterClass::Warrior, 1, 10, 10, 16, 10));
+    // Level 0 minima are 3/3/3 (STR specialized 10).
+    assert!(can_raise_any(CharacterClass::Warrior, 0, 3, 3, 15, 10));
+    // Level 0xD is refused outright.
+    assert!(!can_raise_any(CharacterClass::Warrior, 0xD, 99, 99, 99, 99));
 }
 
 #[test]
@@ -234,3 +269,4 @@ fn paper_doll_positions_match_original_dgroup() {
         assert_eq!(paper_doll_position(logical_w), expected);
     }
 }
+

@@ -97,6 +97,12 @@ pub struct Prop {
     /// Runtime-grid `+0x1E` (source §10.2).
     pub grid_y: i32,
     pub palette: u32,
+    /// Current object animation frame (`FUN_0043ADF0` prop `+0x23`).
+    pub frame: u8,
+    /// Flame emitters parsed from the object record (`+0x1C + i*5`).
+    pub flame_emitters: Vec<crate::res::FlameEmitter>,
+    /// Current FLAMES frame per emitter (prop record `+0x08 + i`).
+    pub flame_frames: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -260,6 +266,9 @@ pub fn parse_props(data: &[u8]) -> Vec<Prop> {
             grid_x,
             grid_y,
             palette: pal,
+            frame: 0,
+            flame_emitters: Vec::new(),
+            flame_frames: Vec::new(),
         });
     }
     props

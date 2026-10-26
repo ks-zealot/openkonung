@@ -136,3 +136,19 @@ fn unknown_class_is_none() {
     // Class 13 has no table in the original selector.
     assert!(db.info(13, 0).is_none());
 }
+
+#[test]
+fn settlement_prop_table_matches_the_original_base_ids() {
+    let Some(konung) = load("konung.res") else {
+        eprintln!("skipping: konung.res not present");
+        return;
+    };
+    let db = ItemDb::from_konung(&konung);
+    // 0x458A02 + key*0x40, u16 at +2. Verified against the shipped table.
+    assert_eq!(db.settlement_prop_base(0), Some(7));
+    assert_eq!(db.settlement_prop_base(1), Some(53));
+    assert_eq!(db.settlement_prop_base(2), Some(416));
+    // Keys are signed bytes: 0..=0x7F are valid, 0x80..=0xFF are rejected.
+    assert!(db.settlement_prop_base(0x7F).is_some());
+    assert_eq!(db.settlement_prop_base(0x80), None);
+}

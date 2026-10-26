@@ -428,4 +428,132 @@ impl PlayableApp {
             combat::reaction(&CombatStats::from_player(&self.player))
         )
     }
+
+    /// Diagnostic staging for the autonomous-AI smoke: put the party inside an
+    /// object group's spawn rectangle, place one live object actor next to the
+    /// leader, and set the group activity to combat. Returns actor id + 1.
+    pub fn ai_test_setup(&mut self) -> u32 {
+        self.ensure_population(self.current_map);
+        let loc = self.current_map;
+        let Some(tables) = self.tables.as_ref() else {
+            return 0;
+        };
+        let Some((group, rect)) = tables
+            .groups
+            .iter()
+            .find(|g| g.loc_id as u32 == loc && g.class_1e & OBJECT_ARCHETYPE_BIT != 0)
+            .map(|g| (g.index, g.rect_a))
+        else {
+            return 0;
+        };
+        let collision = self
+            .world
+            .loc(loc)
+            .map(|l| l.collision.as_slice())
+            .unwrap_or(&[]);
+        let center = (
+            (rect.x1 as i32 + rect.x2 as i32) / 2,
+            (rect.y1 as i32 + rect.y2 as i32) / 2,
+        );
+        let Some(player_cell) = std::iter::once(center)
+            .chain(crate::coords::neighbors(center.0, center.1).iter().map(|&(_, x, y)| (x, y)))
+            .find(|&(x, y)| crate::actors::is_free(collision, x, y))
+        else {
+            return 0;
+        };
+        let Some(actor_cell) = crate::coords::neighbors(player_cell.0, player_cell.1)
+            .iter()
+            .map(|&(_, x, y)| (x, y))
+            .find(|&(x, y)| crate::actors::is_free(collision, x, y) && (x, y) != player_cell)
+        else {
+            return 0;
+        };
+        self.player_x = player_cell.0 as f64;
+        self.player_y = player_cell.1 as f64;
+        self.player_render_x = self.player_x;
+        self.player_render_y = self.player_y;
+        self.player.dead = false;
+        self.player.hp_internal = self.player.hp_internal.max(1600);
+        let mut chosen = None;
+        if let Some(pop) = self.population_cache.get_mut(&loc) {
+            for a in pop.actors.iter_mut() {
+                if a.source_group_id != group || a.entity.archetype & OBJECT_ARCHETYPE_BIT == 0 {
+                    continue;
+                }
+                a.entity.stats.hp_internal = 3000;
+                a.entity.stats.strength_base = 10;
+                a.entity.stats.strength_current = 10;
+                a.entity.stats.dexterity_base = 0;
+                a.entity.stats.dexterity_current = 0;
+                a.entity.stats.endurance_base = 10;
+                a.entity.stats.endurance_current = 10;
+                a.entity.stats.base_armor = 0;
+                a.entity.stats.periodic_damage = 0;
+                if let Some(m) = pop.motion.get_mut(&a.entity.index) {
+                    m.cell = actor_cell;
+                    m.render_cell = actor_cell;
+                    m.dead = false;
+                    m.combat_target = None;
+                    m.path.clear();
+                    m.target = None;
+                    m.walking = false;
+                    m.frame = 0;
+                }
+                chosen = Some(a.entity.index);
+                break;
+            }
+        }
+        let Some(id) = chosen else {
+            return 0;
+        };
+        if let Some(g) = self.tables.as_mut().and_then(|t| t.groups.get_mut(group)) {
+            g.activity_1d = 1;
+            g.target_group = 0;
+        }
+        self.combat_test_target = Some(id);
+        (id as u32).saturating_add(1)
+    }
+
+    /// Encoded autonomous target: -1 none, 0 leader, 1000+slot party,
+    /// 2000+entity world.
+    pub fn world_target_code(&self, id: usize) -> i32 {
+        let Some(m) = self
+            .population_cache
+            .get(&self.current_map)
+            .and_then(|p| p.motion.get(&id))
+        else {
+            return -1;
+        };
+        match m.combat_target {
+            None => -1,
+            Some(CombatTarget::Player) => 0,
+            Some(CombatTarget::Party(i)) => 1000 + i as i32,
+            Some(CombatTarget::World(i)) => 2000 + i as i32,
+            Some(CombatTarget::Prop(i)) => 3000 + i as i32,
+        }
+    }
+
+    pub fn group_activity(&self, group_id: usize) -> u32 {
+        self.tables
+            .as_ref()
+            .and_then(|t| t.groups.get(group_id))
+            .map(|g| g.activity_1d as u32)
+            .unwrap_or(0)
+    }
+
+    pub fn set_group_activity(&mut self, group_id: usize, activity: u8) -> u32 {
+        if let Some(g) = self.tables.as_mut().and_then(|t| t.groups.get_mut(group_id)) {
+            g.activity_1d = activity;
+            1
+        } else {
+            0
+        }
+    }
+    pub fn world_group_id(&self, id: usize) -> i32 {
+        self.population_cache
+            .get(&self.current_map)
+            .and_then(|p| p.actors.iter().find(|a| a.entity.index == id))
+            .map(|a| a.source_group_id as i32)
+            .unwrap_or(-1)
+    }
 }

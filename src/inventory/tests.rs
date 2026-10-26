@@ -185,6 +185,57 @@ fn potion_use_blocks_when_a_timed_effect_is_active() {
 }
 
 #[test]
+fn oil_turns_arrows_into_plain_ammo_and_is_consumed() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    // Class 9 subtype 7 = Масло; class 12 subtype 30 = Кремниевые стрелы.
+    let oil = res.alloc_item_instance(9, 7, 0, -1, 1.0, 0, 0).unwrap();
+    let arrows = res
+        .alloc_item_instance(12, 30, 0, -1, 30.0, 0, 0)
+        .unwrap();
+    let snap = OwnerSnapshot::default();
+    let ops = use_item_on(&mut res, &snap, oil, arrows).expect("oil applies");
+    assert!(ops.is_empty());
+    assert_eq!(res.item_instance(arrows).unwrap().modifier_index, 0);
+    assert_eq!(res.item_class_subtype(oil), Some((9, 3)), "empty jar");
+    assert_eq!(res.item_class_subtype(arrows), Some((12, 30)));
+}
+
+#[test]
+fn oil_rejects_non_ammo_without_consuming() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let oil = res.alloc_item_instance(9, 7, 0, -1, 1.0, 0, 0).unwrap();
+    let sword = res.alloc_item_instance(2, 0, 0, -1, 1.0, 0, 0).unwrap();
+    let snap = OwnerSnapshot::default();
+    assert_eq!(
+        use_item_on(&mut res, &snap, oil, sword),
+        Err(UseError::NotUsable)
+    );
+    assert_eq!(res.item_class_subtype(oil), Some((9, 7)));
+}
+
+#[test]
+fn poison_coats_weapons_and_arrows() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let poison = res.alloc_item_instance(9, 6, 0, -1, 5.0, 0, 0).unwrap();
+    let arrows = res
+        .alloc_item_instance(12, 30, 0, -1, 30.0, 0, 0)
+        .unwrap();
+    let snap = OwnerSnapshot::default();
+    assert!(use_item_on(&mut res, &snap, poison, arrows).is_ok());
+    assert_eq!(res.item_instance(arrows).unwrap().poison, 5);
+    assert_eq!(res.item_class_subtype(poison), Some((9, 3)));
+}
+
+#[test]
 fn ammo_stacks_merge_by_type_and_consume_the_incoming_instance() {
     let Some(mut res) = test_res() else {
         eprintln!("skipping: original resources not present");

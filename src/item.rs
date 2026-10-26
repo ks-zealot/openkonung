@@ -57,6 +57,8 @@ use crate::constants::exe_tables::ITEM_LIFETIME_OFF;
 use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
 use crate::constants::exe_tables::ITEM_MODIFIER_STRIDE;
 use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
+use crate::constants::exe_tables::SETTLEMENT_PROP_STRIDE;
+use crate::constants::exe_tables::SETTLEMENT_PROP_TABLE_VA;
 use crate::constants::exe_tables::ITEM_RANGE_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_STAT_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_VALUE_OFF;
@@ -284,6 +286,21 @@ impl ItemDb {
             rd_u16(&self.konung, o) as u16
         } else {
             0
+        }
+    }
+
+    /// Base object record index for settlement target key `key`
+    /// (`FUN_0043ADF0` `0x43B7A7`). The effective prop object id is
+    /// `base + target.state + 30`.
+    pub fn settlement_prop_base(&self, key: usize) -> Option<u16> {
+        if key >= 0x80 {
+            return None;
+        }
+        let o = va_to_file(SETTLEMENT_PROP_TABLE_VA) + key * SETTLEMENT_PROP_STRIDE + 2;
+        if o + 2 <= self.konung.len() {
+            Some(rd_u16(&self.konung, o) as u16)
+        } else {
+            None
         }
     }
 

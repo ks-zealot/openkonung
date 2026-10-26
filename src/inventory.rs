@@ -791,11 +791,68 @@ pub enum UseError {
     TooWeak,
 }
 
+/// `FUN_0041DAB0` target-item use: a held class-9 item applied to another item.
+///
+/// The original dispatcher calls this variant only when the target item class
+/// is not 9 (class 9 -> class 9 is the alchemy craft path):
+/// - subtype 7 (`Масло`): target must be class 12 (arrows); sets `+0x02 = 0`
+///   and consumes the oil into an empty jar;
+/// - subtype 6 (`Яд`): target class 0/2/12 (weapon/arrow); writes `+0x0C`;
+/// - every other subtype ignores the target and behaves like [`use_item`].
+///
+/// Any failed precondition returns `Err` **without** consuming the used item,
+/// matching the original early `return 0`.
+pub fn use_item_on(
+    res: &mut Res,
+    snapshot: &OwnerSnapshot,
+    used_id: u16,
+    target_id: u16,
+) -> Result<Vec<StatOp>, UseError> {
+    if used_id == 0 || target_id == 0 || used_id == target_id {
+        return Err(UseError::NotUsable);
+    }
+    let (used_class, subtype) = res.item_class_subtype(used_id).ok_or(UseError::NotUsable)?;
+    if used_class != 9 {
+        return Err(UseError::NotUsable);
+    }
+    let (target_class, _) = res
+        .item_class_subtype(target_id)
+        .ok_or(UseError::NotUsable)?;
+    if target_class == 9 {
+        // Target class 9 belongs to the alchemy craft path.
+        return Err(UseError::NotUsable);
+    }
+    let quality = res.item_quality(used_id).unwrap_or(0.0);
+    match subtype {
+        7 => {
+            if target_class != 12 || quality < 0.0 {
+                return Err(UseError::NotUsable);
+            }
+            if !res.set_item_modifier(target_id, 0) {
+                return Err(UseError::NotUsable);
+            }
+            res.set_item_subtype(used_id, 3);
+            Ok(Vec::new())
+        }
+        6 => {
+            if !matches!(target_class, 0 | 2 | 12) {
+                return Err(UseError::NotUsable);
+            }
+            let poison = quality.round().clamp(0.0, u16::MAX as f32) as u16;
+            if !res.set_item_poison(target_id, poison) {
+                return Err(UseError::NotUsable);
+            }
+            res.set_item_subtype(used_id, 3);
+            Ok(Vec::new())
+        }
+        _ => use_item(res, snapshot, used_id),
+    }
+}
+
 /// `FUN_0041DAB0` right-click use of a class-9 item. The item becomes an empty
 /// jar (`subtype 3`) in place. `snapshot` must be taken before applying the
 /// returned operations.
-pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<StatOp>, UseError> {
-    let (class, subtype) = res.item_class_subtype(id).ok_or(UseError::NotUsable)?;
+pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<StatOp>, UseError> {    let (class, subtype) = res.item_class_subtype(id).ok_or(UseError::NotUsable)?;
     if class != 9 {
         return Err(UseError::NotUsable);
     }

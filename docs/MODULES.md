@@ -20,6 +20,9 @@ module root; a matching sibling directory holds its subsystems and its
 | `edges.rs` | `Game.N` transition graph (`+0x29600`), trigger rectangles, location graph. |
 | `coords.rs` | Canonical coordinate transforms (terrain/entity/prop) + movement direction tables. |
 | `render.rs` | World surface renderer and sprite layer/culling (`World`, `WorldSprite`, `LayerCounts`). |
+| `config.rs` | Exact 28-byte `KONUNG.CFG` model (seven LE `u32`) + live global/revision. |
+| `lighting.rs` | `FUN_00428FE0` day/night ambient palette deltas and light-mask blending. |
+| `video.rs` | Original movie clip names, one-at-a-time request state and post-video outcomes. |
 | `anim.rs` | Stance/action mapping and battle-flag helpers. |
 | `hero.rs` | Hero identity templates (Dragomir/Mikhail/Wolf) and identity field decoding. |
 | `character_screen.rs` | Character window (`INTR[2]`) render: equipment/stat/name layout tables. |
@@ -40,6 +43,8 @@ module root; a matching sibling directory holds its subsystems and its
 | `player.rs` | Player targeting/pathing, per-cell stepping, protagonist animation frame. |
 | `text.rs` | Text overlay helpers (label, wrap, clamp). |
 | `world_draw.rs` | `draw_detail`: terrain + props + actors + world overlays compositing. |
+| `lighting.rs` | Applies day/night ambient, LIGHTS.N terrain masks and lit-cell sprite redraws. |
+| `video_triggers.rs` | Gameplay game-over and settlement-defeat movie trigger conditions. |
 | `debug_overlay.rs` | Debug overlays: portals (`T`), render layers (`L`), population (`P`). |
 | `graph.rs` | World-graph view (`H`): spring layout, fit, draw, labels. |
 | `input.rs` | Pointer/key/wheel handling, hover, party-cell hit-testing, character-screen toggles. |
@@ -51,6 +56,7 @@ module root; a matching sibling directory holds its subsystems and its
 |---|---|
 | `graph.rs` | GRAPH terrain tiles and GRAPH layout parsing. |
 | `objects.rs` | OBJECTS props/monsters: object index, prop sprites, monster animation frames. |
+| `lights.rs` | `LIGHTS.RES` masks/tiles and per-map `LIGHTS.N` low/high light maps. |
 | `human.rs` | Humanoid frames, peace/battle equipment overlays, `compose_human`, `paper_doll_frame`. |
 | `raster.rs` | `Image`, indexed RLE, palette conversion, `blit`/`fill_*`/`line`, byte readers. |
 | `exe.rs` | EXE profile mapping (virtual address ↔ file offset) for embedded tables. |
@@ -91,6 +97,7 @@ module root; a matching sibling directory holds its subsystems and its
 | `layout.rs` | Original frontend layout tables (menu/newh regions, resolutions, hit rects). |
 | `main_menu.rs` | Main-menu visibility and hit-test. |
 | `new_hero.rs` | New-Hero state (hero/class selection, confirm, image mapping). |
+| `settings.rs` | Settings live/snapshot state, exact 10-control toggles, markers, Ok/Cancel. |
 | `tests.rs`, `layout/tests.rs` | Frontend and layout tests. |
 
 ## `hud/` — gameplay interface
@@ -136,6 +143,8 @@ keep working.
 | `frame.rs` | `step`, `frame_ptr`/`frame_w`/`frame_h`, `should_quit`, `on_resize`, host size. |
 | `input.rs` | Pointer/wheel/key forwarding into the active side. |
 | `frontend_api.rs` | Frontend state / hero / class / hover queries. |
+| `config.rs` | `config_load`, `config_write`, `config_revision` (28-byte KONUNG.CFG). |
+| `video.rs` | Intro/trigger movie queue, name handshake, finish/apply and debug selectors. |
 | `debug.rs` | Debug state images, decoded MENU/INTR previews, HUD preview, text-overlay exports. |
 
 ## Non-source entry points
@@ -149,6 +158,10 @@ keep working.
 | `web/tools/smoke.mjs` | Headless wasm smoke test (raw per-file fallback). |
 | `web/tools/pack_smoke.mjs` | Pack-only acceptance smoke (only `web/www` served). |
 | `web/tools/frontend_smoke.mjs` | Full frontend-flow smoke test. |
+| `web/tools/settings_smoke.mjs` | KONUNG.CFG + Settings Ok/Cancel smoke test. |
+| `web/tools/lighting_smoke.mjs` | Day/night ambient + 40 LIGHTS.N maps smoke test. |
+| `web/tools/video_smoke.mjs` | Packed/fallback MP4s + movie trigger handshake smoke test. |
+| `web/tools/transcode_videos.py` | AVI/Indeo-5 `.flm` → browser H.264/AAC MP4 build step. |
 | `web/tools/page_smoke.mjs` | Served-bundle HTTP smoke test. |
 | `web/tools/frame_png.mjs`, `menu_png.mjs`, `intr_png.mjs`, `intr_sheet.mjs`, `character_png.mjs` | Diagnostic PNG exporters. |
 | `web/tools/parity.py` | Python reference decoders for parity. |

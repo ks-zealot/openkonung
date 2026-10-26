@@ -59,6 +59,25 @@ pub fn decode_cp866(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| cp866_byte_to_char(b)).collect()
 }
 
+/// Encode a Unicode string to CP866 (inverse of [`decode_cp866`]; characters
+/// without a CP866 byte become `?`). Used by the legacy save exporters.
+pub fn encode_cp866(text: &str) -> Vec<u8> {
+    text.chars()
+        .map(|c| {
+            let code = c as u32;
+            if code < 0x80 {
+                code as u8
+            } else {
+                CP866_HIGH
+                    .iter()
+                    .position(|&v| v as u32 == code)
+                    .map(|i| 0x80 + i as u8)
+                    .unwrap_or(b'?')
+            }
+        })
+        .collect()
+}
+
 fn decode_record(data: &[u8], off: usize, record: usize) -> Option<String> {
     if off + record > data.len() {
         return None;

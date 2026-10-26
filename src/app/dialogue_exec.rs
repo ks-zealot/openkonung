@@ -55,7 +55,7 @@ impl PlayableApp {
         if let Some(state) = started {
             self.dialog = Some(state);
             // NPC voice line (`FUN_00435290` picks 0x0C..0x0F for a humanoid).
-            self.sounds.push(0x0C + (npc_entity as u16 & 3));
+            self.queue_sound(0x0C + (npc_entity as u16 & 3));
             let actions = self
                 .dialog
                 .as_ref()
@@ -222,3 +222,4 @@ impl PlayableApp {
         self.population_cache.remove(&loc);
     }
 }
+

@@ -80,6 +80,132 @@ pub fn stat_cost(class: CharacterClass, stat: PrimaryStat, value: u16) -> u32 {
     999
 }
 
+/// `0x45B0AB`: per-class stat-growth caps, indexed
+/// `[class - 1][stat block][level]` where the block order is the original
+/// record order `dexterity, charisma, strength, endurance`. `FUN_00410B08`
+/// returns `0` (no raise shown/allowed) when the cap is `<=` the current value.
+pub const STAT_GROWTH_CAPS: [[[u8; 13]; 4]; 5] = [
+    [
+        [255, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 19, 26, 34, 43, 53, 63, 74, 80, 90, 95, 97, 100],
+        [150, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+    ],
+    [
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 19, 26, 34, 43, 53, 63, 74, 80, 90, 95, 97, 100],
+    ],
+    [
+        [150, 19, 26, 34, 43, 53, 63, 74, 80, 90, 95, 97, 100],
+        [150, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+    ],
+    [
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 19, 26, 34, 43, 53, 63, 74, 80, 90, 95, 97, 100],
+        [150, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+    ],
+    [
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+        [120, 19, 26, 34, 43, 53, 63, 74, 80, 90, 95, 97, 100],
+        [150, 7, 10, 14, 18, 22, 26, 30, 32, 35, 37, 39, 41],
+    ],
+];
+
+/// `0x45B0AB + 1`: per-class minimum stat for the "raise anything" gate
+/// (`FUN_00410B08(entity, 0)`), same indexing as [`STAT_GROWTH_CAPS`].
+pub const STAT_GROWTH_MINS: [[[u8; 13]; 4]; 5] = [
+    [
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [10, 16, 22, 30, 38, 48, 58, 68, 77, 85, 92, 96, 98],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+    ],
+    [
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [10, 16, 22, 30, 38, 48, 58, 68, 77, 85, 92, 96, 98],
+    ],
+    [
+        [10, 16, 22, 30, 38, 48, 58, 68, 77, 85, 92, 96, 98],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+    ],
+    [
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [10, 16, 22, 30, 38, 48, 58, 68, 77, 85, 92, 96, 98],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+    ],
+    [
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+        [10, 16, 22, 30, 38, 48, 58, 68, 77, 85, 92, 96, 98],
+        [3, 5, 8, 12, 16, 20, 24, 28, 31, 34, 36, 38, 40],
+    ],
+];
+
+/// Original block index of one primary stat inside a `0x45B0AB` class record.
+pub fn stat_block(stat: PrimaryStat) -> usize {
+    match stat {
+        PrimaryStat::Dexterity => 0,
+        PrimaryStat::Charisma => 1,
+        PrimaryStat::Strength => 2,
+        PrimaryStat::Endurance => 3,
+    }
+}
+
+/// `FUN_00410B08` class index: `(Entity+0x04 & 7) - 1`. All four playable
+/// classes map to 1..=4; index 0 is the unused record at `0x45B0AB`.
+fn growth_index(class: CharacterClass) -> usize {
+    (class.entity_class() as usize).saturating_sub(1).min(4)
+}
+
+/// Per-level growth cap (`0x45B0AB` low byte) for `stat`.
+pub fn stat_growth_cap(class: CharacterClass, stat: PrimaryStat, level: u8) -> u8 {
+    let lvl = (level as usize).min(12);
+    STAT_GROWTH_CAPS[growth_index(class)][stat_block(stat)][lvl]
+}
+
+/// Per-level minimum (`0x45B0AB` high byte) for `stat` in the "raise anything"
+/// gate.
+pub fn stat_growth_min(class: CharacterClass, stat: PrimaryStat, level: u8) -> u8 {
+    let lvl = (level as usize).min(12);
+    STAT_GROWTH_MINS[growth_index(class)][stat_block(stat)][lvl]
+}
+
+/// `FUN_00410B08(entity, 0)`: whether the character may raise anything / level
+/// up. Level `0xD` is refused outright; otherwise every one of the four
+/// current stats must be at least that level's minimum.
+pub fn can_raise_any(
+    class: CharacterClass,
+    level: u8,
+    dexterity: u16,
+    charisma: u16,
+    strength: u16,
+    endurance: u16,
+) -> bool {
+    if level == 0xD {
+        return false;
+    }
+    let checks = [
+        (PrimaryStat::Dexterity, dexterity),
+        (PrimaryStat::Charisma, charisma),
+        (PrimaryStat::Strength, strength),
+        (PrimaryStat::Endurance, endurance),
+    ];
+    checks
+        .iter()
+        .all(|&(stat, value)| value >= stat_growth_min(class, stat, level) as u16)
+}
+
 /// Original maximum-load calculation (`Entity+0x62` = `endurance_base`).
 /// Rendered with one decimal (`%4.1f`).
 pub fn max_load(endurance_base: u16) -> f64 {
@@ -115,6 +241,17 @@ impl CharacterClass {
         CharacterClass::Merchant,
         CharacterClass::Chief,
     ];
+
+    /// Map a raw `Entity+0x04` class value (`2..=5`).
+    pub fn from_entity_class(value: u8) -> Option<CharacterClass> {
+        match value {
+            2 => Some(CharacterClass::Merchant),
+            3 => Some(CharacterClass::Hunter),
+            4 => Some(CharacterClass::Chief),
+            5 => Some(CharacterClass::Warrior),
+            _ => None,
+        }
+    }
 
     /// `Entity+0x04` class value. Verified against the class-name table
     /// (`0x45ADC0`, record `Entity+0x04 - 1`): 2 = Купец (Merchant),

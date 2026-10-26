@@ -11,6 +11,8 @@ mod entity;
 mod hud;
 #[path = "debug/image.rs"]
 mod image;
+#[path = "debug/lighting.rs"]
+mod lighting;
 #[path = "debug/party.rs"]
 mod party;
 #[path = "debug/player.rs"]
@@ -30,6 +32,7 @@ pub use self::combat::*;
 pub use self::entity::*;
 pub use self::hud::*;
 pub use self::image::*;
+pub use self::lighting::*;
 pub use self::party::*;
 pub use self::player::*;
 pub use self::quest::*;

@@ -25,7 +25,9 @@ use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 /// Opaque payload header (`OPK` + format letter).
 pub const MAGIC: [u8; 4] = *b"OPKS";
 /// Current payload version. Increment on any layout change.
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
+/// Legacy payload version (growth group extras defaulted on load).
+pub const VERSION_V2: u16 = 2;
 /// Legacy payload version (quest extras defaulted on load).
 pub const VERSION_V1: u16 = 1;
 /// Item-instance block copied from the loaded `Game.N` (8192 x 16 bytes).
@@ -228,6 +230,35 @@ pub struct GroupExtra {
     pub activity_1d: u8,
     /// `DAT_0067C0A9[group*0x20] = 1` (`0x112`).
     pub visited: bool,
+    /// `+0x02` i32 signed population-growth accumulator (`FUN_0041BD3C`).
+    pub growth_timer: i32,
+    /// `+0x06` i16 population-target countdown (`FUN_0041BD3C`).
+    pub growth_countdown: i16,
+}
+
+/// Version-2 group extras (no growth fields). Used only to decode old payloads.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+pub(crate) struct GroupExtraV2 {
+    pub(crate) activity_1d: u8,
+    pub(crate) visited: bool,
+}
+
+/// Version-2 envelope extras: the same fields the shipped v2 build wrote.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SaveExtraV2 {
+    pub(crate) player_dialogue_id: u8,
+    pub(crate) player_interface_mode_d2: u8,
+    pub(crate) player_state_d3: u8,
+    pub(crate) settlements: Vec<SettlementExtra>,
+    pub(crate) groups: Vec<GroupExtraV2>,
+}
+
+/// Version-2 envelope. `SaveGame` did not change layout, so only the extras
+/// differ.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SaveEnvelopeV2 {
+    pub(crate) game: SaveGame,
+    pub(crate) extra: SaveExtraV2,
 }
 
 /// Quest/state additions introduced after v1. Serialized after the unchanged
@@ -239,6 +270,8 @@ pub struct SaveExtra {
     pub player_state_d3: u8,
     pub settlements: Vec<SettlementExtra>,
     pub groups: Vec<GroupExtra>,
+    /// `Entity` index the protagonist was loaded from (legacy snapshot header).
+    pub leader_entity_index: u32,
 }
 
 impl Default for SaveExtra {
@@ -250,6 +283,7 @@ impl Default for SaveExtra {
             player_state_d3: 0,
             settlements: Vec::new(),
             groups: Vec::new(),
+            leader_entity_index: 0,
         }
     }
 }
@@ -304,7 +338,8 @@ impl SaveEnvelope {
         Ok(out)
     }
 
-    /// Decode a v1 or v2 payload. v1 payloads get default quest extras.
+    /// Decode a v1, v2 or v3 payload. v1 payloads get default quest extras and
+    /// v2 payloads get default growth extras.
     pub fn decode(bytes: &[u8]) -> Result<SaveEnvelope, String> {
         if bytes.len() < 10 {
             return Err("save payload is truncated".into());
@@ -313,7 +348,7 @@ impl SaveEnvelope {
             return Err("not an OpenKonung save payload".into());
         }
         let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-        if version != VERSION && version != VERSION_V1 {
+        if version != VERSION && version != VERSION_V2 && version != VERSION_V1 {
             return Err(format!("unsupported save version {version}"));
         }
         let raw_len = u32::from_le_bytes([bytes[6], bytes[7], bytes[8], bytes[9]]) as usize;
@@ -335,6 +370,30 @@ impl SaveEnvelope {
             let env: SaveEnvelope =
                 bincode::deserialize(&raw).map_err(|e| format!("save decode: {e}"))?;
             env
+        } else if version == VERSION_V2 {
+            let env: SaveEnvelopeV2 =
+                bincode::deserialize(&raw).map_err(|e| format!("save decode v2: {e}"))?;
+            SaveEnvelope {
+                game: env.game,
+                extra: SaveExtra {
+                    player_dialogue_id: env.extra.player_dialogue_id,
+                    player_interface_mode_d2: env.extra.player_interface_mode_d2,
+                    player_state_d3: env.extra.player_state_d3,
+                    settlements: env.extra.settlements,
+                    groups: env
+                        .extra
+                        .groups
+                        .into_iter()
+                        .map(|g| GroupExtra {
+                            activity_1d: g.activity_1d,
+                            visited: g.visited,
+                            growth_timer: 0,
+                            growth_countdown: 0,
+                        })
+                        .collect(),
+                    leader_entity_index: 0,
+                },
+            }
         } else {
             let game: SaveGame =
                 bincode::deserialize(&raw).map_err(|e| format!("save decode v1: {e}"))?;
@@ -427,3 +486,6 @@ mod tests {
         assert!(SaveEnvelope::decode(b"NOTASAVE0000000000").is_err());
     }
 }
+
+
+

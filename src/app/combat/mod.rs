@@ -8,6 +8,7 @@
 //! damage every 16 logic frames).
 
 mod accessors;
+mod ai;
 mod death;
 mod debug;
 mod dot;

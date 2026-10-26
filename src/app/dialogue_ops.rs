@@ -1114,6 +1114,7 @@ impl PlayableApp {
             player_dialogue_id: self.player.dialogue_id,
             player_interface_mode_d2: self.player.interface_mode_d2,
             player_state_d3: self.player.state_d3,
+            leader_entity_index: self.leader_entity_index as u32,
             ..SaveExtra::default()
         };
         extra.settlements = self
@@ -1132,6 +1133,8 @@ impl PlayableApp {
                 .map(|g| crate::save::GroupExtra {
                     activity_1d: g.activity_1d,
                     visited: g.visited,
+                    growth_timer: g.growth_timer,
+                    growth_countdown: g.growth_countdown,
                 })
                 .collect();
         }

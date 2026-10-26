@@ -5,15 +5,19 @@ use std::rc::Rc;
 
 mod cursor;
 mod exe;
+mod flames;
 mod graph;
 mod human;
+mod lights;
 mod objects;
 mod raster;
 
 pub use self::cursor::*;
 pub use self::exe::*;
+pub use self::flames::*;
 use self::graph::parse_graph_layout;
 pub use self::human::*;
+pub use self::lights::*;
 use self::objects::parse_object_index;
 pub use self::raster::*;
 
@@ -84,6 +88,10 @@ pub struct Res {
     pub fonts: crate::font::Fonts,
     /// Raw `konung.res` (character/class name tables). Empty until loaded.
     pub konung: Vec<u8>,
+    /// Decoded `FLAMES.RES` fire frames (74), empty until loaded.
+    pub flames: Vec<Img>,
+    /// Decoded `LIGHTS.RES` masks/tiles, `None` until loaded.
+    pub lights: Option<LightRes>,
 
     terrain_tile_cache: HashMap<usize, Option<Img>>,
     prop_sprite_cache: HashMap<(usize, u32), (Img, i32, i32)>,
@@ -139,6 +147,8 @@ impl Res {
             item_db: None,
             fonts: crate::font::Fonts::empty(),
             konung: Vec::new(),
+            flames: Vec::new(),
+            lights: None,
             terrain_tile_cache: HashMap::new(),
             prop_sprite_cache: HashMap::new(),
             monster_frame_cache: HashMap::new(),
@@ -200,6 +210,15 @@ impl Res {
     /// 0 resolves the protagonist's inventory/equipment ids.
     pub fn set_save_game(&mut self, save: &[u8]) {
         self.save_game = save.to_vec();
+    }
+
+    /// Authored `Entity+0xD7` byte from the loaded `Game.N` table. The M/O
+    /// walk-decision delay uses it as the random delay ceiling (`FUN_004123BC`).
+    pub fn entity_raw_d7(&self, id: usize) -> u8 {
+        let off = 0x2A69A_usize
+            .checked_add(id.saturating_mul(0x100))
+            .and_then(|o| o.checked_add(0xD7));
+        off.and_then(|o| self.save_game.get(o).copied()).unwrap_or(0)
     }
 
     /// Parse the original item templates and bitmap fonts from `konung.res`
@@ -438,7 +457,8 @@ impl Res {
         true
     }
 
-    /// Diagnostic/test helper: overwrite an instance's `+0x02` modifier byte.
+    /// Overwrite an instance's `+0x02` modifier byte. Used by the target-item
+    /// use path (`FUN_0041DAB0` case 7: oil turns arrows into plain ammo).
     pub fn set_item_modifier(&mut self, id: u16, modifier: i8) -> bool {
         if id == 0 {
             return false;
@@ -448,6 +468,20 @@ impl Res {
             return false;
         }
         self.save_game[o + 2] = modifier as u8;
+        true
+    }
+
+    /// Overwrite an instance's `+0x0C` poison/charge value
+    /// (`FUN_0041DAB0` case 6: Яд on a weapon or arrow stack).
+    pub fn set_item_poison(&mut self, id: u16, poison: u16) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 0x0C..o + 0x0E].copy_from_slice(&poison.to_le_bytes());
         true
     }
 

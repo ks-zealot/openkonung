@@ -43,7 +43,7 @@ impl PlayableApp {
     /// Companion action rows and walk/idle cycle lengths are updated immediately
     /// so the pose changes on the same frame (`FUN_00414078`/`FUN_0041435C`).
     pub(super) fn toggle_selected_battle_stance(&mut self) {
-        self.sounds.push(crate::sound::events::UI_CLICK);
+        self.queue_sound(crate::sound::events::UI_CLICK);
         self.toggle_selected_battle_stance_silent();
     }
 
@@ -111,6 +111,8 @@ impl PlayableApp {
                 || action_row == crate::anim::ACT_PEACE_ATTACK
             {
                 crate::anim::attack_action(battle)
+            } else if action_row == crate::anim::ACT_MELEE {
+                crate::anim::ACT_MELEE
             } else if m.motion.walking {
                 crate::anim::walk_action(battle)
             } else {
@@ -216,3 +218,4 @@ impl PlayableApp {
         rejected
     }
 }
+

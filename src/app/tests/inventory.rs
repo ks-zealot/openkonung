@@ -192,3 +192,48 @@ fn temporary_effect_restores_saved_stats() {
     assert_eq!(app.player.dexterity_current, 30);
     assert_eq!(app.player.charisma_current, 10);
 }
+
+#[test]
+fn raise_stat_moves_xp_and_increments_current_only() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.set_inventory_owner(InventoryOwner::Protagonist);
+    // Level 0 (0x45B0AB caps are open) so the cost table decides.
+    app.player.level = 0;
+    app.player.available_xp = 1000;
+    app.player.invested_xp = 0;
+    let stat = crate::character::PrimaryStat::Strength;
+    let cost = {
+        let sheet = app.growth_sheet(InventoryOwner::Protagonist).expect("sheet");
+        crate::character_screen::stat_raise_cost(&sheet, stat)
+    };
+    assert!(cost > 0, "fresh level-0 warrior can raise strength");
+    let base = app.player.strength_base;
+    let current = app.player.strength_current;
+    assert!(app.raise_owner_stat(InventoryOwner::Protagonist, stat));
+    assert_eq!(app.player.strength_current, current + 1);
+    assert_eq!(app.player.strength_base, base, "base half untouched");
+    assert_eq!(app.player.available_xp, 1000 - cost);
+    assert_eq!(app.player.invested_xp, cost);
+}
+
+#[test]
+fn level_up_requires_the_min_gate() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.set_inventory_owner(InventoryOwner::Protagonist);
+    app.player.level = 1;
+    app.player.dexterity_current = 10;
+    app.player.charisma_current = 10;
+    app.player.strength_current = 15;
+    app.player.endurance_current = 10;
+    assert!(!app.level_up_owner(InventoryOwner::Protagonist));
+    assert_eq!(app.player.level, 1);
+    app.player.strength_current = 16;
+    assert!(app.level_up_owner(InventoryOwner::Protagonist));
+    assert_eq!(app.player.level, 2);
+}

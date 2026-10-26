@@ -24,6 +24,8 @@ pub struct World {
     pub res: Res,
     pub locs: Vec<Location>,
     pub loc_index: HashMap<u32, usize>,
+    /// Per-map `LIGHTS.N` data, attached by the game loader.
+    pub light_maps: HashMap<u32, crate::res::LightMap>,
     thumb_cache: HashMap<(u32, i32, i32), Img>,
 }
 
@@ -58,12 +60,56 @@ impl World {
             res,
             locs,
             loc_index,
+            light_maps: HashMap::new(),
             thumb_cache: HashMap::new(),
         }
     }
 
     pub fn loc(&self, loc_id: u32) -> Option<&Location> {
         self.loc_index.get(&loc_id).map(|&i| &self.locs[i])
+    }
+
+    pub fn loc_mut(&mut self, loc_id: u32) -> Option<&mut Location> {
+        let index = *self.loc_index.get(&loc_id)?;
+        self.locs.get_mut(index)
+    }
+
+    pub fn light_map(&self, loc_id: u32) -> Option<&crate::res::LightMap> {
+        self.light_maps.get(&loc_id)
+    }
+
+    pub fn attach_light_map(&mut self, loc_id: u32, data: &[u8]) -> Result<(), String> {
+        let map = crate::res::LightMap::parse(data)?;
+        self.light_maps.insert(loc_id, map);
+        Ok(())
+    }
+
+    /// Advance every prop flame emitter on `loc_id` by one 60 ms tick.
+    /// `FUN_00426384` increments the per-emitter frame in the render pass and
+    /// wraps at the selector's max; the game render pass runs on the same
+    /// 60 ms clock as the logic, so the remake ticks it from `world_frame`.
+    pub fn tick_prop_flames(&mut self, loc_id: u32) {
+        let Some(index) = self.loc_index.get(&loc_id).copied() else {
+            return;
+        };
+        for prop in &mut self.locs[index].props {
+            for (i, frame) in prop.flame_frames.iter_mut().enumerate() {
+                let Some(emitter) = prop.flame_emitters.get(i) else {
+                    continue;
+                };
+                let Some((min, max)) = crate::res::flame_range(emitter.selector) else {
+                    continue;
+                };
+                if *frame < min || *frame >= max {
+                    *frame = min;
+                } else {
+                    *frame += 1;
+                    if *frame >= max {
+                        *frame = min;
+                    }
+                }
+            }
+        }
     }
 
     /// Draw the static background (both terrain layers + GRAPH placements)
@@ -85,16 +131,19 @@ impl World {
     }
 
     /// Resolve all object/prop sprites for a location (for the dynamic depth
-    /// pass). Props use [`prop_to_local_px`] and are resolved with frame 0.
+    /// pass), plus their FLAMES emitters. Props use [`prop_to_local_px`] and the
+    /// runtime object frame initialized by `FUN_0043ADF0`.
     pub fn collect_props(&mut self, loc_id: u32) -> Vec<WorldSprite> {
         let idx = match self.loc_index.get(&loc_id) {
             Some(&i) => i,
             None => return Vec::new(),
         };
-        let mut out = Vec::with_capacity(self.locs[idx].props.len());
-        for p in &self.locs[idx].props {
+        let World { res, locs, .. } = self;
+        let loc = &locs[idx];
+        let mut out = Vec::with_capacity(loc.props.len());
+        for p in &loc.props {
             let (img, gx, gy) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.res.prop_sprite(p.object_id, 0, p.palette)
+                res.prop_sprite(p.object_id, p.frame as usize, p.palette)
             })) {
                 Ok(v) => v,
                 Err(_) => continue,
@@ -107,6 +156,21 @@ impl World {
                 lx: lx as f64,
                 ly: ly as f64,
             });
+            for (i, emitter) in p.flame_emitters.iter().enumerate() {
+                let Some(&flame) = p.flame_frames.get(i) else {
+                    continue;
+                };
+                let Some(flame_img) = res.flame_frame(flame as usize) else {
+                    continue;
+                };
+                out.push(WorldSprite {
+                    img: flame_img,
+                    gx: gx + emitter.x as i32,
+                    gy: gy + emitter.y as i32,
+                    lx: lx as f64,
+                    ly: ly as f64 + 0.01,
+                });
+            }
         }
         out
     }
@@ -127,7 +191,7 @@ impl World {
                 continue;
             };
             let (img, sx, sy) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.res.prop_sprite(p.object_id, 0, p.palette)
+                self.res.prop_sprite(p.object_id, p.frame as usize, p.palette)
             })) {
                 Ok(v) => v,
                 Err(_) => continue,
@@ -160,9 +224,10 @@ impl World {
         let Some(p) = self.locs[idx].props.iter().find(|p| p.ri == index) else {
             return false;
         };
-        let (gx, gy, object_id, palette) = (p.grid_x, p.grid_y, p.object_id, p.palette);
+        let (gx, gy, object_id, palette, frame) =
+            (p.grid_x, p.grid_y, p.object_id, p.palette, p.frame);
         let (img, sx, sy) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.res.prop_sprite(object_id, 0, palette)
+            self.res.prop_sprite(object_id, frame as usize, palette)
         })) {
             Ok(v) => v,
             Err(_) => return false,

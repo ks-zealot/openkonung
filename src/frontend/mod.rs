@@ -19,6 +19,7 @@ pub mod layout;
 pub mod main_menu;
 pub mod new_hero;
 pub mod previews;
+pub mod settings;
 
 use crate::app::TextItem;
 use crate::font::{Fonts, OriginalFont};
@@ -27,6 +28,7 @@ use crate::res::{blit, fill_rect};
 
 use self::layout::*;
 use self::new_hero::NewHeroState;
+use self::settings::SettingsState;
 
 /// Explicit frontend screens (task §25). `Settings` renders the confirmed
 /// `MENU{width}R.RES` #1 settings screen; `SaveGame`/`LoadGame` render the
@@ -77,6 +79,9 @@ pub struct Frontend {
     /// Last logical mouse position.
     pub mouse: (i32, i32),
     pub new_hero: NewHeroState,
+    pub settings: SettingsState,
+    /// Pending frontend-resolution rebuild requested by Settings Ok.
+    pub pending_resolution: Option<FrontendRes>,
     /// Pre-rendered 160x160 preview frames, flat-indexed
     /// `hero_index * previews::PREVIEW_SLOTS + weapon_slot`.
     hero_previews: Vec<crate::res::Img>,
@@ -144,6 +149,8 @@ impl Frontend {
             save_slot_hover: None,
             mouse: (0, 0),
             new_hero: NewHeroState::default(),
+            settings: SettingsState::default(),
+            pending_resolution: None,
             hero_previews: Vec::new(),
             frame: vec![0u8; w * h * 4],
             texts: Vec::new(),
@@ -202,6 +209,9 @@ impl Frontend {
         match self.screen {
             FrontendScreen::MainMenu => self.hovered.map(|h| h as i32).unwrap_or(-1),
             FrontendScreen::NewHero => self.new_hero.hovered_region.map(|h| h as i32).unwrap_or(-1),
+            FrontendScreen::Settings => {
+                self.settings.hovered.map(|h| h as i32).unwrap_or(-1)
+            }
             _ => -1,
         }
     }
@@ -277,7 +287,9 @@ impl Frontend {
             FrontendScreen::SaveGame | FrontendScreen::LoadGame => {
                 self.save_slot_hover = self.res.save_slot_hit_test(mx, my);
             }
-            _ => {}
+            FrontendScreen::Settings => {
+                self.settings.hovered = SettingsState::hit_test(self.res, mx, my);
+            }
         }
     }
 
@@ -320,6 +332,7 @@ impl Frontend {
                         self.hovered = None;
                     }
                     MainMenuAction::Settings => {
+                        self.settings = SettingsState::enter();
                         self.screen = FrontendScreen::Settings;
                         self.hovered = None;
                     }
@@ -412,7 +425,33 @@ impl Frontend {
                     }
                 }
             }
-            _ => {}
+            FrontendScreen::Settings => {
+                let Some(control) = SettingsState::hit_test(self.res, mx, my) else {
+                    return None;
+                };
+                if button == 1 {
+                    self.sounds.push(crate::sound::events::UI_CLICK);
+                }
+                if control <= settings::CONTROL_SOUND {
+                    self.settings.activate(control);
+                } else if control == settings::CONTROL_OK {
+                    self.settings.apply();
+                    let width = self.settings.live.width();
+                    if width != self.res.width() {
+                        self.pending_resolution = Some(if width == 640 {
+                            FrontendRes::R640
+                        } else {
+                            FrontendRes::R800
+                        });
+                    }
+                    self.screen = FrontendScreen::MainMenu;
+                    self.hovered = None;
+                } else if control == settings::CONTROL_CANCEL {
+                    self.settings.cancel();
+                    self.screen = FrontendScreen::MainMenu;
+                    self.hovered = None;
+                }
+            }
         }
         None
     }
@@ -437,8 +476,12 @@ impl Frontend {
                     }
                 }
                 // Sub-screens (New Hero / Settings / Save / Load) return to the
-                // main menu without touching the live game.
+                // main menu without touching the live game. Leaving Settings
+                // restores the entry snapshot (original Cancel).
                 _ => {
+                    if self.screen == FrontendScreen::Settings {
+                        self.settings.cancel();
+                    }
                     self.screen = FrontendScreen::MainMenu;
                     self.hovered = None;
                     None

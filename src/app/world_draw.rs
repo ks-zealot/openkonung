@@ -109,6 +109,10 @@ impl PlayableApp {
             }
         }
 
+        // Day/night ambient + LIGHTS maps are applied to the finished world
+        // (terrain/entities/props/projectiles) before the interface overlays.
+        self.apply_world_lighting(&sprites, iox, ioy);
+
         // Live portals: drawn at the CANONICAL source trigger (center of the
         // transition trigger rectangle) through the normal Entity/runtime-grid
         // render transform, so the visible ring is exactly the cell gameplay

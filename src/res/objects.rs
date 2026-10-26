@@ -85,6 +85,53 @@ impl Res {
 
     // --- monsters ---
 
+    /// First `0x100` bytes of a prop object record. Only object ids `>= 30`
+    /// have the 0x100-byte record layout; ids `0..=29` are the large actor
+    /// blocks whose `+8` field is an animation count, not a flame count.
+    pub(super) fn object_record(&self, object_id: usize) -> &[u8] {
+        if object_id < 30 {
+            return &[];
+        }
+        let blk = self.object_block(object_id);
+        if blk.len() >= 0x100 {
+            &blk[..0x100]
+        } else {
+            &[]
+        }
+    }
+
+    /// Prop sprite animation-frame count (`record+0x0C`, minimum 1).
+    pub fn object_frame_count(&self, object_id: usize) -> usize {
+        let rec = self.object_record(object_id);
+        if rec.len() < 0x10 {
+            1
+        } else {
+            (u32(rec, 0x0C) as usize).max(1)
+        }
+    }
+
+    /// Prop flame emitters (`record+0x08` count; descriptors at `+0x1C + i*5`).
+    pub fn object_flames(&self, object_id: usize) -> Vec<FlameEmitter> {
+        let rec = self.object_record(object_id);
+        if rec.len() < 0x1C {
+            return Vec::new();
+        }
+        let count = u32(rec, 0x08) as usize;
+        let mut out = Vec::with_capacity(count.min(19));
+        for i in 0..count {
+            let d = 0x1C + i * 5;
+            if d + 5 > rec.len() {
+                break;
+            }
+            out.push(FlameEmitter {
+                selector: rec[d],
+                x: i16(rec, d + 1) as i16,
+                y: i16(rec, d + 3) as i16,
+            });
+        }
+        out
+    }
+
     /// Original object block row for an action value. The object/monster family
     /// has 6 rows of `0x130` bytes; actions `6..=11` alias rows `0..=5`
     /// (`FUN_0041435C` / `FUN_00414078`: `if (5 < action) action -= 6`).

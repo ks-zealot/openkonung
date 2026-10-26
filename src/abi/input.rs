@@ -4,6 +4,9 @@ use super::*;
 
 #[no_mangle]
 pub extern "C" fn pointer_down(button: u32, x: f32, y: f32) {
+    if crate::video::is_pending() {
+        return;
+    }
     let action = {
         let rt = runtime_mut();
         match rt.active {
@@ -23,6 +26,7 @@ pub extern "C" fn pointer_down(button: u32, x: f32, y: f32) {
         }
     };
     resolve_input(action);
+    apply_pending_frontend_resolution();
 }
 
 #[no_mangle]
@@ -84,6 +88,9 @@ pub extern "C" fn wheel(delta: f32) {
 
 #[no_mangle]
 pub extern "C" fn key_down(code: u32) {
+    if crate::video::is_pending() {
+        return;
+    }
     let action = {
         let rt = runtime_mut();
         match rt.active {
@@ -112,4 +119,5 @@ pub extern "C" fn key_down(code: u32) {
         }
     };
     resolve_input(action);
+    apply_pending_frontend_resolution();
 }

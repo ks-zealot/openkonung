@@ -183,6 +183,12 @@ impl PlayableApp {
                                 self.lift_item(loc);
                             }
                         }
+                        crate::character_screen::ScreenHit::RaiseLevel => {
+                            let _ = self.level_up_owner(self.inventory_owner);
+                        }
+                        crate::character_screen::ScreenHit::Raise(stat) => {
+                            let _ = self.raise_owner_stat(self.inventory_owner, stat);
+                        }
                         crate::character_screen::ScreenHit::None => {}
                     }
                 }

@@ -38,6 +38,9 @@ fi
 RAW="$ROOT/www/manifest.raw.json"
 PACK="$ROOT/www/openkonung.pack.zip"
 
+echo "Transcoding videos..."
+"$PYTHON" "$ROOT/tools/transcode_videos.py" --base "$BASE"
+
 echo "Generating raw manifest..."
 "$PYTHON" "$ROOT/tools/make_manifest.py" --base "$BASE" --out "$RAW"
 

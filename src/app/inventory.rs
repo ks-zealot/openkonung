@@ -95,6 +95,85 @@ impl PlayableApp {
         }
     }
 
+    /// Minimal sheet used by the character-screen raise predicates.
+    pub(crate) fn growth_sheet(&self, owner: InventoryOwner) -> Option<crate::character_screen::CharacterSheet> {
+        Some(crate::character_screen::CharacterSheet {
+            class: self.owner_class(owner),
+            snapshot: self.snapshot(owner)?,
+            ..Default::default()
+        })
+    }
+
+    /// Stat-raise action (`FUN_0042260C` commands 2/3/5/6): the cost from
+    /// `FUN_00410B08` is moved from `+0x38` available XP to `+0x3C` invested XP
+    /// and the **current** stat half is incremented by one.
+    pub fn raise_owner_stat(
+        &mut self,
+        owner: InventoryOwner,
+        stat: crate::character::PrimaryStat,
+    ) -> bool {
+        let Some(sheet) = self.growth_sheet(owner) else {
+            return false;
+        };
+        let cost = crate::character_screen::stat_raise_cost(&sheet, stat);
+        if cost == 0 {
+            return false;
+        }
+        match owner {
+            InventoryOwner::Protagonist => {
+                self.player.available_xp = self.player.available_xp.saturating_sub(cost);
+                self.player.invested_xp = self.player.invested_xp.saturating_add(cost);
+                let slot = match stat {
+                    crate::character::PrimaryStat::Charisma => &mut self.player.charisma_current,
+                    crate::character::PrimaryStat::Strength => &mut self.player.strength_current,
+                    crate::character::PrimaryStat::Dexterity => &mut self.player.dexterity_current,
+                    crate::character::PrimaryStat::Endurance => &mut self.player.endurance_current,
+                };
+                *slot = slot.saturating_add(1);
+            }
+            InventoryOwner::Party(i) => {
+                let Some(m) = self.party.get_mut(i) else {
+                    return false;
+                };
+                let s = &mut m.entity.stats;
+                s.available_xp = s.available_xp.saturating_sub(cost);
+                s.invested_xp = s.invested_xp.saturating_add(cost);
+                let slot = match stat {
+                    crate::character::PrimaryStat::Charisma => &mut s.charisma_current,
+                    crate::character::PrimaryStat::Strength => &mut s.strength_current,
+                    crate::character::PrimaryStat::Dexterity => &mut s.dexterity_current,
+                    crate::character::PrimaryStat::Endurance => &mut s.endurance_current,
+                };
+                *slot = slot.saturating_add(1);
+            }
+        }
+        true
+    }
+
+    /// Level-up action (`FUN_0042260C` command 0): gated by
+    /// `FUN_00410B08(entity, 0)` and then `Entity+0x33 += 1` (no XP cost).
+    pub fn level_up_owner(&mut self, owner: InventoryOwner) -> bool {
+        let Some(sheet) = self.growth_sheet(owner) else {
+            return false;
+        };
+        if !crate::character_screen::level_up_available(&sheet) {
+            return false;
+        }
+        match owner {
+            InventoryOwner::Protagonist => {
+                self.player.level = self.player.level.wrapping_add(1);
+            }
+            InventoryOwner::Party(i) => {
+                if let Some(m) = self.party.get_mut(i) {
+                    m.entity.stats.level = m.entity.stats.level.wrapping_add(1);
+                } else {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// Current owner's cell in the runtime grid.
     pub fn owner_cell_pos(&self, owner: InventoryOwner) -> (i32, i32) {
         match owner {
@@ -233,7 +312,7 @@ impl PlayableApp {
             owner,
             source: Some(loc),
         });
-        self.sounds.push(4);
+        self.queue_sound(4);
         true
     }
 
@@ -280,7 +359,7 @@ impl PlayableApp {
         }
         if handled {
             self.held_item = None;
-            self.sounds.push(4);
+            self.queue_sound(4);
             self.sweep_owner(target);
         }
         handled
@@ -357,7 +436,7 @@ impl PlayableApp {
                 }
                 ItemLocation::Inventory(_) => crate::sound::events::UI_CLICK,
             };
-            self.sounds.push(sound);
+            self.queue_sound(sound);
             self.sweep_owner(owner);
         }
         moved
@@ -372,7 +451,7 @@ impl PlayableApp {
         let cell = self.owner_cell_pos(held.owner);
         self.add_ground_item(cell, held.id);
         self.held_item = None;
-        self.sounds.push(4);
+        self.queue_sound(4);
         true
     }
 
@@ -464,7 +543,7 @@ impl PlayableApp {
         }
         if ok {
             self.held_item = None;
-            self.sounds.push(4);
+            self.queue_sound(4);
             if !merged {
                 self.sweep_owner(target);
             }
@@ -538,7 +617,7 @@ impl PlayableApp {
         self.map_overlay = None;
         self.world.res.set_item_class(id, 0xFF);
         self.sweep_all_owners();
-        self.sounds.push(crate::sound::events::MAP_ITEM);
+        self.queue_sound(crate::sound::events::MAP_ITEM);
         true
     }
 
@@ -571,12 +650,63 @@ impl PlayableApp {
                 }
             }
         }
-        self.sounds.push(9);
+        self.queue_sound(9);
+        true
+    }
+
+    /// Apply a held class-9 item to another item (`FUN_0041DAB0` target path).
+    /// Both items must belong to the same owner. The used item remains in the
+    /// inventory transformed by the use (oil -> empty jar) and the target is
+    /// modified in place.
+    pub fn use_held_on_item(
+        &mut self,
+        target_owner: InventoryOwner,
+        target: ItemLocation,
+    ) -> bool {
+        let Some(held) = self.held_item else {
+            return false;
+        };
+        if held.owner != target_owner {
+            return false;
+        }
+        let Some(target_id) = self.slots(target_owner).and_then(|s| s.get(target)) else {
+            return false;
+        };
+        if target_id == 0 || target_id == held.id {
+            return false;
+        }
+        let Some(snapshot) = self.snapshot(held.owner) else {
+            return false;
+        };
+        let ops = match use_item_on(&mut self.world.res, &snapshot, held.id, target_id) {
+            Ok(ops) => ops,
+            Err(_) => return false,
+        };
+        match held.owner {
+            InventoryOwner::Protagonist => apply_player_ops(&mut self.player, &ops),
+            InventoryOwner::Party(i) => {
+                if let Some(m) = self.party.get_mut(i) {
+                    apply_entity_ops(&mut m.entity, &ops);
+                }
+            }
+        }
+        // Drop the cursor and put the transformed used item back into the bag
+        // (front insert; the original leaves it in its existing slot).
+        self.held_item = None;
+        let mut restored = false;
+        if let Some(slots) = self.slots_mut(held.owner) {
+            restored = insert_inventory_front(slots.inventory, held.id);
+        }
+        if !restored {
+            self.set_pickup_message("Мешок у тебя не резиновый!");
+        }
+        self.queue_sound(9);
+        self.sweep_owner(held.owner);
         true
     }
 
     /// If both the held item and the item at `target` are class 9, run the
-    /// alchemy merge. Returns false (without changing state) otherwise.
+    /// alchemy merge; otherwise try the target-item use path (`Масло`/`Яд`).
     pub fn try_craft_held_at(
         &mut self,
         target_owner: InventoryOwner,
@@ -593,10 +723,10 @@ impl PlayableApp {
         }
         let held_class = self.world.res.item_class(held.id);
         let target_class = self.world.res.item_class(target_id);
-        if held_class == Some(9) && target_class == Some(9) {
-            self.craft_held_with(target_owner, target)
-        } else {
-            false
+        match (held_class, target_class) {
+            (Some(9), Some(9)) => self.craft_held_with(target_owner, target),
+            (Some(9), Some(_)) => self.use_held_on_item(target_owner, target),
+            _ => false,
         }
     }
 
@@ -642,7 +772,7 @@ impl PlayableApp {
                 }
             }
         }
-        self.sounds.push(9);
+        self.queue_sound(9);
         self.sweep_owner(target_owner);
         true
     }
@@ -692,6 +822,8 @@ impl PlayableApp {
                     let loc = ItemLocation::Inventory(idx);
                     self.try_craft_held_at(self.inventory_owner, loc) || self.deposit_held()
                 }
+                crate::character_screen::ScreenHit::RaiseLevel
+                | crate::character_screen::ScreenHit::Raise(_) => self.deposit_held(),
                 crate::character_screen::ScreenHit::None => self.deposit_held(),
             };
         }
@@ -726,3 +858,4 @@ impl PlayableApp {
         }
     }
 }
+

@@ -31,6 +31,7 @@ use std::fmt;
 use crate::coords::{entity_to_local_px, neighbors, step_by_direction};
 use crate::population::{Entity, GameTables, Group, Rect, Settlement, Waypoint};
 
+mod growth;
 mod motion;
 mod pathfind;
 /// Maximum path length in cells. The original stores the direction queue in the
@@ -38,6 +39,7 @@ mod pathfind;
 /// kept (`FUN_0043DA1F`); longer routes are re-issued from the new position.
 mod placement;
 
+pub use self::growth::*;
 pub use self::motion::*;
 pub use self::pathfind::*;
 pub use self::placement::*;

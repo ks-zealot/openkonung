@@ -97,7 +97,7 @@ fn round_even(v: f64) -> i64 {
 }
 
 /// Runtime target handle used by the melee orchestration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum CombatTarget {
     /// Party slot 0 (`PlayableApp.player`).
     Player,

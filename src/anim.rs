@@ -33,6 +33,10 @@ pub const ACT_BATTLE_DEATH: usize = 3;
 /// Ranged/special attack row used by the archery path (`FUN_004123BC` case 4).
 pub const ACT_RANGED: usize = 4;
 pub const ACT_SPECIAL_4: usize = 4;
+/// Melee attack row used by `FUN_0041EB48` (protagonist) and
+/// `FUN_004123BC` case 5 (NPC/monster). Damage resolves on this row's last
+/// frame; rows `2`/`8` only animate and fall back to idle.
+pub const ACT_MELEE: usize = 5;
 pub const ACT_SPECIAL_5: usize = 5;
 pub const ACT_PEACE_IDLE: usize = 6;
 pub const ACT_PEACE_WALK: usize = 7;

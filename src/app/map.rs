@@ -15,13 +15,13 @@ impl PlayableApp {
         if self.map_open {
             self.map_open = false;
             self.map_overlay = None;
-            self.sounds.push(4);
+            self.queue_sound(4);
         } else {
             self.quest_log_open = false;
             self.map_open = true;
             self.map_overlay = None;
             self.hovered_slot = None;
-            self.sounds.push(4);
+            self.queue_sound(4);
         }
     }
 
@@ -96,3 +96,4 @@ impl PlayableApp {
         );
     }
 }
+

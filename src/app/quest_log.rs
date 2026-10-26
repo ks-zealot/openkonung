@@ -15,13 +15,13 @@ impl PlayableApp {
         }
         if self.quest_log_open {
             self.quest_log_open = false;
-            self.sounds.push(4);
+            self.queue_sound(4);
         } else {
             self.map_open = false;
             self.map_overlay = None;
             self.quest_log_open = true;
             self.hovered_slot = None;
-            self.sounds.push(4);
+            self.queue_sound(4);
         }
     }
 
@@ -136,3 +136,4 @@ fn wrap_text(font: &crate::font::FontTable, text: &str, max_w: i32) -> Vec<Strin
     }
     out
 }
+
