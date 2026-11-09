@@ -18,6 +18,7 @@ use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
 use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 
 mod camera;
+mod class11;
 mod combat;
 mod cursor;
 mod debug_overlay;
@@ -35,9 +36,14 @@ mod population;
 mod portals;
 mod quest_log;
 mod save;
+mod settlement_defense;
+mod settlement_pass;
+mod settlement_targets;
 mod settlement_trade;
+mod settlement_training;
 mod sound;
 mod text;
+pub(crate) mod tooltip;
 mod trade;
 mod video_triggers;
 mod world_draw;
@@ -54,14 +60,21 @@ pub use crate::constants::keys::KEY_D;
 pub use crate::constants::keys::KEY_ESCAPE;
 pub use crate::constants::keys::KEY_F;
 pub use crate::constants::keys::KEY_H;
+pub use crate::constants::keys::KEY_HOME;
+pub use crate::constants::keys::KEY_I;
 pub use crate::constants::keys::KEY_L;
 pub use crate::constants::keys::KEY_M;
 pub use crate::constants::keys::KEY_P;
 pub use crate::constants::keys::KEY_Q;
 pub use crate::constants::keys::KEY_R;
+pub use crate::constants::keys::KEY_SPACE;
 pub use crate::constants::keys::KEY_T;
 pub use crate::constants::keys::KEY_TAB;
 pub use crate::constants::keys::KEY_V;
+pub use crate::constants::keys::KEY_1;
+pub use crate::constants::keys::KEY_2;
+pub use crate::constants::keys::KEY_3;
+pub use crate::constants::keys::KEY_A;
 
 pub struct TextItem {
     pub x: i32,
@@ -272,6 +285,15 @@ pub struct PlayableApp {
     /// Additive-selection modifier (`_DAT_0081D624`, Shift): when held, a
     /// party-portrait click adds the member instead of replacing the set.
     pub shift_down: bool,
+    /// Force-talk modifier (`_DAT_0081D5E4`, Ctrl): over a party member the
+    /// original cursor shows the talk frame and a left-click opens dialogue.
+    pub ctrl_down: bool,
+    /// `_DAT_0081D628` — the class-11 torch (`Факел`) highlights ground-object
+    /// markers in `FUN_0042532C` until the next map load.
+    pub torch_reveal: bool,
+    /// `_DAT_0081D660 == 7` — the class-11 shovel (`Лопата`) arms the dig
+    /// cursor; the next world click clears it (`FUN_0042260C`).
+    pub dig_armed: bool,
     /// Character whose inventory/equipment the character screen and HUD strip
     /// currently edit (original `_81D560`: protagonist or a party member).
     pub inventory_owner: crate::inventory::InventoryOwner,
@@ -438,6 +460,9 @@ impl PlayableApp {
             quest_flags,
             discovered_locations: [0; 56],
             shift_down: false,
+            ctrl_down: false,
+            torch_reveal: false,
+            dig_armed: false,
             inventory_owner: crate::inventory::InventoryOwner::Protagonist,
             held_item: None,
             inventory_scroll: 0,
@@ -527,7 +552,6 @@ impl PlayableApp {
             self.update_party(dt);
             self.update_combat(dt);
             self.check_game_over_video();
-            self.check_defeat_video();
             self.tick_temp_effects(dt);
             if self.camera_follow {
                 self.center_camera_on_player(false, dt);

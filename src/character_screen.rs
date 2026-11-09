@@ -515,7 +515,7 @@ fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &Cha
     let s = &sheet.snapshot;
 
     // «Текущий вес» = `FUN_0041b7e4`: sum of every carried item's weight.
-    let weight: u32 = sheet
+    let weight: i32 = sheet
         .equipment
         .iter()
         .chain(sheet.additional.iter())

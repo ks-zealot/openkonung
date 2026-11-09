@@ -95,7 +95,7 @@ fn real_starting_item_weight_and_rating() {
         return;
     };
     // (item id, weight @ icon_base+0x00, combat value @ 0x459B7C + subtype*0x40)
-    let expected = [(1u16, 200u16, 60u16), (2, 100, 0), (3, 500, 0)];
+    let expected = [(1u16, 200i32, 60u16), (2, 100, 0), (3, 500, 0)];
     for (id, weight, rating) in expected {
         let info = db.resolve(&game, id).unwrap_or_else(|| panic!("item {id}"));
         assert_eq!(info.weight, weight, "item {id} weight");
@@ -151,4 +151,16 @@ fn settlement_prop_table_matches_the_original_base_ids() {
     // Keys are signed bytes: 0..=0x7F are valid, 0x80..=0xFF are rejected.
     assert!(db.settlement_prop_base(0x7F).is_some());
     assert_eq!(db.settlement_prop_base(0x80), None);
+}
+
+#[test]
+fn class9_price_is_signed_and_uses_charge_count() {
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
+    // Game.1 item 3 = "???????? ???????": price field -2, quantity 7.
+    // `FUN_0041B2A8`: round(-7 * -2) << 3 = 112.
+    let inst = ItemDb::decode_instance(&game, 3).unwrap();
+    assert_eq!(inst.current_durability, 7.0);
+    assert_eq!(db.instance_trade_value(&inst), 112);
 }

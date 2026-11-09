@@ -3,6 +3,7 @@
 use super::super::*;
 
 use crate::constants::motion::*;
+use crate::coords::step_by_direction;
 
 /// Fixed-step citizen update (`FUN_004168a4` + `FUN_00413a84` + `FUN_004142d4`/
 /// `FUN_0041435c`).
@@ -93,6 +94,23 @@ pub fn update_population(
                 continue;
             }
             let battle = crate::anim::battle_from_flags(flags_b);
+            // `FUN_004168A4` role-station branch: role bits select waypoint
+            // slot 1..=3 (the master's workstation). If the slot has an owner
+            // the actor walks there; otherwise the original clears the role.
+            let role = ((arch & 0x38) >> 3) as usize;
+            let station = if role > 0 {
+                settlement
+                    .and_then(|s| s.waypoints.get(role))
+                    .filter(|w| w.owner != 0)
+                    .copied()
+            } else {
+                None
+            };
+            if role > 0 && station.is_none() {
+                if let Some(a) = build.actors.iter_mut().find(|a| a.entity.index == eid) {
+                    a.entity.archetype &= !0x38;
+                }
+            }
             let Some(m) = build.motion.get_mut(&eid) else {
                 continue;
             };
@@ -102,11 +120,41 @@ pub fn update_population(
             // Route issuing runs only while no segment is in flight, so a route
             // is never re-issued mid-step (the committed cell leads the sprite).
             if !m.walking {
-                // Settlement home waypoint owned by this entity (`FUN_0041182C`):
-                // its owner walks there and then stays put (`FUN_004168A4` keeps it
-                // idle, facing the authored direction); only entities WITHOUT a home
-                // waypoint random-wander (`FUN_00413A84`).
-                if let Some(w) = homes.get(&(eid as u16)).copied() {
+                // Role workstation first (`FUN_004168A4`): the actor never
+                // stands on the master's own cell. If it is already on one of
+                // the 8 neighbours (`FUN_0041165C`) it faces the waypoint's
+                // facing; otherwise it moves to the first free neighbour
+                // (`FUN_00410FFC`).
+                if let Some(w) = station {
+                    let station_cell = (w.x as i32, w.y as i32);
+                    let adjacent = (0..8u8)
+                        .any(|d| step_by_direction(station_cell.0, station_cell.1, d) == cell);
+                    if adjacent {
+                        m.path.clear();
+                        m.target = None;
+                        if m.facing != w.facing {
+                            m.facing = w.facing;
+                        }
+                    } else if let Some(goal) = (0..8u8)
+                        .map(|d| step_by_direction(station_cell.0, station_cell.1, d))
+                        .find(|&(nx, ny)| is_free(collision, nx, ny))
+                    {
+                        m.target = Some(goal);
+                        let bounds = path_bounds(&rect, cell, goal);
+                        match find_path(collision, &occupied, cell, goal, bounds) {
+                            Some(p) if !p.is_empty() => m.path = p,
+                            _ => {
+                                m.wait = WANDER_WAIT_MIN;
+                                m.target = None;
+                            }
+                        }
+                    } else {
+                        m.path.clear();
+                        m.target = None;
+                    }
+                } else if let Some(w) = homes.get(&(eid as u16)).copied() {
+                    // Settlement home waypoint owned by this entity
+                    // (`FUN_0041182C`): the owner walks onto the exact cell.
                     let home_cell = (w.x as i32, w.y as i32);
                     if cell == home_cell {
                         m.path.clear();

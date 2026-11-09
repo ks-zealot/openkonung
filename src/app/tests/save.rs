@@ -75,6 +75,27 @@ fn save_roundtrip_preserves_quest_progress_and_state() {
 }
 
 #[test]
+fn save_roundtrip_preserves_npc_state_d2() {
+    let Some(mut app) = build_party_move_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    if let Some(t) = app.tables.as_mut() {
+        t.entities[7].state_d2 = 0x13;
+    }
+    let bytes = app.capture_save().encode().expect("encode");
+    let decoded = SaveEnvelope::decode(&bytes).expect("decode");
+    assert_eq!(decoded.extra.npc_state_d2.len(), crate::population::ENTITY_COUNT);
+    assert_eq!(decoded.extra.npc_state_d2[7], 0x13);
+    app.apply_save(decoded).expect("apply");
+    assert_eq!(
+        app.tables.as_ref().unwrap().entities[7].state_d2,
+        0x13,
+        "NPC Entity+0xD2 must survive the round-trip"
+    );
+}
+
+#[test]
 fn encoded_payload_is_compressed_and_versioned() {
     let Some(app) = build_party_move_app() else {
         eprintln!("skipping: game data not present");

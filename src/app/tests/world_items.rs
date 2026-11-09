@@ -180,6 +180,7 @@ fn settlement_linkage_and_prop_flames_tick() {
         object_id: 0,
         grid_x: 10,
         grid_y: 10,
+        interactive: true,
         palette: 0,
         frame: 0,
         flame_emitters: Vec::new(),
@@ -233,4 +234,152 @@ fn settlement_linkage_and_prop_flames_tick() {
         "expected the prop plus 7 flame sprites, got {}",
         sprites.len()
     );
+}
+
+fn push_dig_spot(
+    app: &mut PlayableApp,
+    loc: u32,
+    cell: (i32, i32),
+    money: i16,
+    item: u16,
+) -> usize {
+    let index = app.world_object_sources.len();
+    let mut items = [0u16; crate::world_objects::WORLD_OBJECT_ITEM_SLOTS];
+    items[0] = item;
+    app.world_object_sources
+        .push(crate::world_objects::WorldObjectSource {
+            index,
+            t0: 0,
+            t4: 0,
+            x: cell.0 as u16,
+            y: cell.1 as u16,
+            money,
+            loc: loc as u16,
+            items,
+        });
+    index
+}
+
+fn free_inventory_slot(app: &PlayableApp) -> usize {
+    app.player
+        .inventory
+        .iter()
+        .position(|&v| v == 0)
+        .expect("free inventory slot")
+}
+
+#[test]
+fn e1_buried_spot_needs_the_shovel_to_be_collected() {
+    let Some(mut app) = build_party_app_with_free_location() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.world_frame = 100;
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(4, 69, 0, -1, 1.0, 0, 0)
+        .expect("free item instance");
+    let cell = (40, 40);
+    let source = push_dig_spot(&mut app, 4, cell, -100, item);
+    app.rebuild_world_objects();
+    assert!(
+        app.active_world_objects.iter().any(|o| o.cell() == cell),
+        "a buried record is part of the active marker pool"
+    );
+
+    app.player_x = cell.0 as f64;
+    app.player_y = cell.1 as f64;
+    let money = app.player.money;
+    app.try_pickup_here();
+    assert!(
+        !app.player.inventory.contains(&item),
+        "FUN_00421B50: a buried spot is skipped without FUN_00433A8C(0x19)"
+    );
+    assert_eq!(app.player.money, money);
+    assert!(app
+        .active_world_objects
+        .iter()
+        .any(|o| o.cell() == cell));
+
+    let shovel = app
+        .world
+        .res
+        .alloc_item_instance(11, 24, 0, -1, 1.0, 0, 0)
+        .expect("free shovel instance");
+    let slot = free_inventory_slot(&app);
+    app.player.inventory[slot] = shovel;
+
+    app.try_pickup_here();
+    assert!(app.player.inventory.contains(&item), "shovel digs it up");
+    assert_eq!(app.player.money, money + 100, "FUN_0043EAA2 is abs(money)");
+    assert!(!app
+        .active_world_objects
+        .iter()
+        .any(|o| o.cell() == cell));
+    assert_eq!(
+        app.world_object_sources[source].loc, 0,
+        "an emptied non-herb record is permanently removed (FUN_0041093C)"
+    );
+}
+
+#[test]
+fn e1_copper_mirror_reveals_a_buried_spot() {
+    let Some(mut app) = build_party_app_with_free_location() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.world_frame = 100;
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(4, 69, 0, -1, 1.0, 0, 0)
+        .expect("free item instance");
+    let cell = (60, 30);
+    let source = push_dig_spot(&mut app, 4, cell, -100, item);
+    app.rebuild_world_objects();
+
+    let (lx, ly) = crate::coords::entity_to_local_px(cell.0, cell.1);
+    app.detail_pan = [
+        -(lx as f64 - VIRTUAL_W as f64 / 2.0),
+        -(ly as f64 - VIRTUAL_H as f64 / 2.0),
+    ];
+    app.cursor_virtual = (VIRTUAL_W as f64 / 2.0, VIRTUAL_H as f64 / 2.0);
+    assert_ne!(
+        app.cursor_index(),
+        7,
+        "FUN_00428740 hides the ground cursor for negative money"
+    );
+
+    let mirror = app
+        .world
+        .res
+        .alloc_item_instance(11, 48, 0, -1, 1.0, 0, 0)
+        .expect("free mirror instance");
+    let slot = free_inventory_slot(&app);
+    app.player.inventory[slot] = mirror;
+    assert!(app.use_class11_item(
+        crate::inventory::InventoryOwner::Protagonist,
+        mirror,
+        None
+    ));
+    assert_eq!(app.world_object_sources[source].money, 100);
+    assert!(app
+        .active_world_objects
+        .iter()
+        .any(|o| o.cell() == cell && o.money > 0));
+    assert_eq!(
+        app.cursor_index(),
+        7,
+        "the revealed spot shows the ground cursor"
+    );
+
+    app.player_x = cell.0 as f64;
+    app.player_y = cell.1 as f64;
+    app.try_pickup_here();
+    assert!(
+        app.player.inventory.contains(&item),
+        "a revealed spot needs no shovel"
+    );
+    assert_eq!(app.world.res.item_class(mirror), Some(0xFF));
 }

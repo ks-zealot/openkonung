@@ -206,6 +206,99 @@ pub fn can_raise_any(
         .all(|&(stat, value)| value >= stat_growth_min(class, stat, level) as u16)
 }
 
+/// `FUN_00410B08` raw class index for an `Entity+0x04` archetype:
+/// `(archetype & 7) - 1`, or `1` when `archetype & 0x40` is set. Shipped
+/// villagers use `&7 == 1..5`, so index `0` (the record at `0x45B0AB`) is a
+/// real, reachable record; `&7 == 0` / `> 5` are rejected rather than indexing
+/// outside the five records.
+pub fn growth_index_raw(archetype: u8) -> Option<usize> {
+    if archetype & 0x40 != 0 {
+        return Some(1);
+    }
+    let value = (archetype & 7) as usize;
+    if (1..=5).contains(&value) {
+        Some(value - 1)
+    } else {
+        None
+    }
+}
+
+/// `0x45AE28`: per-class-index specialization stat (`[3, 6, 2, 3, 5]` =
+/// charisma, endurance, dexterity, charisma, strength). Index 0 is the unused
+/// record used by `archetype & 7 == 1`.
+pub const SPECIALIZED_STAT: [PrimaryStat; 5] = [
+    PrimaryStat::Charisma,
+    PrimaryStat::Endurance,
+    PrimaryStat::Dexterity,
+    PrimaryStat::Charisma,
+    PrimaryStat::Strength,
+];
+
+/// Per-level growth cap for a raw `FUN_00410B08` class index.
+pub fn stat_growth_cap_index(index: usize, stat: PrimaryStat, level: u8) -> u8 {
+    let lvl = (level as usize).min(12);
+    STAT_GROWTH_CAPS[index.min(4)][stat_block(stat)][lvl]
+}
+
+/// Per-level minimum for a raw `FUN_00410B08` class index.
+pub fn stat_growth_min_index(index: usize, stat: PrimaryStat, level: u8) -> u8 {
+    let lvl = (level as usize).min(12);
+    STAT_GROWTH_MINS[index.min(4)][stat_block(stat)][lvl]
+}
+
+/// `FUN_00410B08(entity, 0)` for a raw class index (NPC training). Level `0xD`
+/// is refused; every one of the four stored stats must meet the level minimum.
+pub fn can_raise_any_index(
+    index: usize,
+    level: u8,
+    dexterity: u16,
+    charisma: u16,
+    strength: u16,
+    endurance: u16,
+) -> bool {
+    if level == 0xD {
+        return false;
+    }
+    let checks = [
+        (PrimaryStat::Dexterity, dexterity),
+        (PrimaryStat::Charisma, charisma),
+        (PrimaryStat::Strength, strength),
+        (PrimaryStat::Endurance, endurance),
+    ];
+    checks
+        .iter()
+        .all(|&(stat, value)| value >= stat_growth_min_index(index, stat, level) as u16)
+}
+
+/// `FUN_00410B08(entity, stat)` for a raw class index: the XP cost to raise
+/// `stat` from `value`, or `None` when the per-level cap is reached or the
+/// character cannot afford it. Mirrors the `0x45AFB0` tier table (the final
+/// sentinel tier costs `999`).
+pub fn raise_cost_index(
+    index: usize,
+    stat: PrimaryStat,
+    level: u8,
+    value: u16,
+    available_xp: u32,
+) -> Option<u32> {
+    let index = index.min(4);
+    if stat_growth_cap_index(index, stat, level) as u16 <= value {
+        return None;
+    }
+    let specialized = SPECIALIZED_STAT[index] == stat;
+    for &(cost, spec, normal) in STAT_TIERS.iter() {
+        let threshold = if specialized { spec } else { normal };
+        if threshold > value {
+            return if cost <= available_xp { Some(cost) } else { None };
+        }
+    }
+    if 999 <= available_xp {
+        Some(999)
+    } else {
+        None
+    }
+}
+
 /// Original maximum-load calculation (`Entity+0x62` = `endurance_base`).
 /// Rendered with one decimal (`%4.1f`).
 pub fn max_load(endurance_base: u16) -> f64 {

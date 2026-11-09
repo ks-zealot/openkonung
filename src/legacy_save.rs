@@ -441,6 +441,9 @@ pub fn patch_settlements(
         r[3] = s.loc_id;
         put_i32(r, 0x10, s.money_pool_10);
         put_u16(r, 0x14, s.progress_14);
+        put_i32(r, 0x3FC, s.apprentice_start[0]);
+        put_i32(r, 0x400, s.apprentice_start[1]);
+        put_i32(r, 0x404, s.apprentice_start[2]);
         r[0x4B2] = s.flags_4b2;
         for (t, target) in s.targets.iter().enumerate() {
             let to = 0x18 + t * 8;
@@ -462,11 +465,17 @@ pub fn patch_settlements(
     }
     for t in trades.iter().take(SETTLEMENT_COUNT) {
         let o = t.index.min(SETTLEMENT_COUNT - 1) * SETTLEMENT_STRIDE;
+        // The producer words are the waypoint owners; write them from the live
+        // waypoint table so a runtime `0x159`/`0x14C` install survives export.
+        let producers = settlements
+            .get(t.index)
+            .map(|s| [s.producer(1), s.producer(2), s.producer(3), s.voivode()])
+            .unwrap_or([t.prod_role2, t.prod_role3, t.prod_role4, t.prod_role5]);
         let r = &mut block[o..o + SETTLEMENT_STRIDE];
-        put_u16(r, crate::constants::game_layout::TRADE_PROD2_OFF, t.prod_role2);
-        put_u16(r, crate::constants::game_layout::TRADE_PROD3_OFF, t.prod_role3);
-        put_u16(r, crate::constants::game_layout::TRADE_PROD4_OFF, t.prod_role4);
-        put_u16(r, crate::constants::game_layout::TRADE_PROD5_OFF, t.prod_role5);
+        put_u16(r, crate::constants::game_layout::TRADE_PROD2_OFF, producers[0]);
+        put_u16(r, crate::constants::game_layout::TRADE_PROD3_OFF, producers[1]);
+        put_u16(r, crate::constants::game_layout::TRADE_PROD4_OFF, producers[2]);
+        put_u16(r, crate::constants::game_layout::TRADE_PROD5_OFF, producers[3]);
         put_i32(r, crate::constants::game_layout::TRADE_TIMER2_OFF, t.timer2);
         put_i32(r, crate::constants::game_layout::TRADE_TIMER4_OFF, t.timer4);
         put_i32(r, crate::constants::game_layout::TRADE_TIMER3_OFF, t.timer3);

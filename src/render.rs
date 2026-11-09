@@ -178,25 +178,45 @@ impl World {
     /// Front-most opaque prop sprite under a local-world point. Returns
     /// `(prop_table_index, grid_x, grid_y)`.
     pub fn prop_at_local(&mut self, loc_id: u32, lx: i32, ly: i32) -> Option<(usize, i32, i32)> {
+        self.prop_hit_at(loc_id, lx, ly, false)
+    }
+
+    /// Front-most **interactive** prop sprite under a local-world point
+    /// (`_DAT_0081D57C`): the original hover/order predicate also requires
+    /// record `+0x22 & 1`.
+    pub fn interactive_prop_at_local(
+        &mut self,
+        loc_id: u32,
+        lx: i32,
+        ly: i32,
+    ) -> Option<(usize, i32, i32)> {
+        self.prop_hit_at(loc_id, lx, ly, true)
+    }
+
+    fn prop_hit_at(
+        &mut self,
+        loc_id: u32,
+        lx: i32,
+        ly: i32,
+        interactive_only: bool,
+    ) -> Option<(usize, i32, i32)> {
         let idx = *self.loc_index.get(&loc_id)?;
-        let loc = &self.locs[idx];
-        let props: Vec<(usize, i32, i32)> = loc
-            .props
-            .iter()
-            .map(|p| (p.ri, p.grid_x, p.grid_y))
-            .collect();
+        // Disjoint field borrows: the prop list stays immutable while the
+        // sprite cache is filled (no per-frame Vec of every placement).
+        let World { res, locs, .. } = self;
+        let loc = locs.get(idx)?;
         let mut best: Option<(usize, i32, i32, i32)> = None;
-        for (ri, gx, gy) in props {
-            let Some(p) = self.locs[idx].props.iter().find(|p| p.ri == ri) else {
+        for p in &loc.props {
+            if interactive_only && !p.interactive {
                 continue;
-            };
+            }
             let (img, sx, sy) = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.res.prop_sprite(p.object_id, p.frame as usize, p.palette)
+                res.prop_sprite(p.object_id, p.frame as usize, p.palette)
             })) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
-            let (plx, ply) = prop_to_local_px(gx, gy);
+            let (plx, ply) = prop_to_local_px(p.grid_x, p.grid_y);
             let px = lx - (plx + sx);
             let py = ly - (ply + sy);
             if px < 0 || py < 0 || px >= img.w as i32 || py >= img.h as i32 {
@@ -208,7 +228,7 @@ impl World {
             }
             let front = (ply + sy) as i32;
             if best.map(|(_, _, _, by)| front >= by).unwrap_or(true) {
-                best = Some((ri, gx, gy, front));
+                best = Some((p.ri, p.grid_x, p.grid_y, front));
             }
         }
         best.map(|(i, x, y, _)| (i, x, y))

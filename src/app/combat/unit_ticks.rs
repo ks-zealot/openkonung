@@ -28,9 +28,47 @@ impl PlayableApp {
             .min(u8::MAX as usize) as u8
     }
 
-    pub(super) fn update_player_combat(&mut self) {
+    /// `FUN_0041EB48` adjacent acquisition: the first live object-family actor
+    /// in an adjacent cell whose current target is `me`.
+    fn adjacent_world_attacker(&self, me: CombatTarget, cell: (i32, i32)) -> Option<usize> {
+        let pop = self.population_cache.get(&self.current_map)?;
+        pop.actors.iter().find_map(|a| {
+            if a.entity.archetype & 0x40 == 0 {
+                return None;
+            }
+            let m = pop.motion.get(&a.entity.index)?;
+            if m.dead || m.combat_target != Some(me) {
+                return None;
+            }
+            Self::is_adjacent(cell, m.cell).then_some(a.entity.index)
+        })
+    }
+
+    pub(in crate::app) fn update_player_combat(&mut self) {
         if self.player.dead {
             return;
+        }
+        // `FUN_0041EB48`: an idle unit automatically acquires an adjacent
+        // enemy that is already targeting it. This is the original retaliation
+        // path that lets the party fight back while walking through a mob
+        // group without a manual right-click order.
+        if self.player_attack_target.is_none() && !self.player_active && self.player_path.is_empty()
+        {
+            let pc = (self.player_x.round() as i32, self.player_y.round() as i32);
+            if let Some(id) = self.adjacent_world_attacker(CombatTarget::Player, pc) {
+                self.player.flags_b |= crate::anim::FLAG_BATTLE;
+                self.player_attack_target = Some(CombatTarget::World(id));
+                self.player_attack_frame = 0;
+                self.player_attack_frames = 0;
+                self.player_attack_ranged = false;
+                self.player_ranged_frame = 0;
+                self.player_ranged_frames = 0;
+                self.player_ranged_fired = false;
+                self.target = None;
+                self.player_path.clear();
+                self.player_render_x = self.player_x;
+                self.player_render_y = self.player_y;
+            }
         }
         let Some(target) = self.player_attack_target else {
             self.player_attack_frame = 0;
@@ -154,6 +192,12 @@ impl PlayableApp {
         let player_dead = self.player.dead;
         let party_cells: Vec<(i32, i32)> = self.party.iter().map(|m| m.motion.cell).collect();
         let party_dead: Vec<bool> = self.party.iter().map(|m| m.motion.dead).collect();
+        let party_retaliate: Vec<Option<usize>> = (0..self.party.len())
+            .map(|i| {
+                let cell = party_cells.get(i).copied().unwrap_or((0, 0));
+                self.adjacent_world_attacker(CombatTarget::Party(i), cell)
+            })
+            .collect();
         let world_cells: std::collections::HashMap<usize, (i32, i32)> = self
             .population_cache
             .get(&loc)
@@ -187,6 +231,22 @@ impl PlayableApp {
         for (i, m) in party.iter_mut().enumerate() {
             if m.motion.dead {
                 continue;
+            }
+            // `FUN_0041EB48`: retaliate against an adjacent attacker while the
+            // companion is idle (no manual order).
+            if m.motion.combat_target.is_none()
+                && !m.motion.walking
+                && m.motion.path.is_empty()
+            {
+                if let Some(id) = party_retaliate.get(i).copied().flatten() {
+                    m.entity.flags_b |= crate::anim::FLAG_BATTLE;
+                    m.motion.combat_target = Some(CombatTarget::World(id));
+                    m.motion.attack_frames = 0;
+                    m.motion.frame = 0;
+                    m.motion.ranged_order = false;
+                    m.motion.ranged_fired = false;
+                    m.motion.render_cell = m.motion.cell;
+                }
             }
             let Some(target) = m.motion.combat_target else {
                 continue;

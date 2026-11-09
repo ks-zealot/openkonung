@@ -49,8 +49,7 @@ impl PlayableApp {
 
     /// Stance toggle without its own click sound (used by `party_engage`, which
     /// already queues the single `FUN_00421458` click).
-    pub(super) fn toggle_selected_battle_stance_silent(&mut self) {
-        let leader_selected = self.party_selected.get(0).copied().unwrap_or(false);
+    pub(super) fn toggle_selected_battle_stance_silent(&mut self) {        let leader_selected = self.party_selected.get(0).copied().unwrap_or(false);
         let first_battle = if leader_selected {
             crate::anim::battle_from_flags(self.player.flags_b)
         } else {
@@ -145,7 +144,55 @@ impl PlayableApp {
         }
     }
 
-    /// Store a world-click destination on every **selected** companion and start
+    /// Shift+A (`FUN_00421B50` Shift branch): select every visible party unit.
+    pub(super) fn select_all_party(&mut self) {
+        self.queue_sound(crate::sound::events::UI_CLICK);
+        self.party_selected = [false; crate::hud::PARTY_CELLS];
+        if !self.player.dead {
+            self.party_selected[0] = true;
+        }
+        for (i, m) in self.party.iter().enumerate() {
+            if !m.motion.dead && i + 1 < self.party_selected.len() {
+                self.party_selected[i + 1] = true;
+            }
+        }
+    }
+
+    /// `FUN_00421458` sets battle stance on **every** party unit, not only the
+    /// current selection. Used by the engage button / `A`.
+    pub(super) fn set_all_party_battle(&mut self) {
+        if !self.player.dead {
+            self.player.flags_b |= crate::anim::FLAG_BATTLE;
+        }
+        for m in self.party.iter_mut() {
+            if m.motion.dead {
+                continue;
+            }
+            m.entity.flags_b |= crate::anim::FLAG_BATTLE;
+            let row = m.motion.action as usize;
+            let action = if row == crate::anim::ACT_BATTLE_ATTACK
+                || row == crate::anim::ACT_PEACE_ATTACK
+            {
+                crate::anim::attack_action(true)
+            } else if m.motion.walking {
+                crate::anim::walk_action(true)
+            } else if row == crate::anim::ACT_BATTLE_DEATH
+                || row == crate::anim::ACT_PEACE_DEATH
+            {
+                row
+            } else {
+                crate::anim::idle_action(true)
+            };
+            if m.motion.action as usize != action {
+                m.motion.action = action as u8;
+                if !m.motion.walking {
+                    m.motion.frame = 0;
+                }
+            }
+        }
+        self.anim_time = 0.0;
+    }
+
     /// its walk, mirroring the original left-click command 0 (`FUN_0042260C`),
     /// which writes the clicked cell `(tx,ty)` to `Entity+0x0C/+0x0E` on every
     /// unit in the selection array `0x81A814`. Companions path independently to

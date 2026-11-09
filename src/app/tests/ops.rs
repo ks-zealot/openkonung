@@ -150,7 +150,7 @@ fn quest_item_flag_interface_opcode() {
 }
 
 #[test]
-fn group_visited_and_actor_predicates() {
+fn group_activation_and_actor_predicates() {
     let Some(mut app) = build_party_app() else {
         eprintln!("skipping: game data not present");
         return;
@@ -162,12 +162,14 @@ fn group_visited_and_actor_predicates() {
         .map(|e| e.group_id as usize)
         .unwrap();
     assert!(run(&mut app, 0x112));
-    assert!(app
-        .tables
-        .as_ref()
-        .and_then(|t| t.groups.get(group))
-        .map(|g| g.visited)
-        .unwrap_or(false));
+    assert_eq!(
+        app.tables
+            .as_ref()
+            .and_then(|t| t.groups.get(group))
+            .map(|g| g.activity_1d)
+            .unwrap_or(0),
+        1
+    );
 
     app.player.hp_internal = 1600;
     assert!(run(&mut app, 0x14A));
@@ -179,6 +181,85 @@ fn group_visited_and_actor_predicates() {
     assert!(run(&mut app, 0x145));
     app.player.interface_mode_d2 = 0xFF;
     assert!(!run(&mut app, 0x145));
+}
+
+#[test]
+fn healing_ops_target_the_protagonist_and_party() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    // 0x14E: the healer's skill rises; the leader is restored.
+    app.player.hp_internal = 100;
+    app.tables.as_mut().unwrap().entities[NPC].stats.healing = 50;
+    assert!(run(&mut app, 0x14E));
+    assert_eq!(app.player.hp_internal, 1600);
+    assert_eq!(
+        app.tables.as_ref().unwrap().entities[NPC].stats.healing,
+        51,
+        "1600-100 missing HP / 1024 + 50"
+    );
+
+    // 0x14F: party members are restored, not the settlement group.
+    app.recruit_companion(NPC);
+    app.player.hp_internal = 100;
+    app.party[0].entity.stats.hp_internal = 100;
+    app.party[0].entity.stats.healing = 10;
+    app.tables.as_mut().unwrap().entities[280].stats.healing = 0;
+    assert!(run(&mut app, 0x14F));
+    assert_eq!(app.player.hp_internal, 1600);
+    assert_eq!(app.party[0].entity.stats.hp_internal, 1600);
+    assert!(
+        app.party[0].entity.stats.healing > 10,
+        "party member healing skill must rise"
+    );
+    assert_eq!(
+        app.tables.as_ref().unwrap().entities[280].stats.healing,
+        0,
+        "village group must not be healed"
+    );
+}
+
+#[test]
+fn settlement_settle_ops_move_the_npc_and_party_specialist_into_the_village() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    let group_before = app
+        .tables
+        .as_ref()
+        .unwrap()
+        .groups[23]
+        .entity_count;
+    app.recruit_companion(NPC);
+    assert_eq!(app.party.len(), 1);
+    assert!(run(&mut app, 0x14C));
+    assert!(app.party.is_empty());
+    let group = &app.tables.as_ref().unwrap().groups[23];
+    assert_eq!(group.entity_count, group_before + 1);
+    let dest = group.first_entity as usize + group_before as usize;
+    assert_eq!(
+        app.tables.as_ref().unwrap().entities[dest].group_id,
+        23,
+        "0x14C settles the NPC into the settlement group"
+    );
+
+    // 0x159 settles a party specialist at waypoint 4 (strength/melee slot).
+    app.recruit_companion(NPC);
+    app.party[0].entity.stats.strength_base = 20;
+    app.party[0].entity.stats.melee_mastery = 20;
+    let before = app.tables.as_ref().unwrap().groups[23].entity_count;
+    assert!(run(&mut app, 0x159));
+    assert!(app.party.is_empty());
+    let group = &app.tables.as_ref().unwrap().groups[23];
+    assert_eq!(group.entity_count, before + 1);
+    let dest = group.first_entity as usize + before as usize;
+    assert_eq!(app.tables.as_ref().unwrap().entities[dest].group_id, 23);
+    assert_eq!(
+        app.settlements.iter().find(|s| s.loc_id == 4).unwrap().waypoints[4].owner as usize,
+        dest
+    );
 }
 
 #[test]

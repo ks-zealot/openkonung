@@ -36,7 +36,6 @@ impl PlayableApp {
         party_cells.extend(
             self.party
                 .iter()
-                .filter(|m| !m.motion.dead)
                 .map(|m| m.motion.cell),
         );
 
@@ -44,25 +43,54 @@ impl PlayableApp {
             return;
         };
         let GameTables { groups, entities } = tables;
-        for g in groups.iter_mut() {
-            if g.loc_id as u32 != loc || g.class_1e & OBJECT_ARCHETYPE_BIT == 0 {
-                continue;
-            }
+        // Snapshot the current-location object groups and their authored
+        // visibility. Runtime cells come from the population cache below
+        // (the original reads live `Entity+0x08/+0x0A`, which the remake keeps
+        // in `ActorMotion::cell`).
+        let group_infos: Vec<(usize, Rect, Vec<(usize, (i32, i32), u8, u8)>)> = groups
+            .iter()
+            .filter(|g| g.loc_id as u32 == loc && g.class_1e & OBJECT_ARCHETYPE_BIT != 0)
+            .map(|g| {
+                let members = g
+                    .entity_range()
+                    .map(|range| {
+                        entities[range]
+                            .iter()
+                            .map(|e| (e.index, (e.x as i32, e.y as i32), e.archetype, e.kind))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (g.index, g.rect_a, members)
+            })
+            .collect();
+        let live_cells: std::collections::HashMap<usize, (i32, i32)> = self
+            .population_cache
+            .get(&loc)
+            .map(|p| p.motion.iter().map(|(&id, m)| (id, m.cell)).collect())
+            .unwrap_or_default();
+        for (index, rect, members) in group_infos {
             if party_cells
                 .iter()
-                .any(|&(x, y)| rect_contains(&g.rect_a, x, y))
+                .any(|&(x, y)| rect_contains(&rect, x, y))
             {
-                // `FUN_00412C30`: target group = leader[+5] (party group 0).
-                g.target_group = 0;
-                g.activity_1d = 1;
+                if let Some(g) = groups.get_mut(index) {
+                    // `FUN_00412C30`: target group = leader[+5] (party group 0).
+                    g.target_group = 0;
+                    g.activity_1d = 1;
+                }
                 continue;
             }
-            let outside = g.entity_range().ok().is_some_and(|range| {
-                entities[range]
-                    .iter()
-                    .any(|e| !rect_contains(&g.rect_a, e.x as i32, e.y as i32))
+            let outside = members.iter().any(|&(id, authored, archetype, kind)| {
+                let visible = archetype & 0x80 == 0 && kind != 9 && kind != 3;
+                if !visible {
+                    return false;
+                }
+                let (x, y) = live_cells.get(&id).copied().unwrap_or(authored);
+                !rect_contains(&rect, x, y)
             });
-            g.activity_1d = if outside { 0x20 } else { 0 };
+            if let Some(g) = groups.get_mut(index) {
+                g.activity_1d = if outside { 0x20 } else { 0 };
+            }
         }
     }
 
@@ -106,23 +134,35 @@ impl PlayableApp {
         };
 
         // Read activity/target-group before taking the mutable population borrow.
-        let groups: Vec<(usize, u8, u8, Rect)> = self
+        let groups: Vec<(usize, u8, u8, Rect, u8)> = self
             .tables
             .as_ref()
             .map(|t| {
                 t.groups
                     .iter()
                     .filter(|g| {
-                        g.loc_id as u32 == loc
+                        g.index != 0
+                            && g.loc_id as u32 == loc
+                            && g.class_1e & 0xC0 != 0
                             && (g.activity_1d == 1 || g.activity_1d == 0x20)
                     })
-                    .map(|g| (g.index, g.target_group, g.activity_1d, g.rect_a))
+                    .map(|g| {
+                        (
+                            g.index,
+                            g.target_group,
+                            g.activity_1d,
+                            g.rect_a,
+                            g.class_1e,
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default();
         if groups.is_empty() {
+            self.idle_inactive_object_groups();
             return;
         }
+        self.idle_inactive_object_groups();
 
         let PlayableApp {
             world,
@@ -140,6 +180,12 @@ impl PlayableApp {
             .actors
             .iter()
             .filter_map(|a| {
+                if a.entity.archetype & 0x80 != 0
+                    || a.entity.kind == 9
+                    || a.entity.kind == 3
+                {
+                    return None;
+                }
                 let m = pop.motion.get(&a.entity.index)?;
                 if m.dead {
                     return None;
@@ -152,9 +198,13 @@ impl PlayableApp {
             })
             .collect();
 
-        for (group_id, target_group, activity, rect) in groups {
+        for (group_id, target_group, activity, rect, class) in groups {
             if activity == 0x20 {
-                Self::return_group_to_rect(pop, collision, group_id, &rect);
+                // `FUN_00412E00` handles recall only for object groups; the
+                // citizen dispatcher returns without a recall path.
+                if class & 0x40 != 0 {
+                    Self::return_group_to_rect(pop, collision, group_id, &rect);
+                }
                 continue;
             }
             let enemies: Vec<EnemyRef> = if target_group == 0 {
@@ -174,7 +224,13 @@ impl PlayableApp {
             let members: Vec<usize> = pop
                 .actors
                 .iter()
-                .filter(|a| a.source_group_id == group_id && !pop.motion.get(&a.entity.index).is_some_and(|m| m.dead))
+                .filter(|a| {
+                    a.source_group_id == group_id
+                        && !pop
+                            .motion
+                            .get(&a.entity.index)
+                            .is_some_and(|m| m.dead)
+                })
                 .map(|a| a.entity.index)
                 .collect();
             if members.is_empty() {
@@ -184,25 +240,43 @@ impl PlayableApp {
                 .iter()
                 .filter_map(|id| pop.motion.get(id).and_then(|m| m.combat_target))
                 .collect();
+            let citizen = class & 0x40 == 0;
 
             for id in members {
                 let Some(ai) = pop.actors.iter().position(|a| a.entity.index == id) else {
                     continue;
                 };
-                if pop.motion.get(&id).is_some_and(|m| m.combat_target.is_some()) {
+                if pop
+                    .motion
+                    .get(&id)
+                    .is_some_and(|m| m.combat_target.is_some())
+                {
                     continue;
                 }
                 let cell = pop.motion.get(&id).map(|m| m.cell).unwrap_or((0, 0));
                 let arch = pop.actors[ai].entity.archetype;
-                let target = if matches!(arch, 0x44 | 0x57) {
-                    Self::adjacent_enemy(cell, &enemies)
-                } else if matches!(arch, 0x41 | 0x4D | 0x4E | 0x4F) {
-                    Self::shared_target(&engaged, &enemies)
-                        .or_else(|| Self::nearest_unengaged(cell, &enemies, &engaged))
-                        .or_else(|| Self::nearest_enemy(cell, &enemies))
+                let target = if citizen {
+                    // `FUN_004168A4` (citizen branch): plain nearest, no
+                    // unengaged/focus distinction.
+                    Self::nearest_enemy(cell, &enemies)
                 } else {
-                    Self::nearest_unengaged(cell, &enemies, &engaged)
-                        .or_else(|| Self::nearest_enemy(cell, &enemies))
+                    match arch {
+                        // `FUN_00412E00` adjacent branch (0x44/0x57).
+                        0x44 | 0x57 => Self::adjacent_enemy(cell, &enemies),
+                        // Shared branch: `FUN_0041FF68`; no unengaged
+                        // intermediate in the original.
+                        0x41 | 0x4D | 0x4F => {
+                            Self::shared_target(&engaged, &enemies)
+                                .or_else(|| Self::nearest_enemy(cell, &enemies))
+                        }
+                        // `FUN_00420190` nearest-unengaged, then `FUN_00420098`.
+                        0x43 | 0x45 | 0x46 | 0x4C | 0x55 => {
+                            Self::nearest_unengaged(cell, &enemies, &engaged)
+                                .or_else(|| Self::nearest_enemy(cell, &enemies))
+                        }
+                        // `FUN_00420098` plain nearest (including 0x4E).
+                        _ => Self::nearest_enemy(cell, &enemies),
+                    }
                 };
                 let Some(target) = target else {
                     continue;
@@ -221,6 +295,57 @@ impl PlayableApp {
                 }
                 if pop.actors[ai].entity.archetype & OBJECT_ARCHETYPE_BIT == 0 {
                     pop.actors[ai].entity.flags_b |= crate::anim::FLAG_BATTLE;
+                }
+            }
+        }
+    }
+
+    /// Activity-0 object groups idle while awaiting the next relation pass.
+    fn idle_inactive_object_groups(&mut self) {
+        let loc = self.current_map;
+        let inactive: Vec<usize> = self
+            .tables
+            .as_ref()
+            .map(|t| {
+                t.groups
+                    .iter()
+                    .filter(|g| {
+                        g.index != 0
+                            && g.loc_id as u32 == loc
+                            && g.class_1e & OBJECT_ARCHETYPE_BIT != 0
+                            && g.activity_1d == 0
+                    })
+                    .map(|g| g.index)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if inactive.is_empty() {
+            return;
+        }
+        if let Some(pop) = self.population_cache.get_mut(&loc) {
+            for a in pop.actors.iter_mut() {
+                if !inactive.contains(&a.source_group_id) {
+                    continue;
+                }
+                let Some(m) = pop.motion.get_mut(&a.entity.index) else {
+                    continue;
+                };
+                if m.dead || m.walking || m.combat_target.is_some() {
+                    if m.dead || m.walking {
+                        continue;
+                    }
+                    // `FUN_00412E00` activity 0 returns before the action
+                    // machine; a stale target must not keep attacking.
+                    m.combat_target = None;
+                    m.ranged_order = false;
+                    m.attack_frames = 0;
+                }
+                let idle = crate::anim::idle_action(crate::anim::battle_from_flags(
+                    a.entity.flags_b,
+                )) as u8;
+                if m.action != idle {
+                    m.action = idle;
+                    m.frame = 0;
                 }
             }
         }

@@ -12,7 +12,7 @@ use crate::combat::CombatTarget;
 
 impl PlayableApp {
     /// Enter the death row and (for world actors) spawn one corpse marker.
-    pub(super) fn kill_combatant(&mut self, target: CombatTarget, killer_level: u8, bonus: i32) {
+    pub(crate) fn kill_combatant(&mut self, target: CombatTarget, killer_level: u8, bonus: i32) {
         if self.combatant_dead(target) {
             return;
         }

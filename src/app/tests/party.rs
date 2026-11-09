@@ -121,6 +121,111 @@ fn sigma_joins_the_party_through_dialogue() {
 }
 
 #[test]
+fn apprentice_option_does_not_wake_the_settlement_or_recruit_immediately() {
+    let Some(mut app) = build_party_app_with_free_location() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.debug_set_player_cell(60, 27);
+    app.player.money = 100;
+    app.ensure_population(4);
+    let group_before = app
+        .tables
+        .as_ref()
+        .and_then(|t| t.groups.get(23))
+        .map(|g| g.activity_1d)
+        .unwrap();
+
+    // Smith (entity 280, dialogue 102) -> "У меня есть к делу" -> page 2073.
+    app.open_dialog(280, 102);
+    let deal = app
+        .dialog
+        .as_ref()
+        .unwrap()
+        .options
+        .iter()
+        .position(|o| o.label().contains("к тебе дело"))
+        .expect("smith deal option");
+    app.dialog_click_option(deal);
+    assert_eq!(app.dialog.as_ref().unwrap().page, 2073);
+    assert_eq!(
+        app.tables
+            .as_ref()
+            .and_then(|t| t.groups.get(23))
+            .map(|g| g.activity_1d)
+            .unwrap(),
+        group_before,
+        "0x150 is a predicate; it must not activate the settlement group"
+    );
+
+    // "Подготовь ученика" -> page 2083 -> "Приступай" (record 2086, 0x162).
+    let apprentice = app
+        .dialog
+        .as_ref()
+        .unwrap()
+        .options
+        .iter()
+        .position(|o| o.label().contains("ученика"))
+        .expect("apprentice option");
+    app.dialog_click_option(apprentice);
+    assert_eq!(app.dialog.as_ref().unwrap().page, 2083);
+    let start = app
+        .dialog
+        .as_ref()
+        .unwrap()
+        .options
+        .iter()
+        .position(|o| o.record == 2087)
+        .expect("Приступай option");
+    app.dialog_click_option(start);
+
+    assert!(
+        app.party.is_empty(),
+        "0x162 prepares an apprentice; it must not recruit immediately"
+    );
+    let apprentice_id = 281usize;
+    let arch = app
+        .tables
+        .as_ref()
+        .and_then(|t| t.entities.get(apprentice_id))
+        .map(|e| e.archetype)
+        .unwrap();
+    assert_eq!(arch & 0x18, 0x18, "smith role bits (prod4)");
+    assert_eq!(
+        app.tables
+            .as_ref()
+            .and_then(|t| t.groups.get(23))
+            .map(|g| g.activity_1d)
+            .unwrap(),
+        group_before,
+        "preparing an apprentice must leave the village peaceful"
+    );
+
+    // Run the AI/combat for several seconds: the party must not be attacked.
+    for _ in 0..120 {
+        app.update_combat(1.0 / LOGIC_TICK_HZ);
+    }
+    assert_eq!(app.player.hp_internal, 1600, "village must not attack");
+    assert!(app.party.is_empty());
+
+    // Later, the apprentice's own dialogue offers to join via 0x123.
+    app.player.charisma_base = 20;
+    app.open_dialog(apprentice_id, 143);
+    assert_eq!(app.dialog.as_ref().unwrap().page, 106);
+    let join = app
+        .dialog
+        .as_ref()
+        .unwrap()
+        .options
+        .iter()
+        .position(|o| o.label().contains("пойдем со мной"))
+        .expect("finish training option");
+    app.dialog_click_option(join);
+    assert_eq!(app.party.len(), 1);
+    assert_eq!(app.party[0].entity.index, apprentice_id);
+}
+
+#[test]
 fn selected_companion_receives_the_world_click_move() {
     let Some(mut app) = build_party_move_app() else {
         eprintln!("skipping: original resources not present");

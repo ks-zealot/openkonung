@@ -292,9 +292,9 @@ impl TradeState {
     pub fn confirm(
         &self,
         value: impl Fn(u16) -> i32,
-        weight: impl Fn(u16) -> u32,
-        base_weight: u32,
-        capacity: u32,
+        weight: impl Fn(u16) -> i32,
+        base_weight: i32,
+        capacity: i32,
     ) -> Result<TradeOutcome, TradeError> {
         let bag = &self.rows[ROW_PLAYER];
         let received = &self.rows[ROW_PARTNER_OFFER];

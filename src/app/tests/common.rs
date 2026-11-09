@@ -121,6 +121,7 @@ pub(super) fn build_party_app() -> Option<PlayableApp> {
     let objects = vec![0u8; 8 + 512 * 8];
     let mut res = Res::new(game, graph, objects, exe);
     res.load_items_and_fonts(&konung);
+    res.set_save_game(&game1);
     let _ = res.load_quest(&quest);
     let world = World::new(res, Vec::new());
     let h = *hero(0).unwrap();
@@ -146,6 +147,28 @@ pub(super) fn build_party_app() -> Option<PlayableApp> {
     ))
 }
 
+/// A playable app with the real `Game.1` tables + `QUEST_R.RES` and one
+/// synthetic, fully-free location 4 (the start map), so population/AI tests
+/// can run the settlement's citizens.
+pub(super) fn build_party_app_with_free_location() -> Option<PlayableApp> {
+    let mut app = build_party_app()?;
+    use crate::loc::Location;
+    let loc = Location {
+        loc_id: 4,
+        data: Vec::new(),
+        props: Vec::new(),
+        gates: Vec::new(),
+        graph_placements: Vec::new(),
+        collision: vec![0u16; 320 * 160],
+        max_x: 319,
+        max_y: 159,
+    };
+    let index = app.world.locs.len();
+    app.world.locs.push(loc);
+    app.world.loc_index.insert(4, index);
+    Some(app)
+}
+
 /// A party app with the real `Game.1` tables + `QUEST_R.RES` and one synthetic,
 /// fully-free location (id `1`), so a world click issues real routes to the
 /// leader and its selected companions. Player starts at `(100, 80)`.
@@ -169,6 +192,7 @@ pub(super) fn build_party_move_app() -> Option<PlayableApp> {
     let objects = vec![0u8; 8 + 512 * 8];
     let mut res = Res::new(game, graph, objects, exe);
     res.load_items_and_fonts(&konung);
+    res.set_save_game(&game1);
     let _ = res.load_quest(&quest);
     let loc = Location {
         loc_id: 1,

@@ -5,6 +5,47 @@ use super::super::*;
 use super::common::*;
 
 #[test]
+fn cursor_is_neutral_over_hud_and_free_ground() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    // Party panel (left HUD, outside the world viewport): neutral pointer.
+    app.cursor_virtual = (20.0, 20.0);
+    assert_eq!(app.debug_cursor_frame(), 4);
+    // World viewport: put runtime cell (150, 100) under the pointer. It is
+    // free and far from the leader (0, 0), so the neutral pointer is selected.
+    let (lx, ly) = crate::coords::entity_to_local_px_f(150.0, 100.0);
+    app.detail_pan = [200.0 - lx.round(), 300.0 - ly.round()];
+    app.cursor_virtual = (200.0, 300.0);
+    assert_eq!(app.debug_cursor_frame(), 4);
+}
+
+#[test]
+fn original_hotkeys_are_bound() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.key_down(KEY_1);
+    assert_eq!(app.player.raw_0x12, 2);
+    app.key_down(KEY_2);
+    assert_eq!(app.player.raw_0x12, 0);
+    app.key_down(KEY_3);
+    assert_eq!(app.player.raw_0x12, 1);
+
+    app.key_down(KEY_I);
+    assert!(app.character_screen);
+    app.key_down(KEY_ESCAPE);
+    assert!(!app.character_screen);
+
+    app.key_down(KEY_A);
+    assert!(crate::anim::battle_from_flags(app.player.flags_b));
+    app.key_down(KEY_F);
+    assert!(!app.debug_player_active());
+}
+
+#[test]
 fn character_screen_open_close_and_no_world_clickthrough() {
     let Some(mut app) = build_test_app() else {
         eprintln!("skipping: original resources not present");

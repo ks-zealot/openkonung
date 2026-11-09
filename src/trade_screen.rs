@@ -304,20 +304,39 @@ pub fn draw(
                 Some([255, 210, 90]),
             );
         }
+        let stock_empty = (0..VISIBLE).all(|c| state.visible_cell(2, c) == 0);
+        if stock_empty {
+            let msg = if state.role == 3 {
+                "Купец покупает товары, но не продаёт"
+            } else {
+                "Нет товаров на продажу"
+            };
+            let w = font.measure(msg);
+            font.draw(
+                frame,
+                fw,
+                fh,
+                msg,
+                vx + (vw - w) / 2,
+                l.name_y + 24,
+                Some([210, 200, 160]),
+            );
+        }
     }
 
     if cursor.0 >= vx && cursor.0 < vx + vw && cursor.1 >= 0 && cursor.1 < vh {
         if let TradeHit::Cell { row, col } = hit_test(cursor.0, cursor.1, fw as i32) {
             let id = state.visible_cell(row, col);
             if id != 0 {
-                if let (Some(info), Some(font)) = (res.item_info(id), small) {
-                    let mut x = cursor.0 + 14;
-                    let y = cursor.1 + 14;
-                    if x + font.measure(&info.name) > vx + vw {
-                        x = (vx + vw - font.measure(&info.name)).max(vx);
-                    }
-                    font.draw(frame, fw, fh, &info.name, x, y, Some([255, 235, 120]));
-                }
+                crate::app::tooltip::draw_item_tooltip(
+                    frame,
+                    fw,
+                    fh,
+                    res,
+                    id,
+                    cursor,
+                    (vx, vy, vw, vh),
+                );
             }
         }
     }

@@ -578,7 +578,7 @@ impl PlayableApp {
             8 => ItemLocation::Additional(3),
             12 => ItemLocation::Special,
             9 => return self.use_inventory_slot(visible_slot),
-            11 => return self.use_map_item(id),
+            11 => return self.use_class11_item(self.inventory_owner, id, None),
             _ => return false,
         };
         if !self.lift_item(ItemLocation::Inventory(idx)) {
@@ -726,6 +726,7 @@ impl PlayableApp {
         match (held_class, target_class) {
             (Some(9), Some(9)) => self.craft_held_with(target_owner, target),
             (Some(9), Some(_)) => self.use_held_on_item(target_owner, target),
+            (Some(11), Some(_)) => self.use_held_class11_on_item(target_owner, target),
             _ => false,
         }
     }

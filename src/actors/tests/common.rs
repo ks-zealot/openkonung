@@ -53,6 +53,7 @@ pub(super) fn entity(index: usize, kind: u8, archetype: u8, x: u16, y: u16) -> E
         equipment: [0; 6],
         inventory: [0; 32],
         dialogue_id: 255,
+        state_d2: 0,
         name_id: 0,
         nickname_id: 0,
         visual_index: 0,

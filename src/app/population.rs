@@ -149,14 +149,14 @@ impl PlayableApp {
     }
 
     /// The non-player actor whose drawn sprite covers virtual `(mx, my)`, as
-    /// `(source entity id, archetype, dialogue_id)`. Uses the same projection and
-    /// frame as [`Self::collect_actor_sprites`]; the front-most hit wins. `None`
-    /// when no actor is under the cursor.
-    pub(super) fn actor_at(&mut self, mx: i32, my: i32) -> Option<(usize, u8, u8)> {
+    /// `(source entity id, archetype, dialogue_id, group id)`. Uses the same
+    /// projection and frame as [`Self::collect_actor_sprites`]; the front-most
+    /// hit wins. `None` when no actor is under the cursor.
+    pub(super) fn actor_at(&mut self, mx: i32, my: i32) -> Option<(usize, u8, u8, u8)> {
         let loc = self.current_map;
         let iox = self.detail_pan[0].round() as i32;
         let ioy = self.detail_pan[1].round() as i32;
-        let mut best: Option<(usize, u8, u8)> = None;
+        let mut best: Option<(usize, u8, u8, u8)> = None;
         let PlayableApp {
             world,
             population_cache,
@@ -199,11 +199,12 @@ impl PlayableApp {
                     let (lx, ly) = entity_to_local_px_f(cell.0 as f64, cell.1 as f64);
                     let x = iox + lx.round() as i32 + gx;
                     let y = ioy + ly.round() as i32 + gy;
-                    if mx >= x && mx < x + im.w as i32 && my >= y && my < y + im.h as i32 {
+                    if sprite_opaque_at(&im, x, y, mx, my) {
                         best = Some((
                             a.source_entity_id(),
                             a.entity.archetype,
                             a.entity.dialogue_id,
+                            a.entity.group_id,
                         ));
                     }
                 }
@@ -232,8 +233,13 @@ impl PlayableApp {
                 );
                 let x = iox + lx.round() as i32 + gx;
                 let y = ioy + ly.round() as i32 + gy;
-                if mx >= x && mx < x + im.w as i32 && my >= y && my < y + im.h as i32 {
-                    best = Some((m.entity.index, m.entity.archetype, m.entity.dialogue_id));
+                if sprite_opaque_at(&im, x, y, mx, my) {
+                    best = Some((
+                        m.entity.index,
+                        m.entity.archetype,
+                        m.entity.dialogue_id,
+                        m.entity.group_id,
+                    ));
                 }
             }
         }
@@ -250,4 +256,15 @@ impl PlayableApp {
     }
 
     // --- window mapping ---
+}
+
+/// Original `FUN_0043E4EA` hit test: inside the sprite box **and** on a
+/// non-transparent pixel. Used by the actor hover (`_81D578`) and click target.
+pub(super) fn sprite_opaque_at(im: &Img, x: i32, y: i32, mx: i32, my: i32) -> bool {
+    if mx < x || my < y || mx >= x + im.w as i32 || my >= y + im.h as i32 {
+        return false;
+    }
+    let px = (mx - x) as usize;
+    let py = (my - y) as usize;
+    im.data[((py * im.w + px) * 4) + 3] != 0
 }

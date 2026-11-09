@@ -201,13 +201,39 @@ impl PlayableApp {
                 frame,
                 world,
                 active_world_objects,
+                torch_reveal,
                 ..
             } = self;
+            // `_DAT_0081D628` (torch): the original also draws the 64x43
+            // LIGHTS.RES mask behind each nearby ground marker and blits the
+            // marker with its bright palette. We blend the mask and keep the
+            // marker's unshaded colors (markers are already drawn after the
+            // lighting pass).
+            let torch_mask = if *torch_reveal {
+                world
+                    .res
+                    .lights
+                    .as_ref()
+                    .map(|l| (l.large.w, l.large.h, l.large.data.clone()))
+            } else {
+                None
+            };
             for obj in active_world_objects.iter() {
+                // `FUN_0042532C`: `-1 < (i16)marker[+0x10]` — buried records
+                // (negative money) are part of the active pool but invisible
+                // until the copper mirror flips their money.
+                if obj.money < 0 {
+                    continue;
+                }
                 let Some(img) = world.res.intr_sprite(obj.sprite as usize) else {
                     continue;
                 };
                 let (lx, ly) = entity_to_local_px(obj.x, obj.y);
+                if let Some((mw, mh, mask)) = torch_mask.as_ref() {
+                    let hx = iox + lx - 0x20 + img.w as i32 / 2;
+                    let hy = ioy + ly - 0x15 + img.h as i32 / 2;
+                    blend_light_mask(frame, fw, fh, *mw, *mh, mask, hx, hy);
+                }
                 let ax = iox + lx - img.w as i32 / 2;
                 let ay = ioy + ly - img.h as i32 / 2;
                 blit(frame, fw, fh, &img.data, img.w, img.h, ax, ay);
@@ -398,6 +424,18 @@ impl PlayableApp {
             let held = self.held_item.map(|h| h.id);
             let PlayableApp { frame, world, .. } = self;
             crate::character_screen::draw(frame, fw, fh, &mut world.res, &sheet, held, cursor_px);
+            if let Some(id) = self.character_hover_item(cursor_px) {
+                let PlayableApp { frame, world, .. } = self;
+                crate::app::tooltip::draw_item_tooltip(
+                    frame,
+                    fw,
+                    fh,
+                    &world.res,
+                    id,
+                    cursor_px,
+                    (0, 0, fw as i32, fh as i32),
+                );
+            }
         }
 
         // NPC dialogue (original `FUN_0042CBD0` mode 1): INTR[1] window + INTR[0]
@@ -458,6 +496,14 @@ impl PlayableApp {
             hdr
         };
         let mut hy = self.text_wrapped(12, 10, 0xEB_F5EB, 1.0, hdr);
+        hy = self.text_wrapped(
+            12,
+            hy + 2,
+            0xC8_D8C8,
+            1.0,
+            "SPACE стойка | A атака | F стоп | 1/2/3 оружие | M карта | Q журнал | C/I герой | V камера | Home центр"
+                .to_string(),
+        );
         if let Some((a, b, r)) = self.last_teleport {
             let an = self.label(a);
             let bn = self.label(b);
@@ -481,6 +527,42 @@ impl PlayableApp {
         }
         if self.layer_debug {
             self.draw_layer_debug();
+        }
+    }
+}
+
+/// Blend the 64x43 `LIGHTS.RES` mask over `frame` at `(ax, ay)` (torch
+/// highlight, `_DAT_0081D628`). The mask is an 8-bit intensity; the lighting
+/// blend expects the 0..31 range used by the `LIGHTS.N` maps.
+fn blend_light_mask(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    mw: usize,
+    mh: usize,
+    mask: &[u8],
+    ax: i32,
+    ay: i32,
+) {
+    for y in 0..mh {
+        let py = ay + y as i32;
+        if py < 0 || py >= fh as i32 {
+            continue;
+        }
+        for x in 0..mw {
+            let px = ax + x as i32;
+            if px < 0 || px >= fw as i32 {
+                continue;
+            }
+            let v = mask[y * mw + x];
+            if v == 0 {
+                continue;
+            }
+            let a = ((v as u32 * 31) / 255) as u8;
+            let o = (py as usize * fw + px as usize) * 4;
+            let dst = [frame[o], frame[o + 1], frame[o + 2], frame[o + 3]];
+            let lit = crate::lighting::light_pixel(dst, a);
+            frame[o..o + 4].copy_from_slice(&lit);
         }
     }
 }

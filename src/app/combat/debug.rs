@@ -94,9 +94,38 @@ impl PlayableApp {
         }
     }
 
+    /// Diagnostic: clear all combat targets and attack cycles (smoke staging).
+    pub fn debug_clear_combat_targets(&mut self) {
+        self.player_attack_target = None;
+        self.player_attack_frame = 0;
+        self.player_attack_ranged = false;
+        self.player_ranged_frame = 0;
+        self.player_ranged_fired = false;
+        for m in self.party.iter_mut() {
+            m.motion.combat_target = None;
+            m.motion.ranged_order = false;
+            m.motion.ranged_fired = false;
+            m.motion.attack_frames = 0;
+            m.motion.frame = 0;
+            m.motion.path.clear();
+            m.motion.walking = false;
+        }
+        if let Some(pop) = self.population_cache.get_mut(&self.current_map) {
+            for m in pop.motion.values_mut() {
+                m.combat_target = None;
+                m.ranged_order = false;
+                m.ranged_fired = false;
+                m.attack_frames = 0;
+                m.frame = 0;
+                m.path.clear();
+                m.walking = false;
+                m.render_cell = m.cell;
+            }
+        }
+    }
+
     /// Diagnostic: kill the protagonist to exercise the death row.
-    pub fn combat_debug_kill_player(&mut self) -> u32 {
-        self.kill_combatant(CombatTarget::Player, 1, 0);
+    pub fn combat_debug_kill_player(&mut self) -> u32 {        self.kill_combatant(CombatTarget::Player, 1, 0);
         self.player.dead as u32
     }
 

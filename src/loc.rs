@@ -38,6 +38,9 @@ pub use crate::constants::konung_layout::PLACEMENT_MAX;
 pub use crate::constants::konung_layout::PLACEMENT_SIZE;
 pub use crate::constants::konung_layout::TERRAIN_OFF;
 pub use crate::constants::konung_layout::TERRAIN_SIZE;
+
+/// Fully blocked runtime cell (`FUN_0043ADF0`: `b == 0xFF` expands to `0x0FFF`).
+pub const COLLISION_BLOCKED: u16 = 0x0FFF;
 // GRAPH.RES placement layer: 1000 records x 16 bytes, sitting between the
 // metadata block and the OBJECTS.RES placement table.
 pub use crate::constants::konung_layout::GRAPH_PLACEMENTS_OFF;
@@ -96,6 +99,11 @@ pub struct Prop {
     pub grid_x: i32,
     /// Runtime-grid `+0x1E` (source §10.2).
     pub grid_y: i32,
+    /// Record `+0x22 & 1` — interactive prop. The original renderer only sets
+    /// the hovered-prop global `_DAT_0081D57C` for these, and the cursor/prop
+    /// order paths (`FUN_00428740` `0x4287f7`, `FUN_00420F30`) test the same
+    /// bit.
+    pub interactive: bool,
     pub palette: u32,
     /// Current object animation frame (`FUN_0043ADF0` prop `+0x23`).
     pub frame: u8,
@@ -151,6 +159,18 @@ impl Location {
     /// indices are collision-grid coordinates, not transition coordinates.
     pub fn collision_free(&self, x: i32, y: i32) -> bool {
         collision_is_free(&self.collision, x, y)
+    }
+
+    /// Raw runtime collision word at `(x, y)`, or [`COLLISION_BLOCKED`] out of
+    /// bounds. The high bits carry the original runtime flags (`0x1000`
+    /// transition, `0x2000` ground WorldObject); the low 12 bits are
+    /// occupancy/passability.
+    pub fn collision_cell(&self, x: i32, y: i32) -> u16 {
+        if x < 0 || y < 0 || x >= RUNTIME_W || y >= RUNTIME_H {
+            return COLLISION_BLOCKED;
+        }
+        let idx = (x * RUNTIME_H + y) as usize;
+        self.collision.get(idx).copied().unwrap_or(COLLISION_BLOCKED)
     }
 
     pub fn terrain_cells(&self) -> Vec<u16> {
@@ -265,6 +285,7 @@ pub fn parse_props(data: &[u8]) -> Vec<Prop> {
             object_id: oid as usize,
             grid_x,
             grid_y,
+            interactive: rec[0x22] & 1 != 0,
             palette: pal,
             frame: 0,
             flame_emitters: Vec::new(),

@@ -323,7 +323,26 @@ pub fn draw_game_hud(
     };
     let tw = font.measure(&label);
     let bar = l.inventory_bar;
+    let name_y = bar.y + (bar.h - 24).max(0) / 2;
     let x = bar.x + (bar.w - tw).max(0) / 2;
-    let y = bar.y + (bar.h - 12).max(0) / 2;
-    font.draw(frame, fw, fh, &label, x, y, Some([235, 235, 210]));
+    font.draw(frame, fw, fh, &label, x, name_y, Some([235, 235, 210]));
+    // Second line: verified numeric summary (weight/price). The original only
+    // drew the name; this is the same data-derived detail block used by the
+    // character screen / trade tooltip.
+    if let Some(detail) = crate::app::tooltip::item_detail_lines(res, id)
+        .into_iter()
+        .find(|line| line.contains("Вес:"))
+    {
+        let dw = font.measure(&detail);
+        let dx = bar.x + (bar.w - dw).max(0) / 2;
+        font.draw(
+            frame,
+            fw,
+            fh,
+            &detail,
+            dx,
+            name_y + 12,
+            Some([200, 208, 188]),
+        );
+    }
 }

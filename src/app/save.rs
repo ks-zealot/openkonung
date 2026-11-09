@@ -140,6 +140,11 @@ impl PlayableApp {
                 s.target_base1 = se.target_base1;
             }
         }
+        for (i, t) in extra.apprentice_start.iter().enumerate() {
+            if let Some(s) = self.settlements.get_mut(i) {
+                s.apprentice_start = *t;
+            }
+        }
         self.settlement_trade = save.settlement_trade;
         self.world_object_sources = save.world_object_sources;
         self.active_world_objects = save.active_world_objects;
@@ -148,6 +153,34 @@ impl PlayableApp {
             .into_iter()
             .map(|p| (p.loc_id, p.build))
             .collect();
+        // Runtime NPC `Entity+0xD2` values (class-11 subtype 33 «Кукла»). The
+        // `Entity` payload itself is unchanged, so v1..v4 saves still decode;
+        // for those the authored `Game.N` bytes are restored instead.
+        let d2_values: Option<Vec<u8>> = if extra.npc_state_d2.len()
+            == crate::population::ENTITY_COUNT
+        {
+            Some(extra.npc_state_d2.clone())
+        } else {
+            crate::population::parse_entities(&self.world.res.save_game)
+                .ok()
+                .map(|v| v.iter().map(|e| e.state_d2).collect())
+        };
+        if let Some(values) = d2_values {
+            if let Some(tables) = self.tables.as_mut() {
+                for (e, &v) in tables.entities.iter_mut().zip(values.iter()) {
+                    e.state_d2 = v;
+                }
+            }
+            let tables = self.tables.as_ref();
+            for build in self.population_cache.values_mut() {
+                for actor in build.actors.iter_mut() {
+                    if let Some(e) = tables.and_then(|t| t.entities.get(actor.source_entity_id()))
+                    {
+                        actor.entity.state_d2 = e.state_d2;
+                    }
+                }
+            }
+        }
         self.party = save.party;
         self.quest_flags = save.quest_flags;
         self.discovered_locations = [0; DISCOVERED_LEN];
@@ -196,6 +229,9 @@ impl PlayableApp {
         self.inventory_owner = InventoryOwner::Protagonist;
         self.inventory_scroll = 0;
         self.shift_down = false;
+        self.ctrl_down = false;
+        self.torch_reveal = false;
+        self.dig_armed = false;
         self.hovered_slot = None;
         self.combat_step_t = 0.0;
         self.combat_frame = self.world_frame;
@@ -414,6 +450,10 @@ impl PlayableApp {
                 growth_timer: g.growth_timer,
                 growth_countdown: g.growth_countdown,
             })
+            .collect();
+        extra.apprentice_start = settlements
+            .iter()
+            .map(|s| s.apprentice_start)
             .collect();
 
         let mut party_selected = vec![false; crate::hud::PARTY_CELLS];

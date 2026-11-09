@@ -25,7 +25,11 @@ use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 /// Opaque payload header (`OPK` + format letter).
 pub const MAGIC: [u8; 4] = *b"OPKS";
 /// Current payload version. Increment on any layout change.
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 5;
+/// Legacy payload version (NPC `Entity+0xD2` values defaulted on load).
+pub const VERSION_V4: u16 = 4;
+/// Legacy payload version (apprentice training timers defaulted on load).
+pub const VERSION_V3: u16 = 3;
 /// Legacy payload version (growth group extras defaulted on load).
 pub const VERSION_V2: u16 = 2;
 /// Legacy payload version (quest extras defaulted on load).
@@ -261,6 +265,46 @@ pub(crate) struct SaveEnvelopeV2 {
     pub(crate) extra: SaveExtraV2,
 }
 
+/// Version-3 envelope extras: the same fields the shipped v3 build wrote.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SaveExtraV3 {
+    pub(crate) player_dialogue_id: u8,
+    pub(crate) player_interface_mode_d2: u8,
+    pub(crate) player_state_d3: u8,
+    pub(crate) settlements: Vec<SettlementExtra>,
+    pub(crate) groups: Vec<GroupExtra>,
+    pub(crate) leader_entity_index: u32,
+}
+
+/// Version-3 envelope. `SaveGame` did not change layout, so only the extras
+/// differ.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SaveEnvelopeV3 {
+    pub(crate) game: SaveGame,
+    pub(crate) extra: SaveExtraV3,
+}
+
+/// Version-4 envelope extras: the same fields the shipped v4 build wrote
+/// (before the NPC `Entity+0xD2` map).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SaveExtraV4 {
+    pub(crate) player_dialogue_id: u8,
+    pub(crate) player_interface_mode_d2: u8,
+    pub(crate) player_state_d3: u8,
+    pub(crate) settlements: Vec<SettlementExtra>,
+    pub(crate) groups: Vec<GroupExtra>,
+    pub(crate) apprentice_start: Vec<[i32; 3]>,
+    pub(crate) leader_entity_index: u32,
+}
+
+/// Version-4 envelope. `SaveGame` did not change layout, so only the extras
+/// differ.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SaveEnvelopeV4 {
+    pub(crate) game: SaveGame,
+    pub(crate) extra: SaveExtraV4,
+}
+
 /// Quest/state additions introduced after v1. Serialized after the unchanged
 /// `SaveGame`, so a v1 payload still decodes as a bare `SaveGame`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -270,8 +314,15 @@ pub struct SaveExtra {
     pub player_state_d3: u8,
     pub settlements: Vec<SettlementExtra>,
     pub groups: Vec<GroupExtra>,
+    /// Per-settlement apprentice training timestamps (`Settlement+0x3FC/400/404`).
+    /// Empty means all zero.
+    pub apprentice_start: Vec<[i32; 3]>,
     /// `Entity` index the protagonist was loaded from (legacy snapshot header).
     pub leader_entity_index: u32,
+    /// Per-entity `Entity+0xD2` state bytes (2000 records, index = entity id),
+    /// written by class-11 subtype 33 «Кукла». Empty in v4 and older payloads
+    /// (the authored `Game.N` value is then restored on load).
+    pub npc_state_d2: Vec<u8>,
 }
 
 impl Default for SaveExtra {
@@ -283,7 +334,9 @@ impl Default for SaveExtra {
             player_state_d3: 0,
             settlements: Vec::new(),
             groups: Vec::new(),
+            apprentice_start: Vec::new(),
             leader_entity_index: 0,
+            npc_state_d2: Vec::new(),
         }
     }
 }
@@ -316,6 +369,24 @@ impl SaveEnvelope {
                 crate::population::GROUP_COUNT
             ));
         }
+        if !self.extra.apprentice_start.is_empty()
+            && self.extra.apprentice_start.len() != crate::population::SETTLEMENT_COUNT
+        {
+            return Err(format!(
+                "apprentice extras have {} records, expected {}",
+                self.extra.apprentice_start.len(),
+                crate::population::SETTLEMENT_COUNT
+            ));
+        }
+        if !self.extra.npc_state_d2.is_empty()
+            && self.extra.npc_state_d2.len() != crate::population::ENTITY_COUNT
+        {
+            return Err(format!(
+                "npc state table has {} records, expected {}",
+                self.extra.npc_state_d2.len(),
+                crate::population::ENTITY_COUNT
+            ));
+        }
         Ok(())
     }
 
@@ -338,8 +409,9 @@ impl SaveEnvelope {
         Ok(out)
     }
 
-    /// Decode a v1, v2 or v3 payload. v1 payloads get default quest extras and
-    /// v2 payloads get default growth extras.
+    /// Decode a v1..v5 payload. v1 payloads get default quest extras, v2
+    /// payloads get default growth extras, v3 payloads get default apprentice
+    /// timestamps and v4 payloads an empty NPC `+0xD2` map.
     pub fn decode(bytes: &[u8]) -> Result<SaveEnvelope, String> {
         if bytes.len() < 10 {
             return Err("save payload is truncated".into());
@@ -348,7 +420,12 @@ impl SaveEnvelope {
             return Err("not an OpenKonung save payload".into());
         }
         let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-        if version != VERSION && version != VERSION_V2 && version != VERSION_V1 {
+        if version != VERSION
+            && version != VERSION_V4
+            && version != VERSION_V3
+            && version != VERSION_V2
+            && version != VERSION_V1
+        {
             return Err(format!("unsupported save version {version}"));
         }
         let raw_len = u32::from_le_bytes([bytes[6], bytes[7], bytes[8], bytes[9]]) as usize;
@@ -370,6 +447,38 @@ impl SaveEnvelope {
             let env: SaveEnvelope =
                 bincode::deserialize(&raw).map_err(|e| format!("save decode: {e}"))?;
             env
+        } else if version == VERSION_V4 {
+            let env: SaveEnvelopeV4 =
+                bincode::deserialize(&raw).map_err(|e| format!("save decode v4: {e}"))?;
+            SaveEnvelope {
+                game: env.game,
+                extra: SaveExtra {
+                    player_dialogue_id: env.extra.player_dialogue_id,
+                    player_interface_mode_d2: env.extra.player_interface_mode_d2,
+                    player_state_d3: env.extra.player_state_d3,
+                    settlements: env.extra.settlements,
+                    groups: env.extra.groups,
+                    apprentice_start: env.extra.apprentice_start,
+                    leader_entity_index: env.extra.leader_entity_index,
+                    npc_state_d2: Vec::new(),
+                },
+            }
+        } else if version == VERSION_V3 {
+            let env: SaveEnvelopeV3 =
+                bincode::deserialize(&raw).map_err(|e| format!("save decode v3: {e}"))?;
+            SaveEnvelope {
+                game: env.game,
+                extra: SaveExtra {
+                    player_dialogue_id: env.extra.player_dialogue_id,
+                    player_interface_mode_d2: env.extra.player_interface_mode_d2,
+                    player_state_d3: env.extra.player_state_d3,
+                    settlements: env.extra.settlements,
+                    groups: env.extra.groups,
+                    apprentice_start: Vec::new(),
+                    leader_entity_index: env.extra.leader_entity_index,
+                    npc_state_d2: Vec::new(),
+                },
+            }
         } else if version == VERSION_V2 {
             let env: SaveEnvelopeV2 =
                 bincode::deserialize(&raw).map_err(|e| format!("save decode v2: {e}"))?;
@@ -391,7 +500,9 @@ impl SaveEnvelope {
                             growth_countdown: 0,
                         })
                         .collect(),
+                    apprentice_start: Vec::new(),
                     leader_entity_index: 0,
+                    npc_state_d2: Vec::new(),
                 },
             }
         } else {

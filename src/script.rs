@@ -29,10 +29,10 @@ pub const TRADE_OP: u16 = 0x113;
 /// Parameterized low-opcode families (`FUN_0043159C` range dispatch).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LowFamily {
-    /// `0x00..=0x37`: group `N = op+1` has an active member.
-    GroupActive { group: u16 },
-    /// `0x38..=0x6F`: group `N = op-0x37` has no live member.
-    GroupNoLiveMember { group: u16 },
+    /// `0x00..=0x37`: location `N = op+1` has an active object group.
+    GroupActive { location: u16 },
+    /// `0x38..=0x6F`: location `N = op-0x37` has no live object-group member.
+    GroupNoLiveMember { location: u16 },
     /// `0x70..=0xA5`: remove inventory item class `0x0B`, subtype `N = op-0x6F - 1`.
     RemovePartyItem { subtype: u8 },
     /// `0xA6..=0xDB`: add inventory item class `0x0B`, subtype `N = op-0xA5 - 1`.
@@ -44,8 +44,10 @@ pub enum LowFamily {
 /// Decode a low-family opcode into its parameterized operation.
 pub fn low_family(op: u16) -> Option<LowFamily> {
     match op {
-        0x00..=0x37 => Some(LowFamily::GroupActive { group: op + 1 }),
-        0x38..=0x6F => Some(LowFamily::GroupNoLiveMember { group: op - 0x37 }),
+        0x00..=0x37 => Some(LowFamily::GroupActive { location: op + 1 }),
+        0x38..=0x6F => Some(LowFamily::GroupNoLiveMember {
+            location: op - 0x37,
+        }),
         0x70..=0xA5 => Some(LowFamily::RemovePartyItem {
             subtype: (op - 0x6F).saturating_sub(1) as u8,
         }),
@@ -96,7 +98,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x112,
         handler: 0x431DCC,
         kind: Action,
-        effect: "mark NPC group visited; flags_4b2 |= 0x15 when the settlement group matches",
+        effect: "activate the target NPC's group (Group+0x1D = 1); flags_4b2 |= 0x15 when the settlement group matches",
     },
     ScriptOp {
         op: 0x113,
@@ -444,7 +446,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x14C,
         handler: 0x432954,
         kind: Action,
-        effect: "recruit target NPC into a settlement party slot",
+        effect: "settle the target NPC into the settlement group (leave party / move to village slot)",
     },
     ScriptOp {
         op: 0x14D,
@@ -467,8 +469,8 @@ pub const OPS: &[ScriptOp] = &[
     ScriptOp {
         op: 0x150,
         handler: 0x432804,
-        kind: Both,
-        effect: "if settlement flag 0x10 and money>=100: activate settlement group",
+        kind: Predicate,
+        effect: "settlement flag 0x10, money>=100 and an eligible apprentice (visual<3, no role/home waypoint) exists",
     },
     ScriptOp {
         op: 0x151,
@@ -522,25 +524,25 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x159,
         handler: 0x433FD4,
         kind: Both,
-        effect: "prepare settlement ally slot 4 (FUN_00431654(4))",
+        effect: "settle a party specialist into settlement ally slot 4 (FUN_00431654(4))",
     },
     ScriptOp {
         op: 0x15A,
         handler: 0x433F68,
         kind: Both,
-        effect: "prepare settlement ally slot 1",
+        effect: "settle a party specialist into settlement ally slot 1",
     },
     ScriptOp {
         op: 0x15B,
         handler: 0x433FB0,
         kind: Both,
-        effect: "prepare settlement ally slot 3",
+        effect: "settle a party specialist into settlement ally slot 3",
     },
     ScriptOp {
         op: 0x15C,
         handler: 0x433F8C,
         kind: Both,
-        effect: "prepare settlement ally slot 2",
+        effect: "settle a party specialist into settlement ally slot 2",
     },
     ScriptOp {
         op: 0x15D,
@@ -576,7 +578,7 @@ pub const OPS: &[ScriptOp] = &[
         op: 0x162,
         handler: 0x434364,
         kind: Action,
-        effect: "recruit eligible group member into settlement party slot",
+        effect: "mark the first eligible settlement member as apprentice for the dialog NPC's producer role (no party join)",
     },
     ScriptOp {
         op: 0x163,
@@ -798,10 +800,10 @@ mod tests {
         assert!(op_supported(OP_BASE));
         assert!(op_supported(OP_LAST));
         assert!(!op_supported(OP_LAST + 1));
-        assert!(matches!(low_family(0x00), Some(LowFamily::GroupActive { group: 1 })));
+        assert!(matches!(low_family(0x00), Some(LowFamily::GroupActive { location: 1 })));
         assert!(matches!(
             low_family(0x38),
-            Some(LowFamily::GroupNoLiveMember { group: 1 })
+            Some(LowFamily::GroupNoLiveMember { location: 1 })
         ));
         assert!(matches!(
             low_family(0x70),

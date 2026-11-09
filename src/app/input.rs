@@ -34,6 +34,11 @@ impl PlayableApp {
         self.shift_down = down;
     }
 
+    /// Update the force-talk modifier (`Event.ctrlKey`, original `_DAT_0081D5E4`).
+    pub fn set_ctrl(&mut self, down: bool) {
+        self.ctrl_down = down;
+    }
+
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
         // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
         if let Some(v) = self.window_to_virtual(x, y) {
@@ -205,6 +210,13 @@ impl PlayableApp {
             if self.held_item.is_none() {
                 if let Some((vx, vy)) = self.window_to_virtual(x, y) {
                     let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                    let (ax, ay, aw, ah) = self.auto_rect();
+                    if vx >= ax && vx < ax + aw && vy >= ay && vy < ay + ah {
+                        self.toggle_auto_xp();
+                        self.drag = false;
+                        self.last_mouse = (x, y);
+                        return;
+                    }
                     if let Some(code) = crate::hud::button_at(vx, vy, VIRTUAL_W) {
                         if self.press_hud_button(code) {
                             self.drag = false;
@@ -300,7 +312,7 @@ impl PlayableApp {
     /// the right button (`FUN_0042260C`). Matching the original command 0, the
     /// clicked cell is stored on **every** selected unit (selection array
     /// `0x81A814`): the leader and each selected companion path to the same cell.
-    fn world_move(&mut self, x: f64, y: f64) {
+    pub(super) fn world_move(&mut self, x: f64, y: f64) {
         if self.player.dead {
             return;
         }
@@ -318,6 +330,8 @@ impl PlayableApp {
     }
 
     fn world_move_command(&mut self, x: f64, y: f64) {
+        // `FUN_0042260C`: the first world click consumes `_DAT_0081D660 == 7`.
+        self.dig_armed = false;
         let Some((tx, ty)) = self.mouse_to_cell(x, y) else {
             return;
         };
@@ -344,11 +358,13 @@ impl PlayableApp {
         if self.player.dead {
             return;
         }
+        // `FUN_0042260C` resets `_DAT_0081D660` from 7 to 4 on any world click.
+        self.dig_armed = false;
         let Some((vx, vy)) = self.window_to_virtual(x, y) else {
             return;
         };
         let (vx, vy) = (vx.round() as i32, vy.round() as i32);
-        if let Some((entity, archetype, dialogue_id)) = self.actor_at(vx, vy) {
+        if let Some((entity, archetype, dialogue_id, _group_id)) = self.actor_at(vx, vy) {
             // Human visual family (`archetype & 0x40 == 0`) with a dialogue id
             // and the leader not in battle stance (`FUN_0042260C` dialogue gate).
             if archetype & 0x40 == 0
@@ -556,12 +572,37 @@ impl PlayableApp {
                     self.selected = None;
                 }
             }
-            // Tab runs the original SPACE stance command (`FUN_00421554`) over
-            // the current party selection: every selected, living unit enters
-            // or leaves battle according to the first selected unit's stance.
-            KEY_TAB => {
+            // SPACE — original `FUN_00421554` battle/peace stance toggle.
+            KEY_SPACE | KEY_TAB => {
                 if !self.mode_graph {
                     self.toggle_selected_battle_stance();
+                }
+            }
+            // A — original `FUN_00421458` party battle-engage. Shift+A selects
+            // every visible party unit instead (the original Shift+A branch).
+            KEY_A => {
+                if !self.mode_graph {
+                    if self.shift_down {
+                        self.select_all_party();
+                    } else {
+                        self.party_engage();
+                    }
+                }
+            }
+            // 1/2/3 — original `FUN_004216DC`: select weapon slot 2/0/1.
+            KEY_1 => {
+                if !self.mode_graph {
+                    self.select_weapon_slot(2);
+                }
+            }
+            KEY_2 => {
+                if !self.mode_graph {
+                    self.select_weapon_slot(0);
+                }
+            }
+            KEY_3 => {
+                if !self.mode_graph {
+                    self.select_weapon_slot(1);
                 }
             }
             KEY_D => {
@@ -576,7 +617,13 @@ impl PlayableApp {
             KEY_T => {
                 self.teleport_debug = !self.teleport_debug;
             }
+            // F — original `FUN_0042246C` party halt (camera fit is Home now).
             KEY_F => {
+                if !self.mode_graph {
+                    self.party_halt();
+                }
+            }
+            KEY_HOME => {
                 if !self.mode_graph {
                     self.fit_detail();
                     if self.camera_follow {
@@ -584,10 +631,9 @@ impl PlayableApp {
                     }
                 }
             }
-            // `C` toggles the character screen (the original opens it via a UI
-            // command/action, not a mouse portrait click; this is the remake's
-            // explicit binding). Escape also closes it.
-            KEY_C => {
+            // `C` / `I` toggle the character screen (the original opens it via
+            // `FUN_00424330`, bound to VK_I; C is the remake alias).
+            KEY_C | KEY_I => {
                 if !self.mode_graph {
                     self.toggle_character_screen();
                 }

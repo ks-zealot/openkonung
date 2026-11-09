@@ -287,7 +287,10 @@ impl OwnerSnapshot {
 }
 
 /// Weight of one item instance. Class 12 (`arrows`) uses `per-unit * quantity`.
-pub fn item_weight(res: &Res, id: u16) -> u32 {
+///
+/// Signed: the original (`FUN_0041B0C4`) returns the sign-extended `i16`
+/// template weight, so «Сын Луны» contributes −10000.
+pub fn item_weight(res: &Res, id: u16) -> i32 {
     if id == 0 {
         return 0;
     }
@@ -297,15 +300,15 @@ pub fn item_weight(res: &Res, id: u16) -> u32 {
     let class = res.item_class(id).unwrap_or(info.class);
     if class == 12 {
         let q = res.item_quantity(id).unwrap_or(0);
-        (info.weight as u32).saturating_mul(q)
+        info.weight.saturating_mul(q as i32)
     } else {
-        info.weight as u32
+        info.weight
     }
 }
 
 /// `FUN_0041B7E4`: sum of every carried instance (main, additional, inventory,
 /// special).
-pub fn carried_weight(res: &Res, slots: &SlotsRef) -> u32 {
+pub fn carried_weight(res: &Res, slots: &SlotsRef) -> i32 {
     slots
         .equipment
         .iter()
@@ -318,8 +321,8 @@ pub fn carried_weight(res: &Res, slots: &SlotsRef) -> u32 {
 }
 
 /// `(endurance_base * 1000) / 3 + 10000`.
-pub fn capacity(endurance_base: u16) -> u32 {
-    10_000 + (endurance_base as u32 * 1000) / 3
+pub fn capacity(endurance_base: u16) -> i32 {
+    10_000 + (endurance_base as i32 * 1000) / 3
 }
 
 /// First free inventory slot.
@@ -779,6 +782,11 @@ pub enum StatOp {
     SetTempId(u16),
     SaveStats,
     AddAvailableXp(u32),
+    AddHealing(u16),
+    AddBuilding(u16),
+    AddSmithing(u16),
+    AddTrade(u16),
+    AddIdentification(u16),
     Revive,
 }
 
@@ -1002,6 +1010,35 @@ fn apply_ops_common(
             }
             StatOp::AddAvailableXp(v) => *available_xp = (*available_xp).saturating_add(v),
             StatOp::Revive => *dead = false,
+            // Skill operations are applied by `apply_player_ops` /
+            // `apply_entity_ops` after this common pass.
+            StatOp::AddHealing(_)
+            | StatOp::AddBuilding(_)
+            | StatOp::AddSmithing(_)
+            | StatOp::AddTrade(_)
+            | StatOp::AddIdentification(_) => {}
+        }
+    }
+}
+
+fn apply_skill_ops(
+    healing: &mut u16,
+    building: &mut u16,
+    smithing: &mut u16,
+    trade: &mut u16,
+    identification: &mut u16,
+    ops: &[StatOp],
+) {
+    for op in ops {
+        match *op {
+            StatOp::AddHealing(v) => *healing = healing.saturating_add(v).min(500),
+            StatOp::AddBuilding(v) => *building = building.saturating_add(v),
+            StatOp::AddSmithing(v) => *smithing = smithing.saturating_add(v),
+            StatOp::AddTrade(v) => *trade = trade.saturating_add(v).min(100),
+            StatOp::AddIdentification(v) => {
+                *identification = identification.saturating_add(v).min(100)
+            }
+            _ => {}
         }
     }
 }
@@ -1031,6 +1068,14 @@ pub fn apply_player_ops(p: &mut PlayerCharacter, ops: &[StatOp]) {
     p.saved_charisma = saved.1;
     p.saved_strength = saved.2;
     p.saved_endurance = saved.3;
+    apply_skill_ops(
+        &mut p.healing,
+        &mut p.building,
+        &mut p.smithing,
+        &mut p.trade,
+        &mut p.identification,
+        ops,
+    );
 }
 
 pub fn apply_entity_ops(e: &mut Entity, ops: &[StatOp]) {
@@ -1059,6 +1104,14 @@ pub fn apply_entity_ops(e: &mut Entity, ops: &[StatOp]) {
     e.stats.saved_charisma = saved.1;
     e.stats.saved_strength = saved.2;
     e.stats.saved_endurance = saved.3;
+    apply_skill_ops(
+        &mut e.stats.healing,
+        &mut e.stats.building,
+        &mut e.stats.smithing,
+        &mut e.stats.trade,
+        &mut e.stats.identification,
+        ops,
+    );
     if dead {
         e.flags_b &= !0x80;
     }

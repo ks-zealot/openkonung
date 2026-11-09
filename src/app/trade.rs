@@ -64,7 +64,7 @@ impl PlayableApp {
 
     /// Base carried weight excluding the inventory row (equipment, additional,
     /// special), matching `FUN_004203F4`'s temporary inventory clear.
-    fn trade_base_weight(&self) -> u32 {
+    fn trade_base_weight(&self) -> i32 {
         let empty = [0u16; 32];
         let slots = SlotsRef {
             equipment: &self.player.equipment,

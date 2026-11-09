@@ -48,7 +48,6 @@ fn source_zero_world_object_requests_win() {
 
 #[test]
 fn engaged_settlement_defeat_requests_location_movie() {
-    use crate::actors::{ActorMotion, ActorPlacement, PopulationBuild, RuntimeActor};
     let Some(mut app) = build_party_app() else {
         return;
     };
@@ -61,49 +60,40 @@ fn engaged_settlement_defeat_requests_location_movie() {
         .expect("settlement on map 4")
         .clone();
     let group_id = settlement.group_id as usize;
-    let group = app
-        .tables
-        .as_mut()
-        .unwrap()
-        .groups
-        .iter_mut()
-        .find(|g| g.index == group_id)
-        .expect("settlement group");
-    group.activity_1d = 1;
-    let mut entity = app
-        .tables
-        .as_ref()
-        .unwrap()
-        .groups
-        .iter()
-        .find(|g| g.index == group_id)
-        .and_then(|g| app.tables.as_ref().unwrap().entities.get(g.first_entity as usize))
-        .expect("group entity")
-        .clone();
-    entity.stats.level = 1;
-    entity.stats.hp_internal = 1;
-    let mut pop = PopulationBuild::default();
-    pop.actors.push(RuntimeActor {
-        entity: entity.clone(),
-        source_group_id: group_id,
-        placement: ActorPlacement::Persisted,
-    });
-    pop.motion.insert(entity.index, ActorMotion::default());
-    app.population_cache.insert(4, pop);
+    // The defeat check uses `FUN_0041B658` power, not HP: make the single
+    // defender a zero-power human so the party ratio is infinite.
+    let first = {
+        let tables = app.tables.as_mut().unwrap();
+        let group = tables.groups.get_mut(group_id).expect("settlement group");
+        group.activity_1d = 1;
+        group.entity_count = 1;
+        group.first_entity as usize
+    };
+    {
+        let entity = app.tables.as_mut().unwrap().entities.get_mut(first).unwrap();
+        entity.kind = 6;
+        entity.archetype &= 0x7F;
+        entity.visual_index = 0;
+        entity.flags_a = 0x40;
+        entity.stats = Default::default();
+        entity.stats.hp_internal = 1600;
+        entity.equipment = [0; 6];
+        entity.inventory = [0; 32];
+        entity.additional_equipment = [0; 5];
+        entity.special_equipment = 0;
+    }
     app.world_frame = 9;
     app.check_defeat_video();
     let p = video::pending().expect("defeat pending");
     assert_eq!(p.clip, VideoClip::Defeat(4));
     assert_eq!(p.after, VideoAfter::Gameplay);
-    assert_ne!(
-        app.settlements
-            .iter()
-            .find(|s| s.index == settlement.index)
-            .unwrap()
-            .flags_4b2
-            & 0x80,
-        0
-    );
+    let settlement = app
+        .settlements
+        .iter()
+        .find(|s| s.index == settlement.index)
+        .unwrap();
+    assert_ne!(settlement.flags_4b2 & 0x80, 0);
+    assert_eq!(settlement.money_pool_10, 0);
     video::reset();
 }
 

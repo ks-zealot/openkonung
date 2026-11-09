@@ -29,80 +29,93 @@ impl PlayableApp {
             self.world_frame_accum -= whole;
             for _ in 0..whole as u64 {
                 self.world.tick_prop_flames(self.current_map);
+                // `FUN_0041D048` settlement branch: `(frame + 7) & 0xF == 0`,
+                // i.e. once per 16 original frames for all 20 settlements.
+                if self.world_frame % 16 == 9 {
+                    self.tick_settlement_pass(1);
+                }
             }
-            self.tick_settlement_trade(whole as u64);
         }
     }
 
-    /// Apply the original settlement target → prop variant linkage
-    /// (`FUN_0043ADF0` `0x43B7A7`) for the current map:
-    /// `object_id = table[key] + target.state + 30`, then initialize the prop
-    /// animation frame and its FLAMES emitter phases.
-    ///
-    /// The original runs this at map load only; a state change (the 21 % prop
-    /// hit) is therefore applied on the next map entry, not immediately.
-    pub(super) fn apply_settlement_props(&mut self) {
-        let loc = self.current_map;
-        let updates: Vec<(usize, usize, u8, Vec<crate::res::FlameEmitter>, Vec<u8>)> = {
-            let Some(db) = self.world.res.item_db.as_ref() else {
-                return;
-            };
-            let mut updates = Vec::new();
-            for settlement in self.settlements.iter().filter(|s| s.loc_id as u32 == loc) {
-                for target in &settlement.targets {
-                    let Some(base) = db.settlement_prop_base(target.key as usize) else {
-                        continue;
-                    };
-                    let object_id = base as usize + target.state as usize + 30;
-                    if !(30..512).contains(&object_id) {
-                        continue;
-                    }
-                    let frame_count = self.world.res.object_frame_count(object_id).max(1);
-                    let frame =
-                        (prop_variant_hash(loc, target.prop_index, object_id, 0) % frame_count as u32)
-                            as u8;
-                    let emitters: Vec<crate::res::FlameEmitter> = self
-                        .world
-                        .res
-                        .object_flames(object_id)
-                        .into_iter()
-                        .filter(|e| crate::res::flame_range(e.selector).is_some())
-                        .collect();
-                    let mut frames = Vec::with_capacity(emitters.len());
-                    for (i, emitter) in emitters.iter().enumerate() {
-                        let (min, max) =
-                            crate::res::flame_range(emitter.selector).expect("filtered");
-                        let span = (max - min) as u32;
-                        frames.push(
-                            min + (prop_variant_hash(
-                                loc,
-                                target.prop_index,
-                                object_id,
-                                i as u32 + 1,
-                            ) % span) as u8,
-                        );
-                    }
-                    updates.push((
-                        target.prop_index as usize,
-                        object_id,
-                        frame,
-                        emitters,
-                        frames,
-                    ));
-                }
-            }
-            updates
+    /// Apply the original settlement target → prop variant linkage for one
+    /// target (`FUN_004172AC`): `object_id = table[key] + state + 30`, then
+    /// initialize the prop animation frame and its FLAMES emitter phases.
+    pub(super) fn apply_settlement_prop(
+        &mut self,
+        loc: u32,
+        target: &crate::population::SettlementTarget,
+    ) {
+        let Some(base) = self
+            .world
+            .res
+            .item_db
+            .as_ref()
+            .and_then(|db| db.settlement_prop_base(target.key as usize))
+        else {
+            return;
         };
+        let object_id = base as usize + target.state as usize + 30;
+        if !(30..512).contains(&object_id) {
+            return;
+        }
+        let frame_count = self.world.res.object_frame_count(object_id).max(1);
+        let frame =
+            (prop_variant_hash(loc, target.prop_index, object_id, 0) % frame_count as u32) as u8;
+        // `FUN_004172AC` copies the object record's `+0x14` palette offset into
+        // the prop record (`prop+0x04`).
+        let palette = {
+            let block = self.world.res.object_block(object_id);
+            if block.len() >= 0x18 {
+                crate::res::u32(block, 0x14)
+            } else {
+                0
+            }
+        };
+        let emitters: Vec<crate::res::FlameEmitter> = self
+            .world
+            .res
+            .object_flames(object_id)
+            .into_iter()
+            .filter(|e| crate::res::flame_range(e.selector).is_some())
+            .collect();
+        let mut frames = Vec::with_capacity(emitters.len());
+        for (i, emitter) in emitters.iter().enumerate() {
+            let (min, max) = crate::res::flame_range(emitter.selector).expect("filtered");
+            let span = (max - min) as u32;
+            frames.push(
+                min + (prop_variant_hash(loc, target.prop_index, object_id, i as u32 + 1) % span)
+                    as u8,
+            );
+        }
         let Some(loc_data) = self.world.loc_mut(loc) else {
             return;
         };
-        for (ri, object_id, frame, emitters, frames) in updates {
-            if let Some(prop) = loc_data.props.iter_mut().find(|p| p.ri == ri) {
-                prop.object_id = object_id;
-                prop.frame = frame;
-                prop.flame_emitters = emitters;
-                prop.flame_frames = frames;
-            }
+        if let Some(prop) = loc_data
+            .props
+            .iter_mut()
+            .find(|p| p.ri == target.prop_index as usize)
+        {
+            prop.object_id = object_id;
+            prop.frame = frame;
+            prop.palette = palette;
+            prop.flame_emitters = emitters;
+            prop.flame_frames = frames;
+        }
+    }
+
+    /// Apply the target → prop variant linkage (`FUN_0043ADF0` `0x43B7A7`) for
+    /// every target of the current map (map load).
+    pub(super) fn apply_settlement_props(&mut self) {
+        let loc = self.current_map;
+        let targets: Vec<crate::population::SettlementTarget> = self
+            .settlements
+            .iter()
+            .filter(|s| s.loc_id as u32 == loc)
+            .flat_map(|s| s.targets.iter().copied())
+            .collect();
+        for target in targets {
+            self.apply_settlement_prop(loc, &target);
         }
     }
 
@@ -113,7 +126,7 @@ impl PlayableApp {
         let now = self.world_frame as i64;
         let mut active = Vec::new();
         for source in &self.world_object_sources {
-            if source.loc as u32 != loc || !source.active_at(now) || source.money < 0 {
+            if source.loc as u32 != loc || !source.active_at(now) {
                 continue;
             }
             let items: Vec<u16> = source.items.iter().copied().filter(|&id| id != 0).collect();
@@ -134,6 +147,16 @@ impl PlayableApp {
         self.active_world_objects = active;
     }
 
+    /// Diagnostic: runtime cell of active ground marker `index`.
+    pub fn debug_active_world_object_cell(&self, index: usize) -> Option<(i32, i32)> {
+        self.active_world_objects.get(index).map(|o| o.cell())
+    }
+
+    /// Diagnostic: number of active ground markers on the current map.
+    pub fn debug_active_world_object_count(&self) -> usize {
+        self.active_world_objects.len()
+    }
+
     /// Run the original pickup/interaction handler for the protagonist when
     /// the arrival cell contains an active WorldObject.
     pub(super) fn try_pickup_here(&mut self) {
@@ -145,6 +168,13 @@ impl PlayableApp {
         else {
             return;
         };
+
+        // `FUN_00421B50`: a buried marker (negative `+0x10`) is only collected
+        // when the leader carries the shovel — `FUN_00433A8C(0x19)` scans the
+        // 32 inventory slots for class `0x0B` subtype `0x18`.
+        if self.active_world_objects[index].money < 0 && !self.shovel_in_bag() {
+            return;
+        }
 
         // `0x41115B`: a WorldObject whose runtime `+0x0E` source index is 0
         // starts the victory movie instead of the ordinary pickup path.
@@ -159,8 +189,9 @@ impl PlayableApp {
         }
 
         // Money is transferred first (`0x411181..0x411190`) and cleared even if
-        // the item transfer later fails.
-        let money = self.active_world_objects[index].money.max(0) as i32;
+        // the item transfer later fails. `FUN_0043EAA2` is `abs`, so a buried
+        // spot's `-100` pays out `+100`.
+        let money = (self.active_world_objects[index].money as i32).abs();
         if money != 0 {
             self.player.money = self.player.money.saturating_add(money);
         }
@@ -174,7 +205,7 @@ impl PlayableApp {
             return;
         }
 
-        let threshold = 10_000u32 + (self.player.endurance_base as u32 * 1000) / 3;
+        let threshold = crate::inventory::capacity(self.player.endurance_base);
         let mut weight = self.carried_weight();
         let mut transferred = 0usize;
 
@@ -184,7 +215,9 @@ impl PlayableApp {
                 _ => break,
             };
             let item_weight = crate::inventory::item_weight(&self.world.res, item);
-            // `0x4111f3..0x411216`: strict `threshold < weight` failure.
+            // `0x4111f3..0x411216`: strict `threshold < weight` failure. The
+            // comparison is signed (original `int`), so a negative-weight item
+            // such as «Сын Луны» never trips it.
             if threshold < weight.saturating_add(item_weight) {
                 self.set_pickup_message("Превышен вес");
                 break;
@@ -376,8 +409,17 @@ impl PlayableApp {
         self.pickup_message_t = 3.0;
     }
 
+    /// `FUN_00433A8C(0x19)`: the leader's 32 inventory slots contain a
+    /// class-`0x0B` subtype-`0x18` («Лопата») instance. Only the bag counts —
+    /// equipment/additional slots are not scanned by the original.
+    fn shovel_in_bag(&self) -> bool {
+        self.player.inventory.iter().copied().any(|id| {
+            id != 0 && self.world.res.item_class_subtype(id) == Some((11, 24))
+        })
+    }
+
     /// `FUN_0041B7E4`: sum of every carried item's weight.
-    fn carried_weight(&self) -> u32 {
+    fn carried_weight(&self) -> i32 {
         self.slots(crate::inventory::InventoryOwner::Protagonist)
             .map(|slots| crate::inventory::carried_weight(&self.world.res, &slots))
             .unwrap_or(0)

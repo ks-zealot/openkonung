@@ -4,7 +4,7 @@ fn value(id: u16) -> i32 {
     id as i32 * 10
 }
 
-fn weight(_id: u16) -> u32 {
+fn weight(_id: u16) -> i32 {
     1
 }
 

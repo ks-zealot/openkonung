@@ -140,7 +140,11 @@ pub struct EntityStats {
 pub struct Entity {
     /// Source entity id (table index).
     pub index: usize,
-    /// `+0x00` u8.
+    /// `+0x00` u8 — **authored action row** (not a separate "kind"): `0/6` idle,
+    /// `1/7` walk, `2/8` attack, `3/9` death, `4/5` special (`FUN_0041435c`).
+    /// The live runtime row is [`crate::actors::ActorMotion::action`]; this
+    /// parsed value is the initial/authored row and is only a fallback for
+    /// locations without a population cache.
     pub kind: u8,
     /// `+0x01` u8 — facing/direction.
     pub facing: u8,
@@ -172,6 +176,18 @@ pub struct Entity {
     pub special_equipment: u16,
     /// `+0xD0` u8 — dialogue id; 0xFF = none in known path.
     pub dialogue_id: u8,
+    /// `+0xD2` u8 — per-actor quest/interface state byte.
+    ///
+    /// The protagonist's copy is [`crate::character::PlayerCharacter::interface_mode_d2`]
+    /// (read by quest opcodes `0x145`/`0x158`/`0x16C`). Class-11 subtype 33
+    /// («Кукла») writes `0x13` into this byte on every living actor of every
+    /// other group in the current location.
+    ///
+    /// Runtime/quest state, not authored data: skipped by serde so the save
+    /// layout stays compatible, and persisted separately through
+    /// [`crate::save::SaveExtra::npc_state_d2`].
+    #[serde(skip)]
+    pub state_d2: u8,
     /// `+0xD4` u8 — name id.
     pub name_id: u8,
     /// `+0xD5` u8 — nickname id.
@@ -221,6 +237,12 @@ pub struct Settlement {
     /// `+0x01` target-list count byte (quest `0x169` loop count).
     #[serde(skip)]
     pub target_base1: u8,
+    /// Apprentice training timestamps for producer roles 2/3/4
+    /// (`Settlement+0x3FC/+0x400/+0x404`). Quest `0x162` stores the world
+    /// frame; `0x123` uses the elapsed time for the role skill gain.
+    /// Runtime-only; persisted through [`crate::save::SaveExtra`].
+    #[serde(skip)]
+    pub apprentice_start: [i32; 3],
     /// `+0x4B2` runtime flags (`0x15` set by the projectile prop branch).
     pub flags_4b2: u8,
     /// `+0x18` target list, 8 bytes per entry.
@@ -242,9 +264,12 @@ pub struct SettlementTarget {
 ///
 /// Stock arrays and production counters share the `Settlement` record:
 /// role 2 (`+0x412`, 24), role 3 (`+0x444`, 32), role 4 (`+0x484`, 23);
-/// producer entities at `+0x3DA/+0x3E2/+0x3EA/+0x3F2`; timers at
-/// `+0x4/+0x8/+0xC`; role-4 pending slot `+0x4B4`. Kept separate from
-/// [`Settlement`] so synthetic test fixtures and the AI parser stay unchanged.
+/// producer words at `+0x3DA/+0x3E2/+0x3EA/+0x3F2` (which **are**
+/// `waypoint[1..4].owner`; use [`Settlement::producer`] for gameplay);
+/// timers at `+0x4/+0x8/+0xC` (role 3 has no producer, so `timer3`/`+0xC` is
+/// the voivode training timer); role-4 pending slot `+0x4B4`. Kept separate
+/// from [`Settlement`] so synthetic test fixtures and the AI parser stay
+/// unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SettlementTrade {
     pub index: usize,
@@ -322,6 +347,22 @@ impl Settlement {
             .position(|w| w.owner == entity_index)
             .map(|slot| slot as u8 + 1)
             .unwrap_or(0)
+    }
+
+    /// Owner of waypoint `slot` (`0..=4`), or `0` when the slot is unowned.
+    ///
+    /// The original settlement record has no separate producer fields: the
+    /// "producer role" words `+0x3DA/+0x3E2/+0x3EA/+0x3F2` **are**
+    /// `waypoint[1..4].owner` (`FUN_0041182C`/`FUN_004168A4`). Use this helper
+    /// instead of the mirrored [`SettlementTrade`] fields for gameplay.
+    pub fn producer(&self, slot: usize) -> u16 {
+        self.waypoints.get(slot).map(|w| w.owner).unwrap_or(0)
+    }
+
+    /// `Settlement+0x3F2` — the voivode (`waypoint[4].owner`) who runs the
+    /// barracks training pass (`FUN_00417F84`, quest predicate `0x130`).
+    pub fn voivode(&self) -> u16 {
+        self.producer(4)
     }
 }
 

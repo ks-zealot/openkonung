@@ -76,6 +76,18 @@ pub extern "C" fn set_shift(down: u32) {
     }
 }
 
+/// Force-talk modifier (`Event.ctrlKey`); mirrors the original `_DAT_0081D5E4`
+/// flag read by the cursor selector and the world-click dialogue branch.
+#[no_mangle]
+pub extern "C" fn set_ctrl(down: u32) {
+    let rt = runtime_mut();
+    if rt.active == ActiveMode::Game {
+        if let Some(g) = rt.game.as_deref_mut() {
+            g.set_ctrl(down != 0);
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn wheel(delta: f32) {
     let rt = runtime_mut();

@@ -256,5 +256,13 @@ fn role4_distribution_replaces_lower_subtype_gear() {
     app.tick_settlement_trade(1);
     assert_eq!(app.settlement_trade[ti].stock4[3], 0);
     assert_eq!(app.tables.as_ref().unwrap().entities[278].equipment[2], new);
-    assert_eq!(app.world.res.item_class(old), Some(0xFF));
+    // The old lower-subtype item is destroyed (`class = 0xFF`). The pass now
+    // runs for all 20 settlements, so a later settlement's role-2 restock may
+    // immediately recycle the freed instance slot; either way the old
+    // `(class 2, subtype 1)` gear is gone.
+    assert_ne!(
+        app.world.res.item_class_subtype(old),
+        Some((2, 1)),
+        "replaced gear must be destroyed or its slot recycled"
+    );
 }

@@ -91,6 +91,26 @@ impl PlayableApp {
         }
     }
 
+    /// Test-only: place the protagonist on a runtime cell and settle the camera.
+    pub fn debug_set_player_cell(&mut self, x: i32, y: i32) {        self.player_x = x as f64;
+        self.player_y = y as f64;
+        self.player_render_x = self.player_x;
+        self.player_render_y = self.player_y;
+        self.player_path.clear();
+        self.player_active = false;
+        self.player_step_t = 0.0;
+        self.target = None;
+        self.player_attack_target = None;
+        self.player_attack_ranged = false;
+        self.center_camera_on_player(true, 0.0);
+        self.fit_graph();
+    }
+
+    /// Diagnostic: protagonist has an active walk segment or queued route.
+    pub fn debug_player_active(&self) -> bool {
+        self.player_active || !self.player_path.is_empty()
+    }
+
     // --- update ---
 
     /// Advance the current location's non-player actors (citizen wander) at the
@@ -259,6 +279,8 @@ impl PlayableApp {
         }
         self.current_map = dst;
         self.selected = Some(dst);
+        // `FUN_0043ADF0` clears the torch-highlight global on map entry.
+        self.torch_reveal = false;
         // Original mode-0 map entry rebuilds the population and applies growth;
         // cached motion from the previous visit must not suppress that pass.
         self.population_cache.remove(&dst);

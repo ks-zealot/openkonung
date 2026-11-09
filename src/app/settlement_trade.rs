@@ -37,8 +37,8 @@ fn simple_herb(res: &mut Res, subtype: u8) -> Option<u16> {
     res.alloc_item_instance(9, subtype, 0, -1, 1.0, 0, 0)
 }
 
-fn tick_role2(res: &mut Res, t: &mut SettlementTrade, frames: u64, healing: &mut u16) {
-    let mut n = frames;
+fn tick_role2(res: &mut Res, t: &mut SettlementTrade, passes: u64, healing: &mut u16) {
+    let mut n = passes;
     while n > 0 {
         n -= 1;
         t.timer2 -= 1;
@@ -268,14 +268,14 @@ fn role4_distribute(
 fn tick_role4(
     res: &mut Res,
     t: &mut SettlementTrade,
-    frames: u64,
+    passes: u64,
     kit: usize,
     smithing: &mut u16,
     tables: &mut Option<GameTables>,
     group_id: u8,
 ) -> Option<usize> {
     let mut changed = None;
-    let mut n = frames;
+    let mut n = passes;
     while n > 0 {
         n -= 1;
         if t.last_slot < 0 {
@@ -314,16 +314,15 @@ fn tick_role4(
 }
 
 impl PlayableApp {
-    /// Advance every settlement's merchant restock by `frames` original frames.
-    pub(super) fn tick_settlement_trade(&mut self, frames: u64) {
-        if frames == 0 || self.trade.is_some() {
+    /// Advance every settlement's merchant restock by `passes` settlement
+    /// passes (one per 16 original frames, `FUN_0041D048`). Runs for all 20
+    /// settlements, not only the current location.
+    pub(super) fn tick_settlement_trade(&mut self, passes: u64) {
+        if passes == 0 || self.trade.is_some() {
             return;
         }
         for si in 0..self.settlements.len() {
             let loc = self.settlements[si].loc_id;
-            if loc as u32 != self.current_map {
-                continue;
-            }
             let group_class = self
                 .tables
                 .as_ref()
@@ -334,8 +333,11 @@ impl PlayableApp {
             let Some(ti) = self.settlement_trade.iter().position(|t| t.index == si) else {
                 continue;
             };
-            let prod2 = self.settlement_trade[ti].prod_role2 as usize;
-            let prod4 = self.settlement_trade[ti].prod_role4 as usize;
+            // The producer words are `waypoint[1].owner` (role 2 restock) and
+            // `waypoint[3].owner` (role 4 equipment); `SettlementTrade` only
+            // mirrors them for save/legacy export.
+            let prod2 = self.settlements[si].producer(1) as usize;
+            let prod4 = self.settlements[si].producer(3) as usize;
             let mut heal = self
                 .tables
                 .as_ref()
@@ -360,10 +362,10 @@ impl PlayableApp {
             let res = &mut world.res;
             let t = &mut settlement_trade[ti];
             if prod2 != 0 {
-                tick_role2(res, t, frames, &mut heal);
+                tick_role2(res, t, passes, &mut heal);
             }
             let changed = if prod4 != 0 {
-                tick_role4(res, t, frames, kit, &mut smith, tables, group_id)
+                tick_role4(res, t, passes, kit, &mut smith, tables, group_id)
             } else {
                 None
             };

@@ -343,6 +343,36 @@ impl Res {
         true
     }
 
+    /// Write the instance `condition` byte (`+0x01`).
+    pub fn set_item_condition(&mut self, id: u16, condition: i8) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 1] = condition as u8;
+        true
+    }
+
+    /// Copy the complete 16-byte instance record `src` onto `dst`
+    /// (`FUN_00414DE4` case 7, «Дупликатор»).
+    pub fn copy_item_instance(&mut self, src: u16, dst: u16) -> bool {
+        if src == 0 || dst == 0 || src == dst {
+            return false;
+        }
+        let so = src as usize * crate::item::ITEM_INSTANCE_SIZE;
+        let dso = dst as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if so + 16 > self.save_game.len() || dso + 16 > self.save_game.len() {
+            return false;
+        }
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&self.save_game[so..so + 16]);
+        self.save_game[dso..dso + 16].copy_from_slice(&bytes);
+        true
+    }
+
     /// Current quality / durability value (`+0x04 f32`).
     pub fn item_quality(&self, id: u16) -> Option<f32> {
         self.item_instance(id).map(|i| i.current_durability)
@@ -468,6 +498,21 @@ impl Res {
             return false;
         }
         self.save_game[o + 2] = modifier as u8;
+        true
+    }
+
+    /// Overwrite an instance's `+0x0E` flags word. Bit 0 is the original
+    /// **unidentified** marker toggled by `FUN_0041BA08` (and set by generated
+    /// loot); the trade-value condition bonus only applies when it is clear.
+    pub fn set_item_flags(&mut self, id: u16, flags: u16) -> bool {
+        if id == 0 {
+            return false;
+        }
+        let o = id as usize * crate::item::ITEM_INSTANCE_SIZE;
+        if o + 16 > self.save_game.len() {
+            return false;
+        }
+        self.save_game[o + 0x0E..o + 0x10].copy_from_slice(&flags.to_le_bytes());
         true
     }
 

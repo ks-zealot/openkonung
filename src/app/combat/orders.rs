@@ -72,6 +72,54 @@ impl PlayableApp {
         ordered
     }
 
+    /// `FUN_00421458` party engage: order the **whole party** (not only the
+    /// current selection) onto `target`.
+    pub(in crate::app) fn order_party_attack(&mut self, target: CombatTarget) -> bool {
+        if self.player.dead {
+            return false;
+        }
+        self.set_all_party_battle();
+        if !self.player.dead {
+            let ranged = self.ranged_ready(CombatTarget::Player, false);
+            self.player_attack_target = Some(target);
+            self.player_attack_frame = 0;
+            self.player_attack_frames = 0;
+            self.player_attack_ranged = ranged;
+            self.player_ranged_frame = 0;
+            self.player_ranged_frames = 0;
+            self.player_ranged_fired = false;
+            self.target = None;
+            self.player_path.clear();
+            self.player_active = false;
+            self.player_render_x = self.player_x;
+            self.player_render_y = self.player_y;
+        }
+        let party_ranged: Vec<bool> = (0..self.party.len())
+            .map(|i| self.ranged_ready(CombatTarget::Party(i), false))
+            .collect();
+        for (i, m) in self.party.iter_mut().enumerate() {
+            if m.motion.dead {
+                continue;
+            }
+            let ranged = party_ranged.get(i).copied().unwrap_or(false);
+            m.motion.combat_target = Some(target);
+            m.motion.attack_frames = 0;
+            m.motion.frame = 0;
+            m.motion.ranged_order = ranged;
+            m.motion.ranged_fired = false;
+            m.motion.path.clear();
+            m.motion.target = None;
+            m.motion.walking = false;
+            m.motion.render_cell = m.motion.cell;
+        }
+        if let CombatTarget::World(id) = target {
+            self.engage_world_group(id, CombatTarget::Player);
+        } else {
+            self.wake_combatant_group(target, CombatTarget::Player);
+        }
+        true
+    }
+
     /// Prop/object order (`FUN_0042260C` branch 2b): only ranged-ready units
     /// whose ammo instance `+0x02 == 0` receive it. No move destination is
     /// written for actor/prop-target orders.

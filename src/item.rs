@@ -97,6 +97,9 @@ pub struct ItemInstance {
     pub subtype: u8,
     pub current_durability: f32,
     pub max_durability: f32,
+    /// Raw `u32` at `+0x04`. For class 12 (ammo) and class 9 (potions/jars)
+    /// this is the stack/charge quantity, not an IEEE float.
+    pub quantity: u32,
     pub poison: u16,
     pub flags: u16,
 }
@@ -109,8 +112,13 @@ pub struct ItemInfo {
     pub subtype: u8,
     /// INTR sprite index (from the original template record at `+0x02`).
     pub icon: u16,
-    /// Weight in original internal units (`u16` at `+0x00`; displayed `/1000`).
-    pub weight: u16,
+    /// Weight in original internal units (`i16` at `+0x00`; displayed `/1000`).
+    ///
+    /// Signed: `FUN_0041B7E4` sign-extends the high word (`>> 0x10` on the
+    /// dword load), so a negative template value *reduces* the carried total.
+    /// The only such item in the shipped data is class 11 subtype 11
+    /// «Сын Луны» (`0xD8F0` = −10000 = −10.0 kg).
+    pub weight: i32,
     /// Combat rating (`u16` at `0x459B7C + subtype*0x40`); summed as armor over
     /// equipment slots 3..=5 and used as the weapon base for the attack value.
     pub rating: u16,
@@ -172,6 +180,7 @@ impl ItemDb {
             subtype: ptr[3],
             current_durability: rd_f32(ptr, 4),
             max_durability: rd_f32(ptr, 8),
+            quantity: u32::from_le_bytes([ptr[4], ptr[5], ptr[6], ptr[7]]),
             poison: rd_u16(ptr, 12) as u16,
             flags: rd_u16(ptr, 14) as u16,
         })
@@ -186,7 +195,7 @@ impl ItemDb {
             return None;
         }
         let icon = rd_u16(&self.konung, o + 2) as u16;
-        let weight = rd_u16(&self.konung, o) as u16;
+        let weight = rd_u16(&self.konung, o) as i16 as i32;
         // `FUN_00438CC8`: per-class world sprite; class 10 and unknown classes
         // fall through to the generic loot icon `0xA3`, class 12 is hardcoded.
         let world_sprite = match class {
@@ -309,8 +318,11 @@ impl ItemDb {
     /// The value is the prototype `price` field (`+0x36` for stride-`0x40`
     /// records, `+0x78` for stride-`0x80` records). For classes `0..=8` a
     /// condition bonus from `0x458530 + condition*0x10` is added when the item
-    /// is not broken (`flags & 1 == 0`). Class 12 multiplies by the stack
-    /// quantity; class 9 shifts the result left by 3 (`<<3`).
+    /// is identified (`flags & 1 == 0`; bit 0 is the `FUN_0041BA08` unidentified
+    /// marker set by generated loot). Class 12 multiplies by the raw `u32`
+    /// stack quantity at `+0x04`; class 9 treats `+0x04` as a float charge
+    /// count, multiplies it by a negative signed price, rounds, then shifts the
+    /// result left by 3 (`FUN_0041B2A8`).
     pub fn instance_trade_value(&self, inst: &ItemInstance) -> i32 {
         let Some((_, stride, name_va)) = table_for(inst.class) else {
             return 0;
@@ -322,28 +334,30 @@ impl ItemDb {
             ITEM_VALUE_OFF_128
         };
         let mut value = if no + value_off + 2 <= self.konung.len() {
-            rd_u16(&self.konung, no + value_off) as i32
+            rd_i16(&self.konung, no + value_off) as i32
         } else {
             0
         };
-        let quantity = inst.current_durability.to_bits() as i32;
         match inst.class {
             0..=8 => {
                 if inst.condition >= 0 && inst.flags & 1 == 0 {
                     let co = va_to_file(ITEM_CONDITION_VALUE_VA)
                         + inst.condition as usize * ITEM_CONDITION_VALUE_STRIDE;
                     if co + 2 <= self.konung.len() {
-                        value += rd_u16(&self.konung, co) as i32;
+                        value += rd_i16(&self.konung, co) as i32;
                     }
                 }
                 value.max(1)
             }
-            12 => value * quantity,
+            12 => value.saturating_mul(inst.quantity as i32),
             9 => {
                 if value < 0 {
-                    value = (-(quantity as f64) * value as f64).round() as i32;
+                    // `FUN_0041B2A8`: `fld dword [instance+4]` (the float
+                    // charge count), negate, multiply by the negative price,
+                    // round, then `<<3`.
+                    value = (-(inst.current_durability as f64) * value as f64).round() as i32;
                 }
-                value << 3
+                value.saturating_mul(8)
             }
             _ => value,
         }

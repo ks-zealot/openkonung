@@ -40,7 +40,7 @@ impl PlayableApp {
         m.walking
     }
 
-    pub(super) fn start_motion_walk(
+    pub(crate) fn start_motion_walk(
         m: &mut ActorMotion,
         collision: &[u16],
         occupied: &mut HashSet<(i32, i32)>,

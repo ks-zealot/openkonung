@@ -52,6 +52,28 @@ pub const ITEM_MODIFIER_COUNT: usize = 18;
 /// the base object record index is the `u16` at `+0x02`.
 pub const SETTLEMENT_PROP_TABLE_VA: u32 = 0x458A02;
 pub const SETTLEMENT_PROP_STRIDE: usize = 0x40;
+/// Settlement target records `0x458A02 + key*0x40`: `(required max building
+/// skill, timer value)`. Field `+0` is the requirement; `+4`/`+6` are the two
+/// timer columns (identical for all 16 shipped keys). Used by quest
+/// `0x151..0x157`/`0x163..0x169` and the `FUN_0041D048` timer pass.
+pub const SETTLEMENT_TARGET_TABLE: [(u16, u16); 16] = [
+    (1, 24),
+    (1, 24),
+    (1, 12),
+    (1, 12),
+    (1, 6),
+    (1, 18),
+    (1, 10),
+    (3, 24),
+    (3, 24),
+    (3, 24),
+    (1, 24),
+    (1, 24),
+    (1, 24),
+    (1, 24),
+    (5, 1),
+    (5, 1),
+];
 pub const SMALL_FONT_OFF: usize = 0x171E34;
 pub const LARGE_FONT_OFF: usize = 0x16193C;
 /// Highlight/selected variant of the small font (VA `0x58B8F0`), used by the

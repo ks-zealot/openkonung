@@ -89,7 +89,7 @@ impl PlayableApp {
     }
 
     /// `FUN_0042246C`: stop selected units (`order 0x60`, clear route).
-    fn party_halt(&mut self) {
+    pub(super) fn party_halt(&mut self) {
         self.queue_sound(crate::sound::events::UI_CLICK);
         self.party_halt_silent();
     }
@@ -115,28 +115,135 @@ impl PlayableApp {
         }
     }
 
-    /// `FUN_00421458`: put every selected living unit into battle stance and
-    /// set its engage order (`'D'`/`'A'` by weapon slot, queue cleared).
-    fn party_engage(&mut self) {
+    /// `FUN_00421458`: put **every** party unit into battle stance and engage
+    /// the nearest active hostile. The original only writes the order byte and
+    /// clears the target words; the remake resolves a concrete target so the
+    /// button has a visible effect and lets `A` start a fight without a manual
+    /// right-click. Movement is not cancelled (the original does not halt).
+    pub(super) fn party_engage(&mut self) {
         self.queue_sound(crate::sound::events::UI_CLICK);
-        let any = self.party_selected.iter().any(|&s| s);
+        let any = !self.player.dead || self.party.iter().any(|m| !m.motion.dead);
         if !any {
             return;
         }
-        let first_battle = if self.party_selected.first().copied().unwrap_or(false) {
-            crate::anim::battle_from_flags(self.player.flags_b)
-        } else {
-            self.party
-                .iter()
-                .enumerate()
-                .find(|(i, _)| self.party_selected.get(i + 1).copied().unwrap_or(false))
-                .map(|(_, m)| crate::anim::battle_from_flags(m.entity.flags_b))
-                .unwrap_or(false)
-        };
-        if !first_battle {
-            self.toggle_selected_battle_stance_silent();
+        self.set_all_party_battle();
+        match self.nearest_engage_target() {
+            Some(target) => {
+                self.order_party_attack(target);
+            }
+            None => {
+                self.combat_message = Some("Нет врагов поблизости".to_string());
+                self.combat_message_t = 1.5;
+            }
         }
-        self.party_halt_silent();
+    }
+
+    /// Original `FUN_004216DC(n)` direct weapon-slot selection (keys 1/2/3,
+    /// slots 2/0/1). Applies to the leader and selected companions.
+    pub(super) fn select_weapon_slot(&mut self, slot: u8) {
+        if slot > 2 {
+            return;
+        }
+        self.queue_sound(crate::sound::events::UI_CLICK);
+        let mut changed = false;
+        if self.party_selected.first().copied().unwrap_or(false) {
+            if self.player.raw_0x12 != slot {
+                self.player.raw_0x12 = slot;
+                changed = true;
+            }
+        }
+        for (i, m) in self.party.iter_mut().enumerate() {
+            if self.party_selected.get(i + 1).copied().unwrap_or(false)
+                && m.entity.raw_0x12 != slot
+            {
+                m.entity.raw_0x12 = slot;
+                changed = true;
+            }
+        }
+        if changed {
+            self.anim_time = 0.0;
+        }
+    }
+
+    /// AUTO (`INTR[169/170]`, `Entity+0x03 & 2`): original `FUN_0041079C`
+    /// auto-spends available XP on level/stat raises when the bit is set.
+    pub(super) fn toggle_auto_xp(&mut self) {
+        self.queue_sound(crate::sound::events::UI_CLICK);
+        self.player.flags_b ^= 0x02;
+        if self.player.auto_enabled() {
+            self.auto_spend_xp(crate::inventory::InventoryOwner::Protagonist);
+        }
+    }
+
+    /// Bounded port of the `FUN_0041079C` auto-raise loop (level row first,
+    /// then Charisma/Strength/Dexterity/Endurance) for `owner`.
+    pub(super) fn auto_spend_xp(&mut self, owner: crate::inventory::InventoryOwner) {
+        use crate::character::PrimaryStat;
+        for _ in 0..64 {
+            if self.level_up_owner(owner) {
+                continue;
+            }
+            let mut spent = false;
+            for stat in [
+                PrimaryStat::Charisma,
+                PrimaryStat::Strength,
+                PrimaryStat::Dexterity,
+                PrimaryStat::Endurance,
+            ] {
+                if self.raise_owner_stat(owner, stat) {
+                    spent = true;
+                    break;
+                }
+            }
+            if !spent {
+                break;
+            }
+        }
+    }
+
+    /// Nearest live object/monster within the engage radius whose group is
+    /// awake or that is already targeting the party.
+    fn nearest_engage_target(&self) -> Option<crate::combat::CombatTarget> {
+        const ENGAGE_RADIUS: i32 = 12;
+        let loc = self.current_map;
+        let player = (
+            self.player_x.round() as i32,
+            self.player_y.round() as i32,
+        );
+        let pop = self.population_cache.get(&loc)?;
+        let tables = self.tables.as_ref();
+        let mut best: Option<(i32, usize)> = None;
+        for a in pop.actors.iter() {
+            if a.entity.archetype & 0x40 == 0 {
+                continue;
+            }
+            let Some(m) = pop.motion.get(&a.entity.index) else {
+                continue;
+            };
+            if m.dead {
+                continue;
+            }
+            let awake = tables
+                .and_then(|t| t.groups.get(a.source_group_id))
+                .map(|g| g.activity_1d == 1)
+                .unwrap_or(false);
+            let targeting_party = matches!(
+                m.combat_target,
+                Some(crate::combat::CombatTarget::Player)
+                    | Some(crate::combat::CombatTarget::Party(_))
+            );
+            if !awake && !targeting_party {
+                continue;
+            }
+            let d = crate::actors::follow_distance(player, m.cell);
+            if d > ENGAGE_RADIUS {
+                continue;
+            }
+            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                best = Some((d, a.entity.index));
+            }
+        }
+        best.map(|(_, id)| crate::combat::CombatTarget::World(id))
     }
 }
 

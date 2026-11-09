@@ -31,6 +31,7 @@ fn entity(index: usize, kind: u8, archetype: u8, group: u8, x: u16, y: u16) -> E
         additional_equipment: [0; 5],
         special_equipment: 0,
         dialogue_id: 0xFF,
+        state_d2: 0,
         name_id: 0,
         nickname_id: 0,
         visual_index: 0,
@@ -171,6 +172,44 @@ fn citizen_combat_target_is_not_reset_by_wander_pass() {
 }
 
 #[test]
+fn group_recall_uses_live_cells_not_authored_positions() {
+    let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
+        return;
+    };
+    // Authored position is inside rectangle A, but the runtime cell moved out.
+    app.population_cache
+        .get_mut(&1)
+        .unwrap()
+        .motion
+        .get_mut(&10)
+        .unwrap()
+        .cell = (30, 30);
+    app.player_x = 100.0;
+    app.player_y = 80.0;
+    app.update_group_relations();
+    assert_eq!(app.tables.as_ref().unwrap().groups[1].activity_1d, 0x20);
+}
+
+#[test]
+fn inactive_object_group_is_forced_idle() {
+    let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
+        return;
+    };
+    {
+        let pop = app.population_cache.get_mut(&1).unwrap();
+        let m = pop.motion.get_mut(&10).unwrap();
+        m.action = crate::anim::ACT_MELEE as u8;
+        m.frame = 3;
+        m.combat_target = None;
+    }
+    app.tables.as_mut().unwrap().groups[1].activity_1d = 0;
+    app.update_world_ai();
+    let m = app.population_cache[&1].motion.get(&10).unwrap();
+    assert_eq!(m.action, crate::anim::idle_action(false) as u8);
+    assert_eq!(m.frame, 0);
+}
+
+#[test]
 fn ranged_world_actor_switches_to_action_row_four() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x21, 1, 18, 15), 0x41) else {
         return;
@@ -197,8 +236,7 @@ fn ranged_world_actor_switches_to_action_row_four() {
 }
 
 #[test]
-fn mo_walk_completion_seeds_entity_0x12_delay() {
-    let Some(mut app) = synthetic_app(entity(10, 0, 0x4D, 1, 15, 15), 0x4D) else {
+fn mo_walk_completion_seeds_entity_0x12_delay() {    let Some(mut app) = synthetic_app(entity(10, 0, 0x4D, 1, 15, 15), 0x4D) else {
         return;
     };
     app.player_x = 25.0;
@@ -230,4 +268,56 @@ fn mo_walk_completion_seeds_entity_0x12_delay() {
         }
     }
     assert!(saw_delay, "M/O walk completion never seeded Entity+0x12");
+}
+
+#[test]
+fn engage_button_orders_nearest_awake_hostile() {
+    let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
+        return;
+    };
+    app.update_group_relations();
+    app.update_world_ai();
+    assert_eq!(
+        app.population_cache[&1]
+            .motion
+            .get(&10)
+            .and_then(|m| m.combat_target),
+        Some(CombatTarget::Player)
+    );
+    app.player_attack_target = None;
+    app.party_engage();
+    assert_eq!(
+        app.player_attack_target,
+        Some(CombatTarget::World(10)),
+        "engage did not order the nearest awake hostile"
+    );
+    assert!(
+        crate::anim::battle_from_flags(app.player.flags_b),
+        "engage must put the leader in battle stance"
+    );
+}
+
+#[test]
+fn idle_party_retaliates_against_adjacent_attacker() {
+    let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
+        return;
+    };
+    app.update_group_relations();
+    app.update_world_ai();
+    assert_eq!(
+        app.population_cache[&1]
+            .motion
+            .get(&10)
+            .and_then(|m| m.combat_target),
+        Some(CombatTarget::Player)
+    );
+    app.player_attack_target = None;
+    app.player_path.clear();
+    app.player_active = false;
+    app.update_player_combat();
+    assert_eq!(
+        app.player_attack_target,
+        Some(CombatTarget::World(10)),
+        "idle leader did not retaliate against an adjacent attacker"
+    );
 }
