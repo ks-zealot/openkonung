@@ -247,14 +247,16 @@ pub fn parse_settlement_record(index: usize, data: &[u8]) -> Settlement {
             break;
         }
         let facing = data[wo];
+        let dialogue_id = data[wo + 1];
         let owner = u16(data, wo + 2) as u16;
         let x = u16(data, wo + 4) as u16;
         let y = u16(data, wo + 6) as u16;
-        if facing == 0 && owner == 0 && x == 0 && y == 0 {
+        if facing == 0 && dialogue_id == 0 && owner == 0 && x == 0 && y == 0 {
             break;
         }
         waypoints.push(Waypoint {
             facing,
+            dialogue_id,
             owner,
             x,
             y,

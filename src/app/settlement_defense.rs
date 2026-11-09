@@ -170,9 +170,13 @@ impl PlayableApp {
                 .map(|m| combat_power(db, save, &CombatStats::from_entity(&m.entity)) as i64)
                 .sum::<i64>();
         let loc = settlement.loc_id as u32;
+        let party_ids: HashSet<usize> = self.party.iter().map(|m| m.entity.index).collect();
         let mut defender_power = 0i64;
         if let Ok(range) = group.entity_range() {
             for id in range {
+                if party_ids.contains(&id) {
+                    continue;
+                }
                 let Some(entity) = self.tables.as_ref().and_then(|t| t.entities.get(id)) else {
                     continue;
                 };
@@ -353,12 +357,31 @@ impl PlayableApp {
             return;
         }
         let group_id = settlement.group_id as usize;
-        let count = self
+        // `FUN_00431820` removes a recruited member from its old group; the
+        // remake keeps that row as an overlay, so subtract party members whose
+        // source row still belongs to this group from the authored count.
+        let authored_count = self
             .tables
             .as_ref()
             .and_then(|t| t.groups.get(group_id))
-            .map(|g| g.entity_count as f64)
-            .unwrap_or(0.0);
+            .map(|g| g.entity_count as i32)
+            .unwrap_or(0);
+        let party_in_group = self
+            .tables
+            .as_ref()
+            .map(|t| {
+                self.party
+                    .iter()
+                    .filter(|m| {
+                        t.entities
+                            .get(m.entity.index)
+                            .map(|e| e.group_id as usize == group_id)
+                            .unwrap_or(false)
+                    })
+                    .count() as i32
+            })
+            .unwrap_or(0);
+        let count = authored_count.saturating_sub(party_in_group).max(0) as f64;
         let base = settlement.target_base0 as f64;
         let trade = self.player.trade as f64;
         let Some(settlement) = self.settlements.get_mut(si) else {

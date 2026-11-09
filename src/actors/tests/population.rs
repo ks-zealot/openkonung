@@ -309,6 +309,7 @@ fn idle_wanderer_holds_its_frame_not_loops() {
         targets: Vec::new(),
         waypoints: vec![Waypoint {
             facing: 3,
+            dialogue_id: 0,
             owner: 1,
             x: 50,
             y: 20,

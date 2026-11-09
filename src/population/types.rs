@@ -207,12 +207,20 @@ pub struct GameTables {
 
 /// One settlement waypoint (`FUN_004168a4` / `FUN_0041182c`).
 ///
-/// 8-byte record: `+0` facing, `+1` unknown, `+2` owning Entity index
-/// (`0` = unassigned), `+4` target x, `+6` target y (runtime/Entity grid).
-/// Field use is ORIGINAL-CODE VERIFIED; the `+1` byte is UNKNOWN.
+/// 8-byte record: `+0` facing, `+1` role **dialogue id**, `+2` owning Entity
+/// index (`0` = unassigned), `+4` target x, `+6` target y (runtime/Entity grid).
+/// Field use is ORIGINAL-CODE VERIFIED.
+///
+/// `dialogue_id` is copied onto a settled specialist by `FUN_00431654` /
+/// `FUN_00432954` (`Entity+0xD0 = waypoint[slot].+1`), which is what makes the
+/// new healer/merchant/smith/voivode/elder talkable. It is authored data and is
+/// rehydrated from `Game.N` on save load; skipping serde keeps the save layout
+/// unchanged.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Waypoint {
     pub facing: u8,
+    #[serde(skip)]
+    pub dialogue_id: u8,
     pub owner: u16,
     pub x: u16,
     pub y: u16,

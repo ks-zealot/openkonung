@@ -60,6 +60,12 @@ fn save_roundtrip_preserves_quest_progress_and_state() {
         assert_eq!(s.money_pool_10, 321);
         assert_eq!((s.target_base0, s.target_base1), (2, 3));
     }
+    if let Some(s) = app.settlements.iter().find(|s| s.loc_id == 4) {
+        assert_eq!(
+            s.waypoints[0].dialogue_id, 140,
+            "waypoint role dialogue ids are rehydrated from Game.N on load"
+        );
+    }
     if let Some(t) = app.tables.as_ref() {
         if let Some(g) = t.groups.first() {
             assert!(g.visited);

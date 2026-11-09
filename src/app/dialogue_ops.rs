@@ -269,7 +269,9 @@ impl QuestContext {
             return 0;
         };
         let ids = self.group_entity_ids_by_index(group_index);
+        let party_ids: HashSet<usize> = self.party.iter().map(|m| m.entity.index).collect();
         ids.into_iter()
+            .filter(|id| !party_ids.contains(id))
             .filter_map(|id| self.entity_or_party(id).map(|e| e.stats.building))
             .max()
             .unwrap_or(0)
@@ -629,8 +631,20 @@ impl QuestContext {
                 }
             }
         }
-        // `FUN_00431820` moves the entity into reserved group 0 (`+0x05 = 0`).
+        // `FUN_00431820` moves the entity into reserved group 0 (`+0x05 = 0`),
+        // sets the party flags (`+0x02 = 0x60`) and clears any waypoint it owned.
+        // The remake keeps the source table row as an overlay (see
+        // `party_ids` exclusions in the settlement scans), so it must not shift
+        // owner indices here; it only clears the recruited NPC's own slot.
         entity.group_id = 0;
+        entity.flags_a = 0x60;
+        if let Some(s) = self.settlement_mut() {
+            for w in s.waypoints.iter_mut().take(5) {
+                if w.owner as usize == id {
+                    w.owner = 0;
+                }
+            }
+        }
         let cell = (entity.x as i32, entity.y as i32);
         let mut motion = crate::actors::ActorMotion::default();
         motion.cell = cell;
@@ -768,9 +782,23 @@ impl QuestContext {
         entity.group_id = settlement.group_id;
         entity.flags_a = 0x60;
         if let Some(w) = waypoint {
+            // `FUN_00431654` / `FUN_00432954`: the specialist becomes the role
+            // holder through the waypoint owner and receives the authored role
+            // dialogue id. Clear the apprentice role bits; the waypoint owner is
+            // the authoritative role marker now.
+            entity.dialogue_id = w.dialogue_id;
+            entity.archetype &= !0x38;
             entity.x = w.x;
             entity.y = w.y;
             entity.facing = w.facing;
+            if waypoint_slot == Some(0) {
+                // `FUN_00432954` elder slot: flags_a = 0 after stationing.
+                entity.flags_a = 0;
+            } else {
+                // `FUN_00431654`: leave battle stance before walking to the
+                // workstation (`flags_b &= 0xFB`).
+                entity.flags_b &= !0x04;
+            }
         }
         tables.entities[dest] = entity;
         if let Some(g) = tables.groups.get_mut(group_index) {
@@ -825,6 +853,9 @@ impl QuestContext {
         let si = self.settlement_index()?;
         let s = self.settlements.get(si)?;
         for id in self.group_entity_ids_by_index(s.group_id as usize) {
+            if self.party.iter().any(|m| m.entity.index == id) {
+                continue;
+            }
             let Some(e) = self.entity(id) else {
                 continue;
             };

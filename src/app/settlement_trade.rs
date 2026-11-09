@@ -197,6 +197,7 @@ fn role4_distribute(
     group_id: u8,
     kit: usize,
     smithing: u16,
+    party_ids: &HashSet<usize>,
 ) -> Option<usize> {
     let (first, count) = {
         let group = tables.groups.get(group_id as usize)?;
@@ -214,6 +215,9 @@ fn role4_distribute(
         let (_, new_subtype) = role4_class_subtype(kit, slot);
         let equip_slot = role4_equip_slot(slot);
         for member in first..first.saturating_add(count) {
+            if party_ids.contains(&member) {
+                continue;
+            }
             let Some(entity) = tables.entities.get(member) else {
                 continue;
             };
@@ -273,6 +277,7 @@ fn tick_role4(
     smithing: &mut u16,
     tables: &mut Option<GameTables>,
     group_id: u8,
+    party_ids: &HashSet<usize>,
 ) -> Option<usize> {
     let mut changed = None;
     let mut n = passes;
@@ -293,7 +298,9 @@ fn tick_role4(
                 t.last_slot = slot as i8;
                 t.timer4 = 1;
             } else if let Some(tables) = tables.as_mut() {
-                if let Some(member) = role4_distribute(res, t, tables, group_id, kit, *smithing) {
+                if let Some(member) =
+                    role4_distribute(res, t, tables, group_id, kit, *smithing, party_ids)
+                {
                     changed = Some(member);
                 }
             }
@@ -352,6 +359,8 @@ impl PlayableApp {
                 .unwrap_or(0);
 
             let group_id = self.settlements[si].group_id;
+            let party_ids: HashSet<usize> =
+                self.party.iter().map(|m| m.entity.index).collect();
             let PlayableApp {
                 world,
                 settlement_trade,
@@ -365,7 +374,16 @@ impl PlayableApp {
                 tick_role2(res, t, passes, &mut heal);
             }
             let changed = if prod4 != 0 {
-                tick_role4(res, t, passes, kit, &mut smith, tables, group_id)
+                tick_role4(
+                    res,
+                    t,
+                    passes,
+                    kit,
+                    &mut smith,
+                    tables,
+                    group_id,
+                    &party_ids,
+                )
             } else {
                 None
             };

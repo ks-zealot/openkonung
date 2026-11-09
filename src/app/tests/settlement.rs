@@ -476,6 +476,55 @@ fn defeat_freezes_runtime_death_rows_on_the_last_frame() {
 }
 
 #[test]
+fn building_progresses_construction_damage_and_rebuild_sprites() {
+    let Some(mut app) = build_party_app_with_free_location() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let prop = crate::loc::Prop {
+        ri: 1,
+        object_id: 0,
+        grid_x: 10,
+        grid_y: 10,
+        interactive: true,
+        palette: 0,
+        frame: 0,
+        flame_emitters: Vec::new(),
+        flame_frames: Vec::new(),
+    };
+    app.world.loc_mut(4).unwrap().props.push(prop);
+    let si = settlement_index(&app, 4);
+    app.settlements[si].targets = vec![target(0, 0, 1, 1)];
+    let group_id = app.settlements[si].group_id as usize;
+    app.tables.as_mut().unwrap().groups[group_id].activity_1d = 0;
+
+    // 0 -> 1 -> 2 -> 3 = construction; object id = base(7) + state + 30.
+    for (state, expected_obj) in [(1u8, 38usize), (2, 39), (3, 40)] {
+        app.tick_settlement_pass(1);
+        assert_eq!(app.settlements[si].targets[0].state, state);
+        assert_eq!(
+            app.world.locs[0].props.last().unwrap().object_id,
+            expected_obj
+        );
+        app.settlements[si].targets[0].timer = 1;
+    }
+    // 3 -> 4 -> 5 -> 6 = damage states; 6 -> 0 resets/rebuilds.
+    for (state, expected_obj) in [(4u8, 41usize), (5, 42), (6, 43)] {
+        app.tick_settlement_pass(1);
+        assert_eq!(app.settlements[si].targets[0].state, state);
+        assert_eq!(
+            app.world.locs[0].props.last().unwrap().object_id,
+            expected_obj
+        );
+        app.settlements[si].targets[0].timer = 1;
+    }
+    app.settlements[si].targets[0].timer = 0;
+    app.tick_settlement_pass(1);
+    assert_eq!(app.settlements[si].targets[0].state, 0, "state 6 rebuilds");
+    assert_eq!(app.world.locs[0].props.last().unwrap().object_id, 37);
+}
+
+#[test]
 fn target_state_change_updates_the_current_map_prop() {
     let Some(mut app) = build_party_app_with_free_location() else {
         eprintln!("skipping: original resources not present");

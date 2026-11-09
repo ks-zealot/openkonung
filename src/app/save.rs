@@ -116,6 +116,16 @@ impl PlayableApp {
             entities: save.entities,
         });
         self.settlements = save.settlements;
+        // Waypoint `+1` (role dialogue id) is authored data and is `serde(skip)`ed
+        // from the save payload, so restore it from the still-attached `Game.N`
+        // bytes before `set_save_game` replaces the buffer with the item table.
+        if let Ok(authored) = crate::population::parse_settlements(&self.world.res.save_game) {
+            for (live, authored) in self.settlements.iter_mut().zip(authored) {
+                for (lw, aw) in live.waypoints.iter_mut().zip(authored.waypoints) {
+                    lw.dialogue_id = aw.dialogue_id;
+                }
+            }
+        }
         let authored_groups =
             crate::population::parse_groups(&self.world.res.save_game).ok();
         if let Some(tables) = self.tables.as_mut() {

@@ -439,6 +439,12 @@ fn real_game1_settlement_waypoints_are_homes() {
         .iter()
         .find(|s| s.loc_id == 4)
         .expect("loc 4 settlement");
+    // Waypoint `+1` is the authored role dialogue id.
+    assert_eq!(s.waypoints[0].dialogue_id, 140, "elder dialogue");
+    assert_eq!(s.waypoints[1].dialogue_id, 149, "healer dialogue");
+    assert_eq!(s.waypoints[2].dialogue_id, 103, "merchant dialogue");
+    assert_eq!(s.waypoints[3].dialogue_id, 102, "smith dialogue");
+    assert_eq!(s.waypoints[4].dialogue_id, 100, "voivode dialogue");
     // Owners 0x0115..=0x0118 (277..280) map to their authored positions.
     let by_owner = |o: u16| s.waypoints.iter().find(|w| w.owner == o).copied();
     assert_eq!(by_owner(277).map(|w| (w.x, w.y)), Some((74, 39)));

@@ -87,9 +87,16 @@ impl PlayableApp {
             return SettlementWorkers::default();
         };
         let loc = settlement.loc_id as u32;
+        // Recruited companions keep their source table row as an overlay; the
+        // original `FUN_00431820` compacts the old group. Exclude their ids so
+        // they do not inflate the free/role counts.
+        let party_ids: HashSet<usize> = self.party.iter().map(|m| m.entity.index).collect();
         let mut free = 0i32;
         let mut roles = 0i32;
         for id in range {
+            if party_ids.contains(&id) {
+                continue;
+            }
             let Some(entity) = tables.entities.get(id) else {
                 continue;
             };

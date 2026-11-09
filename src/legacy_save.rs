@@ -458,6 +458,7 @@ pub fn patch_settlements(
         for (w, wp) in s.waypoints.iter().take(WAYPOINT_MAX).enumerate() {
             let wo = WAYPOINT_OFF + w * WAYPOINT_STRIDE;
             r[wo] = wp.facing;
+            r[wo + 1] = wp.dialogue_id;
             put_u16(r, wo + 2, wp.owner);
             put_u16(r, wo + 4, wp.x);
             put_u16(r, wo + 6, wp.y);

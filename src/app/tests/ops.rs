@@ -249,17 +249,107 @@ fn settlement_settle_ops_move_the_npc_and_party_specialist_into_the_village() {
     app.recruit_companion(NPC);
     app.party[0].entity.stats.strength_base = 20;
     app.party[0].entity.stats.melee_mastery = 20;
+    app.party[0].entity.flags_b |= 0x04;
+    app.party[0].entity.archetype |= 0x20;
     let before = app.tables.as_ref().unwrap().groups[23].entity_count;
     assert!(run(&mut app, 0x159));
     assert!(app.party.is_empty());
     let group = &app.tables.as_ref().unwrap().groups[23];
     assert_eq!(group.entity_count, before + 1);
     let dest = group.first_entity as usize + before as usize;
-    assert_eq!(app.tables.as_ref().unwrap().entities[dest].group_id, 23);
+    let settled = &app.tables.as_ref().unwrap().entities[dest];
+    assert_eq!(settled.group_id, 23);
+    assert_eq!(
+        settled.dialogue_id, 100,
+        "voivode waypoint dialogue id is authored as +1"
+    );
+    assert_eq!(settled.archetype & 0x38, 0, "role bits are cleared on stationing");
+    assert_eq!(settled.flags_b & 0x04, 0, "battle stance is cleared");
     assert_eq!(
         app.settlements.iter().find(|s| s.loc_id == 4).unwrap().waypoints[4].owner as usize,
         dest
     );
+}
+
+#[test]
+fn elder_settlement_copies_waypoint0_dialogue_and_clears_role_bits() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    let si = app
+        .settlements
+        .iter()
+        .position(|s| s.loc_id == 4)
+        .expect("loc 4 settlement");
+    // Synthesize a free elder slot (normal shipped loc 4 already has Гилли).
+    app.settlements[si].waypoints[0].owner = 0;
+    app.recruit_companion(NPC);
+    app.party[0].entity.archetype |= 0x20;
+    assert!(run(&mut app, 0x14C));
+    assert!(app.party.is_empty());
+    let group_id = app.settlements[si].group_id as usize;
+    let group = &app.tables.as_ref().unwrap().groups[group_id];
+    let dest = group.first_entity as usize + group.entity_count as usize - 1;
+    let settled = &app.tables.as_ref().unwrap().entities[dest];
+    assert_eq!(settled.dialogue_id, 140, "elder waypoint dialogue id");
+    assert_eq!(settled.flags_a, 0, "0x14C elder slot clears flags_a");
+    assert_eq!(settled.archetype & 0x38, 0, "role bits are cleared");
+    assert_eq!(
+        app.settlements[si].waypoints[0].owner as usize,
+        dest
+    );
+}
+
+#[test]
+fn conquest_op_clears_control_flags_and_money_pool() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    let si = app
+        .settlements
+        .iter()
+        .position(|s| s.loc_id as u32 == app.current_map)
+        .expect("current-map settlement");
+    app.settlements[si].flags_4b2 = 0x15 | 0x01 | 0x04 | 0x10;
+    app.settlements[si].progress_14 = 123;
+    app.settlements[si].money_pool_10 = 456;
+    assert!(run(&mut app, 0x16D));
+    let s = &app.settlements[si];
+    assert_eq!(s.flags_4b2 & 0xEA, 0, "0x16D clears 0x01/0x04/0x10/0x15");
+    assert_eq!(s.progress_14, 0);
+    assert_eq!(s.money_pool_10, 0);
+}
+
+#[test]
+fn tribute_accrues_after_conquest_and_pays_out() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    let si = app
+        .settlements
+        .iter()
+        .position(|s| s.loc_id as u32 == app.current_map)
+        .expect("current-map settlement");
+    let group_id = app.settlements[si].group_id as usize;
+    // Conquered: flag 0x10 clear, so the +0x14 event counter runs.
+    app.settlements[si].flags_4b2 = 0;
+    app.settlements[si].progress_14 = 0x275F;
+    app.settlements[si].money_pool_10 = 0;
+    if let Some(tables) = app.tables.as_mut() {
+        if let Some(g) = tables.groups.get_mut(group_id) {
+            g.activity_1d = 0;
+        }
+    }
+    app.tick_settlement_pass(1);
+    let pool = app.settlements[si].money_pool_10;
+    assert!(pool > 0, "tribute pool must accrue after conquest");
+    let money_before = app.player.money;
+    assert!(run(&mut app, 0x11B));
+    assert_eq!(app.player.money, money_before + pool);
+    assert_eq!(app.settlements[si].money_pool_10, 0);
 }
 
 #[test]
