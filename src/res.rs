@@ -11,6 +11,7 @@ mod human;
 mod lights;
 mod objects;
 mod raster;
+mod shadows;
 
 pub use self::cursor::*;
 pub use self::exe::*;

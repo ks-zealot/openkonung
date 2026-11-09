@@ -423,6 +423,107 @@ pub fn requirement_ok(snap: &OwnerSnapshot, res: &Res, slots: &SlotsRef, id: u16
     requirement_stat_value(snap, res, slots, info.requirement_stat) >= info.requirement_value as i32
 }
 
+/// `FUN_004104D4`: auto-equip one **empty** main slot from the inventory.
+///
+/// The original scans the 32 inventory slots in order and takes the first item
+/// whose class byte (`ItemInstance+0x00`) equals the slot index and that passes
+/// the requirement predicate (`FUN_004182D4`); it then writes the slot and
+/// consumes the inventory entry (`FUN_00421AD0`, shift-down + clear the tail).
+/// An already occupied slot reports success without scanning.
+pub fn auto_equip_slot(snap: &OwnerSnapshot, res: &Res, slots: &mut SlotsMut, slot: usize) -> bool {
+    if slot >= MAIN_SLOTS {
+        return false;
+    }
+    if slots.equipment[slot] != 0 {
+        return true;
+    }
+    for i in 0..INVENTORY_SLOTS {
+        let id = slots.inventory[i];
+        if id == 0 {
+            continue;
+        }
+        let Some((class, _)) = res.item_class_subtype(id) else {
+            continue;
+        };
+        if !main_slot_accepts(class, slot) {
+            continue;
+        }
+        if !requirement_ok(snap, res, &slots.as_ref(), id) {
+            continue;
+        }
+        slots.equipment[slot] = id;
+        remove_inventory_id(slots.inventory, id);
+        return true;
+    }
+    false
+}
+
+/// Result of [`refresh_equipment`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EquipmentRefresh {
+    /// New `Entity+0x12` active weapon slot (`1` bow, `0` axe/slot 0, `2` rest).
+    pub weapon_slot: u8,
+    /// Whether the ammo slot, a main slot or the active weapon slot changed.
+    pub changed: bool,
+}
+
+/// `FUN_004105A0`: NPC equipment refresh.
+///
+/// 1. If the ammo slot (`Entity+0xCC`) is empty, take the first class-12 item
+///    from the inventory that passes the requirement check.
+/// 2. Auto-equip slots in the original order `0, 1, 3, 4, 5, 2`.
+/// 3. Recompute `Entity+0x12`: bow when ammo **and** slot 1 are present, else
+///    slot 0 when it is filled, else `2`.
+///
+/// The original also bumps `_DAT_0081D5F0`; the remake has no such revision
+/// counter (nothing caches a derived equipment value), so `changed` is exposed
+/// for callers/tests instead.
+pub fn refresh_equipment(
+    snap: &OwnerSnapshot,
+    res: &Res,
+    slots: &mut SlotsMut,
+) -> EquipmentRefresh {
+    let mut changed = false;
+
+    if *slots.special == 0 {
+        for i in 0..INVENTORY_SLOTS {
+            let id = slots.inventory[i];
+            if id == 0 {
+                continue;
+            }
+            if !matches!(res.item_class_subtype(id), Some((12, _))) {
+                continue;
+            }
+            if !requirement_ok(snap, res, &slots.as_ref(), id) {
+                continue;
+            }
+            *slots.special = id;
+            remove_inventory_id(slots.inventory, id);
+            changed = true;
+            break;
+        }
+    }
+
+    // Exact original order: `FUN_004104D4(0)`, `(1)`, `(3)`, `(4)`, `(5)`, `(2)`.
+    for slot in [0usize, 1, 3, 4, 5, 2] {
+        if slots.equipment[slot] == 0 && auto_equip_slot(snap, res, slots, slot) {
+            changed = true;
+        }
+    }
+
+    let weapon_slot = if *slots.special != 0 && slots.equipment[1] != 0 {
+        1
+    } else if slots.equipment[0] != 0 {
+        0
+    } else {
+        2
+    };
+    EquipmentRefresh {
+        weapon_slot,
+        changed,
+    }
+}
+
 /// `FUN_0041BB70` recipe record (table VA `0x450DF4`, 33 x 6 bytes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Recipe {

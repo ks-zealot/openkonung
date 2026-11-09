@@ -216,6 +216,10 @@ pub struct PlayableApp {
     layer_counts: LayerCounts,
     props_drawn: usize,
     actors_drawn: usize,
+    /// Spans emitted by the last shadow pass (`FUN_0043C040`), for diagnostics.
+    shadow_spans: usize,
+    /// Last shadow spans (bounded), for the `debug_shadow_span*` ABI.
+    shadow_debug: Vec<crate::render::spans::Span>,
 
     detail_pan: [f64; 2],
     camera_follow: bool,
@@ -428,6 +432,8 @@ impl PlayableApp {
             layer_counts: LayerCounts::default(),
             props_drawn: 0,
             actors_drawn: 0,
+            shadow_spans: 0,
+            shadow_debug: Vec::new(),
             detail_pan: [0.0, 0.0],
             camera_follow: true,
             camera_follow_strength: 11.0,

@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Static server for the OpenKonung web build.
 
-Serves the browser shell (index.html, app.js, manifest.json, openkonung.wasm)
-from `web/www` at the URL root, and every other path (the original .RES/.EXE/
-Konung.N assets) from the install directory. So the game lives at:
+Serves the browser shell (index.html, app.js, manifest.json, openkonung.wasm,
+konung.zip.pack) from `web/www` at the URL root. The original `.RES`/`.EXE`/
+`Konung.N` files are served from the resolved install directory only for the
+`?nopack=1` development fallback; a normal pack-only run never requests them.
 
     http://localhost:8000/
 
-while `manifest.base = "/"` still resolves straight to the original game files.
+`--base` may be omitted: the server then probes `web/`, `web/assets/` and
+`web/..` (the same order as the build) and logs the result. If no raw install
+is present, it serves `web/www` only and the pack still works.
 """
 from __future__ import annotations
 
@@ -17,8 +20,13 @@ import mimetypes
 import os
 import re
 import socketserver
+import sys
 from functools import partial
 from pathlib import Path
+
+# The asset resolver lives beside the build scripts.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+import assets as asset_tools  # noqa: E402
 
 
 class _RangeReader:
@@ -109,12 +117,30 @@ def main() -> None:
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser(description="Serve the OpenKonung web build at /")
     ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--base", type=Path, default=here.parent, help="original install directory")
+    ap.add_argument(
+        "--base",
+        type=Path,
+        default=None,
+        help="original install directory (default: auto-detect web/, web/assets/, web/..)",
+    )
     ap.add_argument("--www", type=Path, default=here / "www", help="browser shell directory")
     args = ap.parse_args()
 
-    base = args.base.resolve()
     www = args.www.resolve()
+    if args.base is not None:
+        base = args.base.resolve()
+        print(f"[assets] using explicit install: {base}", file=sys.stderr)
+    else:
+        result = asset_tools.resolve(here, None)
+        asset_tools.log_report(result)
+        base = Path(result["base"]).resolve() if result["base"] else www
+        if not result["base"]:
+            print(
+                "[assets] no raw install found; serving web/www only "
+                "(the resource pack still works, ?nopack=1 will not).",
+                file=sys.stderr,
+            )
+
     handler = partial(Handler, base=base, www=www)
 
     socketserver.TCPServer.allow_reuse_address = True

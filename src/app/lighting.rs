@@ -25,6 +25,22 @@ impl PlayableApp {
         self.world_frame
     }
 
+    /// Spans emitted by the last shadow pass (`FUN_0043C040`).
+    pub fn shadow_span_count(&self) -> u32 {
+        self.shadow_spans as u32
+    }
+
+    /// One field (0 row, 1 x0, 2 x1) of a span kept by the diagnostic ABI.
+    pub fn shadow_span(&self, index: usize, field: u32) -> Option<i32> {
+        let s = self.shadow_debug.get(index)?;
+        Some(match field {
+            0 => s.row,
+            1 => s.x0,
+            2 => s.x1,
+            _ => -1,
+        })
+    }
+
     pub(super) fn apply_world_lighting(
         &mut self,
         sprites: &[WorldSprite],

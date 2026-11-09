@@ -282,3 +282,117 @@ fn non_ammo_does_not_stack() {
     };
     assert!(!try_stack_ammo(&mut res, &mut slots, incoming));
 }
+
+/// Synthetic save: only the 16-byte instances the test needs.
+fn synthetic_save(instances: &[(u16, u8, u8)]) -> Vec<u8> {
+    let mut save = vec![0u8; 8192 * 16];
+    for &(id, class, subtype) in instances {
+        let o = id as usize * 16;
+        save[o] = class;
+        save[o + 3] = subtype;
+    }
+    save
+}
+
+fn permissive_snapshot() -> OwnerSnapshot {
+    OwnerSnapshot {
+        hp_internal: 60_000,
+        dexterity_current: 60_000,
+        strength_current: 60_000,
+        charisma_current: 60_000,
+        endurance_current: 60_000,
+        raw_0x52: 60_000,
+        ..OwnerSnapshot::default()
+    }
+}
+
+#[test]
+fn auto_equip_takes_the_class_match_and_consumes_the_inventory_slot() {
+    let Some(mut res) = test_res() else {
+        return;
+    };
+    res.set_save_game(&synthetic_save(&[(100, 0, 5), (101, 12, 1)]));
+    let snap = permissive_snapshot();
+    let mut equipment = [0u16; MAIN_SLOTS];
+    let mut inventory = [0u16; INVENTORY_SLOTS];
+    inventory[0] = 101; // class 12: never fits a main slot
+    inventory[1] = 100; // class 0 -> slot 0
+    let mut additional = [0u16; ADDITIONAL_SLOTS];
+    let mut special = 0u16;
+    let mut slots = SlotsMut {
+        equipment: &mut equipment,
+        inventory: &mut inventory,
+        additional: &mut additional,
+        special: &mut special,
+    };
+    assert!(auto_equip_slot(&snap, &res, &mut slots, 0));
+    assert_eq!(slots.equipment[0], 100);
+    assert_eq!(&slots.inventory[..3], &[101, 0, 0]);
+    // An occupied slot never rescans.
+    assert!(auto_equip_slot(&snap, &res, &mut slots, 0));
+    assert_eq!(slots.equipment[0], 100);
+    // No class-3 item: the empty slot stays empty.
+    assert!(!auto_equip_slot(&snap, &res, &mut slots, 3));
+    assert_eq!(slots.equipment[3], 0);
+}
+
+#[test]
+fn refresh_equipment_fills_ammo_then_slots_and_recomputes_the_weapon_slot() {
+    let Some(mut res) = test_res() else {
+        return;
+    };
+    res.set_save_game(&synthetic_save(&[(100, 0, 5), (101, 12, 1), (102, 1, 5)]));
+    let snap = permissive_snapshot();
+    let mut equipment = [0u16; MAIN_SLOTS];
+    let mut inventory = [0u16; INVENTORY_SLOTS];
+    inventory[0] = 101; // ammo
+    inventory[1] = 102; // bow (class 1)
+    inventory[2] = 100; // axe/slot-0 weapon (class 0)
+    let mut additional = [0u16; ADDITIONAL_SLOTS];
+    let mut special = 0u16;
+    let mut slots = SlotsMut {
+        equipment: &mut equipment,
+        inventory: &mut inventory,
+        additional: &mut additional,
+        special: &mut special,
+    };
+
+    let out = refresh_equipment(&snap, &res, &mut slots);
+    assert!(out.changed);
+    assert_eq!(*slots.special, 101, "ammo slot takes the class-12 item");
+    assert_eq!(slots.equipment[0], 100);
+    assert_eq!(slots.equipment[1], 102);
+    assert_eq!(slots.inventory[0], 0);
+    // Ammo + bow -> the bow is the active weapon (`Entity+0x12 == 1`).
+    assert_eq!(out.weapon_slot, 1);
+
+    // Without the bow the slot-0 weapon wins.
+    let mut equipment = [0u16; MAIN_SLOTS];
+    let mut inventory = [0u16; INVENTORY_SLOTS];
+    inventory[0] = 100;
+    let mut additional = [0u16; ADDITIONAL_SLOTS];
+    let mut special = 0u16;
+    let mut slots = SlotsMut {
+        equipment: &mut equipment,
+        inventory: &mut inventory,
+        additional: &mut additional,
+        special: &mut special,
+    };
+    let out = refresh_equipment(&snap, &res, &mut slots);
+    assert_eq!(out.weapon_slot, 0);
+
+    // Nothing equipped at all -> unarmed row 2.
+    let mut equipment = [0u16; MAIN_SLOTS];
+    let mut inventory = [0u16; INVENTORY_SLOTS];
+    let mut additional = [0u16; ADDITIONAL_SLOTS];
+    let mut special = 0u16;
+    let mut slots = SlotsMut {
+        equipment: &mut equipment,
+        inventory: &mut inventory,
+        additional: &mut additional,
+        special: &mut special,
+    };
+    let out = refresh_equipment(&snap, &res, &mut slots);
+    assert!(!out.changed);
+    assert_eq!(out.weapon_slot, 2);
+}

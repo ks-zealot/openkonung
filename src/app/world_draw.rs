@@ -48,6 +48,7 @@ impl PlayableApp {
         // sweeps it onto the committed (`player_x/player_y`) cell over the cycle.
         let moving = self.player_active;
         let (plx, ply) = entity_to_local_px_f(self.player_render_x, self.player_render_y);
+        let (pose_action, pose_frame, pose_battle) = self.player_pose(moving);
         match self.player_frame(moving) {
             Ok((im, gx, gy)) => sprites.push(WorldSprite {
                 img: im,
@@ -55,6 +56,16 @@ impl PlayableApp {
                 gy,
                 lx: plx,
                 ly: ply,
+                shadow: Some(crate::render::ShadowKey {
+                    equipment: self.player.equipment,
+                    weapon_slot: self.player.raw_0x12,
+                    battle: pose_battle,
+                    archetype: self.player.entity_class(),
+                    visual_index: self.player.hero.visual_index,
+                    action: pose_action,
+                    facing: self.player_dir.max(0) as u8,
+                    frame: pose_frame,
+                }),
             }),
             Err(reason) => rejected.push(format!(
                 "player hero={} visual_index={} palette_offset=0x{:X} facing={} reason={}",
@@ -67,6 +78,47 @@ impl PlayableApp {
         }
         self.population_rejected = rejected;
         self.actors_drawn = sprites.len().saturating_sub(self.props_drawn);
+
+        // `FUN_00426384` + `FUN_0043C040` + `FUN_0043D247`: actor, equipped-item
+        // overlay and projectile ground shadows. Gated by the `shadows` config
+        // word (`0x81D620`); collected after terrain/props and darkened before
+        // the sprite depth blit, exactly like the original.
+        if crate::config::config().shadows != 0 {
+            // Screen-space clip: `origin` below already includes the camera pan.
+            let clip = (0, 0, fw as i32 - 1, fh as i32 - 1);
+            let mut spans: Vec<crate::render::spans::Span> = Vec::new();
+            {
+                let PlayableApp { world, frame, .. } = self;
+                for s in sprites.iter() {
+                    let Some(key) = s.shadow else {
+                        continue;
+                    };
+                    world.res.add_actor_shadow(
+                        &key.equipment,
+                        key.weapon_slot,
+                        key.battle,
+                        key.archetype,
+                        key.visual_index,
+                        key.action,
+                        key.facing,
+                        key.frame,
+                        (iox + s.lx.round() as i32, ioy + s.ly.round() as i32),
+                        clip,
+                        &mut spans,
+                    );
+                }
+                crate::render::spans::darken(frame, fw as usize, fh as usize, &spans);
+            }
+            self.shadow_spans = spans.len();
+            self.shadow_debug = if spans.len() <= 64 {
+                spans.clone()
+            } else {
+                Vec::new()
+            };
+        } else {
+            self.shadow_spans = 0;
+            self.shadow_debug.clear();
+        }
 
         sprites.sort_by(|a, b| {
             a.ly.partial_cmp(&b.ly)

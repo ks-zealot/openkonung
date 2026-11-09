@@ -68,6 +68,7 @@ use crate::constants::exe_tables::ITEM_REQUIREMENT_STAT_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_VALUE_OFF;
 use crate::constants::exe_tables::ITEM_VALUE_OFF_128;
 use crate::constants::exe_tables::ITEM_VALUE_OFF_64;
+use crate::constants::exe_tables::ITEM_PROBE_RANGE_OFF;
 
 /// Table `(icon_base_va, stride, name_base_va)` for an item class.
 fn table_for(class: u8) -> Option<(u32, usize, u32)> {
@@ -510,6 +511,18 @@ impl ItemDb {
     /// the projectile damage path where only the bow subtype is stored.
     pub fn rating_for_subtype(&self, subtype: u8) -> u16 {
         let o = va_to_file(ARMOR_TABLE_VA) + subtype as usize * ARMOR_STRIDE;
+        if o + 2 <= self.konung.len() {
+            rd_u16(&self.konung, o) as u16
+        } else {
+            0
+        }
+    }
+
+    /// Line-of-fire sample range by subtype (`u16@0x459B84 + subtype*0x40`),
+    /// read by `FUN_0041130C`. The probe takes `8 * value` DDA steps, so `1`
+    /// (the melee value) only reaches a target at near point-blank range.
+    pub fn probe_range(&self, subtype: u8) -> u16 {
+        let o = va_to_file(ARMOR_TABLE_VA) + subtype as usize * ARMOR_STRIDE + ITEM_PROBE_RANGE_OFF;
         if o + 2 <= self.konung.len() {
             rd_u16(&self.konung, o) as u16
         } else {

@@ -327,28 +327,34 @@ impl PlayableApp {
     /// composite their GRAPH overlays via the original `FUN_00427e9c` rules,
     /// including the active-weapon "in hand" variant (`Entity+0x12`). No Game.res
     /// variant fallback. One walk cycle == one cell step (`FUN_00413de4`).
-    pub(super) fn player_frame(&mut self, moving: bool) -> Result<(Img, i32, i32), String> {
+    /// `(action, frame index, battle)` for the protagonist's current pose. The
+    /// same values drive [`player_frame`] and the ground-shadow lookup.
+    pub(super) fn player_pose(&self, moving: bool) -> (usize, usize, bool) {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
-        let (action, fi) = if self.player.dead {
-            (
+        if self.player.dead {
+            return (
                 crate::anim::death_action(battle),
                 self.player_death_frame as usize,
-            )
-        } else if !moving && !self.player_active && self.player_attack_ranged {
-            (crate::anim::ACT_RANGED, self.player_ranged_frame as usize)
-        } else if !moving && !self.player_active && self.player_attack_target.is_some() {
-            (
-                crate::anim::ACT_MELEE,
-                self.player_attack_frame as usize,
-            )
+                battle,
+            );
+        }
+        if !moving && !self.player_active && self.player_attack_ranged {
+            return (crate::anim::ACT_RANGED, self.player_ranged_frame as usize, battle);
+        }
+        if !moving && !self.player_active && self.player_attack_target.is_some() {
+            return (crate::anim::ACT_MELEE, self.player_attack_frame as usize, battle);
+        }
+        let action = if moving {
+            crate::anim::walk_action(battle)
         } else {
-            let action = if moving {
-                crate::anim::walk_action(battle)
-            } else {
-                crate::anim::idle_action(battle)
-            };
-            (action, self.player_frame_index(moving, action))
+            crate::anim::idle_action(battle)
         };
+        (action, self.player_frame_index(moving, action), battle)
+    }
+
+    pub(super) fn player_frame(&mut self, moving: bool) -> Result<(Img, i32, i32), String> {
+        let battle = crate::anim::battle_from_flags(self.player.flags_b);
+        let (action, fi, _) = self.player_pose(moving);
         self.world.res.actor_frame_state(
             &self.player.equipment,
             self.player.raw_0x12,

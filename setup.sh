@@ -2,15 +2,29 @@
 # From-scratch Debian/Ubuntu bootstrap for the OpenKonung web build.
 #
 # Installs the base packages and, if necessary, Rust itself (via rustup),
-# adds the wasm32 target, then builds the wasm module. Rust does NOT need to
-# be installed beforehand.
+# adds the wasm32 target, resolves the original game files, then builds the
+# wasm module and www/konung.zip.pack. Rust does NOT need to be installed
+# beforehand.
 #
 # Usage:
 #   bash web/setup.sh
+#   bash web/setup.sh --mem-palace
 #   bash web/serve.sh          # then open http://localhost:8000/
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MEM_PALACE=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --mem-palace) MEM_PALACE=1 ;;
+        -h|--help)
+            echo "usage: setup.sh [--mem-palace]"
+            exit 0
+            ;;
+        *) echo "error: unknown argument '$1'" >&2; exit 2 ;;
+    esac
+    shift
+done
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
@@ -51,6 +65,16 @@ chmod +x "$ROOT"/*.sh 2>/dev/null || true
 
 echo "==> Building..."
 bash "$ROOT/build.sh"
+
+if [ "$MEM_PALACE" -eq 1 ]; then
+    echo "==> Initializing MemPalace from the repository docs..."
+    if command -v mempalace >/dev/null 2>&1; then
+        mempalace init . --palace "$HOME/.mempalace/konung-research" --yes --auto-mine --no-llm
+    else
+        echo "mempalace CLI not found; skipping. Install it and run:"
+        echo "  mempalace init . --palace ~/.mempalace/konung-research --yes --auto-mine --no-llm"
+    fi
+fi
 
 echo
 echo "Done. Start the game with:"

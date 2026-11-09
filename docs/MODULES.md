@@ -1,6 +1,6 @@
 # OpenKonung — Module Map
 
-Per-file responsibilities of `web/src`. Each `*.rs` file at the top level is a
+Per-file responsibilities of `src`. Each `*.rs` file at the top level is a
 module root; a matching sibling directory holds its subsystems and its
 `tests.rs`. Systems were split out of the former monoliths (`app.rs`, `res.rs`,
 `actors.rs`, `lib.rs`, …); tests live in `<module>/tests.rs`.
@@ -14,21 +14,22 @@ module root; a matching sibling directory holds its subsystems and its
 | `res.rs` | Resource container (`Res`) and decoding entry points; re-exports `res/*`. |
 | `actors.rs` | Runtime population API + frame/tick constants; re-exports `actors/*`. |
 | `population.rs` | `Game.N` Group/Entity/Settlement tables; re-exports `population/*`. |
-| `resource_pack.rs` | Packed archive model (`ResourcePack` + `bincode`), validation, `Loader` application, minimal ZIP reader/native writer; re-exports `resource_pack/*`. |
+| `quest.rs` | `QUEST_R.RES` dialogue/quest decoder (7 blocks, nodes/options, B6→B3 text, condition/action programs). |
+| `dialog.rs` | NPC dialogue state machine + renderer (tiled `INTR[5]` + `INTR[1]`/`INTR[0]`, original fonts, option list). |
+| `script.rs` | Quest/dialogue script opcode catalogue (`0x112..0x16E`, handler VAs, predicate/action); see `QUEST_OPCODES.md`. |
+| `sound.rs` | `SOUNDS.RES`/`Sounds_.res` decoder (index + s16 mono PCM clips). |
 | `character.rs` | Hero/class/build/player model; re-exports `character/*`. |
 | `loc.rs` | `Konung.N` map decode: base terrain, 320×160 collision, GRAPH/prop placements, gates. |
 | `edges.rs` | `Game.N` transition graph (`+0x29600`), trigger rectangles, location graph. |
 | `coords.rs` | Canonical coordinate transforms (terrain/entity/prop) + movement direction tables. |
 | `render.rs` | World surface renderer and sprite layer/culling (`World`, `WorldSprite`, `LayerCounts`). |
-| `config.rs` | Exact 28-byte `KONUNG.CFG` model (seven LE `u32`) + live global/revision. |
-| `lighting.rs` | `FUN_00428FE0` day/night ambient palette deltas and light-mask blending. |
-| `video.rs` | Original movie clip names, one-at-a-time request state and post-video outcomes. |
 | `anim.rs` | Stance/action mapping and battle-flag helpers. |
 | `hero.rs` | Hero identity templates (Dragomir/Mikhail/Wolf) and identity field decoding. |
 | `character_screen.rs` | Character window (`INTR[2]`) render: equipment/stat/name layout tables. |
 | `hud.rs` | Gameplay HUD composition; re-exports `hud/*`. |
 | `intr.rs` | INTR interface-image archive decoder; re-exports `intr/*`. |
-| `item.rs` | Item instance decode + prototype/name/rating resolution from `konung.res`. |
+| `item.rs` | Item instance decode + prototype/name/rating/world-sprite resolution from `konung.res`. |
+| `world_objects.rs` | `Game.N +0x21900` WorldObject parser, activation timestamps, herb respawn shape. |
 | `menu_res.rs` | Native MENU/NEWH/SAVE frontend-image RES decoder. |
 | `font.rs` | Original proportional bitmap fonts embedded in `konung.res`. |
 | `names.rs` | CP866 name decoding and name/class table lookup. |
@@ -42,13 +43,11 @@ module root; a matching sibling directory holds its subsystems and its
 | `population.rs` | `Game.N` population integration (placement, actor sprite collection, entity debug). |
 | `player.rs` | Player targeting/pathing, per-cell stepping, protagonist animation frame. |
 | `text.rs` | Text overlay helpers (label, wrap, clamp). |
-| `world_draw.rs` | `draw_detail`: terrain + props + actors + world overlays compositing. |
-| `lighting.rs` | Applies day/night ambient, LIGHTS.N terrain masks and lit-cell sprite redraws. |
-| `video_triggers.rs` | Gameplay game-over and settlement-defeat movie trigger conditions. |
+| `world_draw.rs` | `draw_detail`: terrain + props + actors + WorldObject marker pass compositing. |
+| `world_items.rs` | WorldObject location rebuild, right-click pickup, inventory/weight rules, herb respawn. |
 | `debug_overlay.rs` | Debug overlays: portals (`T`), render layers (`L`), population (`P`). |
 | `graph.rs` | World-graph view (`H`): spring layout, fit, draw, labels. |
 | `input.rs` | Pointer/key/wheel handling, hover, party-cell hit-testing, character-screen toggles. |
-| `hover.rs` | Lower-panel hover text (`FUN_00430958` actor panel, `FUN_0042F5F8` item detail, `FUN_0042E9CC` fixed strings, ground marker). |
 | `tests.rs` | App-level tests (character screen, menu/click-through, portal matching, text wrap). |
 
 ## `res/` — resource decoding
@@ -57,7 +56,6 @@ module root; a matching sibling directory holds its subsystems and its
 |---|---|
 | `graph.rs` | GRAPH terrain tiles and GRAPH layout parsing. |
 | `objects.rs` | OBJECTS props/monsters: object index, prop sprites, monster animation frames. |
-| `lights.rs` | `LIGHTS.RES` masks/tiles and per-map `LIGHTS.N` low/high light maps. |
 | `human.rs` | Humanoid frames, peace/battle equipment overlays, `compose_human`, `paper_doll_frame`. |
 | `raster.rs` | `Image`, indexed RLE, palette conversion, `blit`/`fill_*`/`line`, byte readers. |
 | `exe.rs` | EXE profile mapping (virtual address ↔ file offset) for embedded tables. |
@@ -98,7 +96,6 @@ module root; a matching sibling directory holds its subsystems and its
 | `layout.rs` | Original frontend layout tables (menu/newh regions, resolutions, hit rects). |
 | `main_menu.rs` | Main-menu visibility and hit-test. |
 | `new_hero.rs` | New-Hero state (hero/class selection, confirm, image mapping). |
-| `settings.rs` | Settings live/snapshot state, exact 10-control toggles, markers, Ok/Cancel. |
 | `tests.rs`, `layout/tests.rs` | Frontend and layout tests. |
 
 ## `hud/` — gameplay interface
@@ -106,7 +103,7 @@ module root; a matching sibling directory holds its subsystems and its
 | File | Responsibility |
 |---|---|
 | `layout.rs` | HUD sprite layout, inventory-strip slot math, party grid. |
-| `compose.rs` | `draw_game_hud` composition (party panel, inventory strip, AUTO) + `draw_hover_text`. |
+| `compose.rs` | `draw_game_hud` composition (party panel, inventory strip, AUTO, hover). |
 | `tests.rs` | HUD layout tests. |
 
 ## `intr/` — interface archives
@@ -139,31 +136,30 @@ keep working.
 |---|---|
 | `memory.rs` | `alloc`, `dealloc`, byte-copy helper. |
 | `resource.rs` | `Loader`, `load_resource`/`load_profile`/`load_konung`, kind constants, frontend asset build. |
-| `pack.rs` | `load_pack`, pack build-id and `pack_music_*` accessors for the browser shell. |
 | `lifecycle.rs` | `Runtime`, `ActiveMode`, boot / start-game / menu switching, `apply_host`. |
 | `frame.rs` | `step`, `frame_ptr`/`frame_w`/`frame_h`, `should_quit`, `on_resize`, host size. |
 | `input.rs` | Pointer/wheel/key forwarding into the active side. |
 | `frontend_api.rs` | Frontend state / hero / class / hover queries. |
-| `config.rs` | `config_load`, `config_write`, `config_revision` (28-byte KONUNG.CFG). |
-| `video.rs` | Intro/trigger movie queue, name handshake, finish/apply and debug selectors. |
 | `debug.rs` | Debug state images, decoded MENU/INTR previews, HUD preview, text-overlay exports. |
 
 ## Non-source entry points
 
 | Path | Responsibility |
 |---|---|
-| `web/www/app.js` | Hand-written browser shell (manifest fetch, memory loading, loop, input, blit). |
-| `web/www/index.html` | Canvas host page. |
-| `web/examples/dump.rs` | Rust↔Python parity dump (`tools/parity.py` mirrors it). |
-| `web/examples/pack.rs` | Native resource packer (writes `openkonung.pack.zip`; never linked into wasm). |
-| `web/tools/smoke.mjs` | Headless wasm smoke test (raw per-file fallback). |
-| `web/tools/pack_smoke.mjs` | Pack-only acceptance smoke (only `web/www` served). |
-| `web/tools/frontend_smoke.mjs` | Full frontend-flow smoke test. |
-| `web/tools/settings_smoke.mjs` | KONUNG.CFG + Settings Ok/Cancel smoke test. |
-| `web/tools/lighting_smoke.mjs` | Day/night ambient + 40 LIGHTS.N maps smoke test. |
-| `web/tools/video_smoke.mjs` | Packed/fallback MP4s + movie trigger handshake smoke test. |
-| `web/tools/transcode_videos.py` | AVI/Indeo-5 `.flm` → browser H.264/AAC MP4 build step. |
-| `web/tools/page_smoke.mjs` | Served-bundle HTTP smoke test. |
-| `web/tools/frame_png.mjs`, `menu_png.mjs`, `intr_png.mjs`, `intr_sheet.mjs`, `character_png.mjs` | Diagnostic PNG exporters. |
-| `web/tools/parity.py` | Python reference decoders for parity. |
-| `web/tools/make_manifest.py` | Manifest generator (run by `build.ps1`/`build.sh`). |
+| `www/app.js` | Hand-written browser shell (manifest fetch, memory loading, loop, input, blit). |
+| `www/index.html` | Canvas host page. |
+| `examples/dump.rs` | Rust↔Python parity dump (`tools/parity.py` mirrors it). |
+| `tools/smoke.mjs` | Headless wasm smoke test. |
+| `tools/frontend_smoke.mjs` | Full frontend-flow smoke test. |
+| `tools/page_smoke.mjs` | Served-bundle HTTP smoke test. |
+| `tools/frame_png.mjs`, `menu_png.mjs`, `intr_png.mjs`, `intr_sheet.mjs`, `character_png.mjs` | Diagnostic PNG exporters. |
+| `tools/parity.py` | Python reference decoders for parity. |
+| `tools/make_manifest.py` | Manifest generator (run by `build.ps1`/`build.sh`; supports `--from-pack`). |
+| `tools/assets.py` | Asset resolver (`web/` → `web/assets/` → `web/..`) used by the build and server. |
+| `tools/dump_mempalace.py` | Exports the project MemPalace to `docs/MEMPALACE_DUMP.md` / `.jsonl`. |
+| `examples/pack.rs` | Native resource packer (`www/konung.zip.pack`). |
+| `build.ps1`, `build.sh` | First build / pack-only rebuild entry points. |
+| `setup.ps1`, `setup.sh` | From-scratch bootstrap (toolchain check + build). |
+| `server.py`, `serve.ps1`, `serve.sh` | Local static server with automatic asset discovery. |
+| `README.md` | The only markdown file at the repository root. |
+| `docs/` | All other documentation (see `docs/README.md`). |

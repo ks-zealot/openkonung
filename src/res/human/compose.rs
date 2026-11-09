@@ -14,7 +14,7 @@ impl Res {
     /// (the loaded save for Game.N actors, or `Game.res` for the variant path)
     /// and resolved against the `konung.res` templates. `None` when the item has
     /// no body overlay (`equipped_visual` outside `0..=23`).
-    pub(super) fn overlay_selector(&self, instances: &[u8], id: u16) -> Option<usize> {
+    pub(crate) fn overlay_selector(&self, instances: &[u8], id: u16) -> Option<usize> {
         let db = self.item_db.as_ref()?;
         let inst = crate::item::ItemDb::decode_instance(instances, id)?;
         let ov = db.info(inst.class, inst.subtype)?.equipped_visual;

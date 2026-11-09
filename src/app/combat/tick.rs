@@ -28,6 +28,7 @@ impl PlayableApp {
             self.apply_dot();
         }
         self.advance_all_death_frames();
+        self.refresh_npc_equipment();
         self.update_world_ai();
         self.update_player_combat();
         self.update_party_combat();

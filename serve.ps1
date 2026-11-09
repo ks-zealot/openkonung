@@ -1,9 +1,14 @@
-param([int]$Port = 8000)
+param(
+    [int]$Port = 8000,
+    [string]$Base = ""
+)
 
 $root = $PSScriptRoot
-$base = (Resolve-Path (Join-Path $root '..')).Path   # original install directory
 $www = Join-Path $root 'www'
 
 Write-Host "Open: http://localhost:$Port/"
 
-python (Join-Path $root 'server.py') --port $Port --base $base --www $www
+$argsList = @((Join-Path $root 'server.py'), '--port', $Port, '--www', $www)
+if ($Base) { $argsList += @('--base', $Base) }
+
+python @argsList

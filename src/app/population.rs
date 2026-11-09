@@ -128,7 +128,23 @@ impl PlayableApp {
                 ) {
                     Ok((im, gx, gy)) => {
                         let (lx, ly) = entity_to_local_px_f(cell.0 as f64, cell.1 as f64);
-                        out.push(WorldSprite { img: im, gx, gy, lx, ly });
+                        out.push(WorldSprite {
+                            img: im,
+                            gx,
+                            gy,
+                            lx,
+                            ly,
+                            shadow: Some(crate::render::ShadowKey {
+                                equipment: a.entity.equipment,
+                                weapon_slot: a.entity.raw_0x12,
+                                battle: crate::anim::battle_from_flags(a.entity.flags_b),
+                                archetype: a.entity.archetype,
+                                visual_index: a.entity.visual_index,
+                                action,
+                                facing,
+                                frame,
+                            }),
+                        });
                     }
                     Err(reason) => rejected.push(format!(
                         "entity={} group={} raw_pos=({},{}) archetype=0x{:02X} facing={} visual_index={} palette_offset=0x{:X} reason={}",

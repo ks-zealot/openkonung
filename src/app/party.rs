@@ -250,6 +250,16 @@ impl PlayableApp {
                         gy,
                         lx,
                         ly,
+                        shadow: Some(crate::render::ShadowKey {
+                            equipment: m.entity.equipment,
+                            weapon_slot: m.entity.raw_0x12,
+                            battle: crate::anim::battle_from_flags(m.entity.flags_b),
+                            archetype: m.entity.archetype,
+                            visual_index: m.entity.visual_index,
+                            action: m.motion.action as usize,
+                            facing: m.motion.facing,
+                            frame: m.motion.frame as usize,
+                        }),
                     });
                 }
                 Err(reason) => rejected.push(format!(

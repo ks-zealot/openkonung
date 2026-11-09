@@ -20,6 +20,8 @@ use crate::loc::{
 };
 use crate::res::{blit, Image, Img, Res, TERRAIN_TILE_H, TERRAIN_TILE_W};
 
+pub mod spans;
+
 pub struct World {
     pub res: Res,
     pub locs: Vec<Location>,
@@ -47,6 +49,23 @@ pub struct WorldSprite {
     pub gy: i32,
     pub lx: f64,
     pub ly: f64,
+    /// Ground-shadow source when this sprite is an actor (`FUN_0043C040`).
+    /// `None` for props, flames and other non-actor layers.
+    pub shadow: Option<ShadowKey>,
+}
+
+/// Everything `Res::add_actor_shadow` needs to resolve one actor's ground
+/// shadow (body frame + equipped-item overlays).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShadowKey {
+    pub equipment: [u16; 6],
+    pub weapon_slot: u8,
+    pub battle: bool,
+    pub archetype: u8,
+    pub visual_index: u8,
+    pub action: usize,
+    pub facing: u8,
+    pub frame: usize,
 }
 
 impl World {
@@ -175,6 +194,7 @@ impl World {
                 gy,
                 lx: lx as f64,
                 ly: ly as f64,
+                shadow: None,
             });
             for (i, emitter) in p.flame_emitters.iter().enumerate() {
                 let Some(&flame) = p.flame_frames.get(i) else {
@@ -189,6 +209,7 @@ impl World {
                     gy: gy + emitter.y as i32,
                     lx: lx as f64,
                     ly: ly as f64 + 0.01,
+                    shadow: None,
                 });
             }
         }

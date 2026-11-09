@@ -255,27 +255,44 @@ impl PlayableApp {
                 }
                 let cell = pop.motion.get(&id).map(|m| m.cell).unwrap_or((0, 0));
                 let arch = pop.actors[ai].entity.archetype;
+                // `FUN_00410E84`: an armed archer (`Entity+0x12 == 1` with a
+                // melee weapon in slot 0 and ammo in `+0xCC`) only acquires a
+                // target its line-of-fire probe (`FUN_0041130C`) reaches.
+                let probe_range = Self::ranged_probe_range(&pop.actors[ai].entity, world);
+                let candidates: Vec<EnemyRef> = match probe_range {
+                    Some(range) => enemies
+                        .iter()
+                        .copied()
+                        .filter(|e| {
+                            crate::combat::los::probe(collision, cell, e.cell, range).is_clear()
+                        })
+                        .collect(),
+                    None => enemies.clone(),
+                };
+                if candidates.is_empty() {
+                    continue;
+                }
                 let target = if citizen {
                     // `FUN_004168A4` (citizen branch): plain nearest, no
                     // unengaged/focus distinction.
-                    Self::nearest_enemy(cell, &enemies)
+                    Self::nearest_enemy(cell, &candidates)
                 } else {
                     match arch {
                         // `FUN_00412E00` adjacent branch (0x44/0x57).
-                        0x44 | 0x57 => Self::adjacent_enemy(cell, &enemies),
+                        0x44 | 0x57 => Self::adjacent_enemy(cell, &candidates),
                         // Shared branch: `FUN_0041FF68`; no unengaged
                         // intermediate in the original.
                         0x41 | 0x4D | 0x4F => {
-                            Self::shared_target(&engaged, &enemies)
-                                .or_else(|| Self::nearest_enemy(cell, &enemies))
+                            Self::shared_target(&engaged, &candidates)
+                                .or_else(|| Self::nearest_enemy(cell, &candidates))
                         }
                         // `FUN_00420190` nearest-unengaged, then `FUN_00420098`.
                         0x43 | 0x45 | 0x46 | 0x4C | 0x55 => {
-                            Self::nearest_unengaged(cell, &enemies, &engaged)
-                                .or_else(|| Self::nearest_enemy(cell, &enemies))
+                            Self::nearest_unengaged(cell, &candidates, &engaged)
+                                .or_else(|| Self::nearest_enemy(cell, &candidates))
                         }
                         // `FUN_00420098` plain nearest (including 0x4E).
-                        _ => Self::nearest_enemy(cell, &enemies),
+                        _ => Self::nearest_enemy(cell, &candidates),
                     }
                 };
                 let Some(target) = target else {
@@ -349,6 +366,76 @@ impl PlayableApp {
                 }
             }
         }
+    }
+
+    /// `FUN_004105A0` / `FUN_004104D4`: every non-party human actor refreshes
+    /// its equipment and active weapon slot on its AI tick. The original calls
+    /// it from `FUN_00412E00` (object/enemy groups) and `FUN_004168A4` (citizen
+    /// groups), i.e. for exactly the actors in the loaded population.
+    ///
+    /// Deviation (documented): object-family actors (`archetype & 0x40`) are
+    /// skipped. They can never hold equipment, and for `archetype 0x4D/0x4F`
+    /// `Entity+0x12` is the authored M/O walk delay — writing the weapon slot
+    /// there would corrupt it.
+    pub(in crate::app) fn refresh_npc_equipment(&mut self) {
+        let loc = self.current_map;
+        let party_ids: HashSet<usize> = self.party.iter().map(|m| m.entity.index).collect();
+        let PlayableApp {
+            world,
+            population_cache,
+            ..
+        } = self;
+        let Some(pop) = population_cache.get_mut(&loc) else {
+            return;
+        };
+        let ids: Vec<usize> = pop
+            .actors
+            .iter()
+            .filter(|a| a.entity.archetype & 0x40 == 0 && !party_ids.contains(&a.entity.index))
+            .map(|a| a.entity.index)
+            .collect();
+        for id in ids {
+            if pop.motion.get(&id).is_some_and(|m| m.dead) {
+                continue;
+            }
+            let Some(pos) = pop.actors.iter().position(|a| a.entity.index == id) else {
+                continue;
+            };
+            let entity = &mut pop.actors[pos].entity;
+            let snap = crate::inventory::OwnerSnapshot::from_entity(entity);
+            let out = {
+                let mut slots = crate::inventory::SlotsMut {
+                    equipment: &mut entity.equipment,
+                    inventory: &mut entity.inventory,
+                    additional: &mut entity.additional_equipment,
+                    special: &mut entity.special_equipment,
+                };
+                crate::inventory::refresh_equipment(&snap, &world.res, &mut slots)
+            };
+            if out.changed || entity.raw_0x12 != out.weapon_slot {
+                entity.raw_0x12 = out.weapon_slot;
+            }
+        }
+    }
+
+    /// `FUN_00410E84` gate: active weapon is the bow (`Entity+0x12 == 1`), a
+    /// melee weapon is equipped (`equipment[0]`) and ammo is loaded
+    /// (`special_equipment`). Returns the line-of-fire range of the **melee**
+    /// weapon's subtype (`u16@0x459B84 + subtype*0x40`, read by
+    /// `FUN_0041130C`).
+    fn ranged_probe_range(
+        entity: &crate::population::Entity,
+        world: &crate::app::World,
+    ) -> Option<u16> {
+        if entity.raw_0x12 != 1 || entity.equipment[0] == 0 || entity.special_equipment == 0 {
+            return None;
+        }
+        let subtype = world.res.item_class_subtype(entity.equipment[0])?.1;
+        world
+            .res
+            .item_db
+            .as_ref()
+            .map(|db| db.probe_range(subtype))
     }
 
     fn shared_target(engaged: &HashSet<CombatTarget>, enemies: &[EnemyRef]) -> Option<CombatTarget> {

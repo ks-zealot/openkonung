@@ -23,6 +23,11 @@ pub const NAME4_VA: u32 = 0x46091C;
 pub const ARMOR_TABLE_VA: u32 = 0x459B7C;
 /// Stride of the `0x459B7C` combat-value table.
 pub const ARMOR_STRIDE: usize = 64;
+/// Line-of-fire sample range of the same stride-`0x40` record (`u16@+0x08`,
+/// VA `0x459B84`). Read by `FUN_0041130C`; the probe takes `8 * value` DDA
+/// steps. Shipped values: `1` for melee subtypes, `18`/`25` for the ranged
+/// ones.
+pub const ITEM_PROBE_RANGE_OFF: usize = 0x08;
 /// Prototype durability (`u16@+0x2E`) and reach (`u16@+0x34`) of the
 /// stride-`0x40` item record.
 pub const ITEM_DURABILITY_OFF: usize = 0x2E;

@@ -15,6 +15,7 @@ use crate::character::PlayerCharacter;
 use crate::item::ItemDb;
 use crate::population::Entity;
 
+pub mod los;
 pub mod loot;
 pub mod projectile;
 

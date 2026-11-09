@@ -32,6 +32,10 @@ pub const PACK_ENTRY: &str = "bundle.bin";
 /// Human-readable index entry written alongside the bundle.
 pub const PACK_INDEX: &str = "pack.json";
 
+/// Raw `manifest.json` copied into the archive so later builds can regenerate
+/// the final manifest without reading any original `.res`/`.exe` file.
+pub const PACK_MANIFEST: &str = "manifest.raw.json";
+
 /// Upper bound for the inflated `bundle.bin` payload. The shipped resources are
 /// ~124 MB; this leaves generous headroom while rejecting zip bombs.
 pub const MAX_BUNDLE_BYTES: usize = 384 * 1024 * 1024;
