@@ -65,6 +65,34 @@ pub fn apply_host_to_app(a: &mut PlayableApp, host_w: i32, host_h: i32) {
     }
 }
 
+/// Return the raw resource buffers owned by a live game to the loader.
+///
+/// `start_game` hands the four big original images and the per-map `Konung.N`
+/// bytes to the game; the original process keeps them resident for its whole
+/// lifetime. The remake therefore reclaims them whenever a game is discarded
+/// (game over, victory, or a New Game replacing a suspended run) so a later
+/// start can rebuild the world without the browser re-uploading resources.
+/// Buffers already present in the loader are left untouched.
+fn reclaim_game_resources(game: Box<PlayableApp>) {
+    let ((game, graph, objects, exe), konungs) = game.world.into_loader_parts();
+    let l = loader_mut();
+    if l.game.is_empty() {
+        l.game = game;
+    }
+    if l.graph.is_empty() {
+        l.graph = graph;
+    }
+    if l.objects.is_empty() {
+        l.objects = objects;
+    }
+    if l.exe.is_empty() {
+        l.exe = exe;
+    }
+    if l.konungs.is_empty() {
+        l.konungs = konungs;
+    }
+}
+
 /// Build the game from the loaded resources, install it, and make it active.
 ///
 /// `hero_index` is the hero-identity index (0 Dragomir, 1 Mikhail, 2 Wolf) and
@@ -74,6 +102,11 @@ pub fn apply_host_to_app(a: &mut PlayableApp, host_w: i32, host_h: i32) {
 /// regenerated). `_variant` is kept for ABI stability and unused.
 /// Returns 1 on success, 0 on failure.
 pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 {
+    // A previous live game (suspended menu, or a finished run whose resources
+    // were left with it) owns the raw buffers consumed on the first start.
+    // Reclaim them before the checks below so New Game / Load can rebuild.
+    runtime_mut().dispose_game();
+
     let l = loader_mut();
     if l.game.is_empty() || l.graph.is_empty() || l.objects.is_empty() || l.exe.is_empty() {
         return 0;
@@ -91,17 +124,20 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
 
     // Original in-game interface images (INTR). Prefer the 800x600 variant (the
     // game framebuffer is fixed 800x600); fall back to 640. Absence or a decode
-    // error is non-fatal: the game runs unchanged without INTR, which is not yet
-    // consumed by the renderer.
-    let intr_bytes = if !l.intr800.is_empty() {
-        std::mem::take(&mut l.intr800)
-    } else {
-        std::mem::take(&mut l.intr640)
-    };
-    if !intr_bytes.is_empty() {
-        match res.load_intr(&intr_bytes) {
-            Ok(n) => eprintln!("INTR: loaded {n} interface sprites"),
-            Err(e) => eprintln!("INTR: {e}"),
+    // error is non-fatal: the game runs unchanged without INTR. The loader
+    // keeps the raw archive resident for later games; `Res` decodes its own
+    // copy.
+    {
+        let intr_bytes = if !l.intr800.is_empty() {
+            l.intr800.as_slice()
+        } else {
+            l.intr640.as_slice()
+        };
+        if !intr_bytes.is_empty() {
+            match res.load_intr(intr_bytes) {
+                Ok(n) => eprintln!("INTR: loaded {n} interface sprites"),
+                Err(e) => eprintln!("INTR: {e}"),
+            }
         }
     }
 
@@ -210,10 +246,11 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
     let layout = edges::spring_layout(&locs, &edges_vec, &pairs);
 
     let location_names = names::parse_location_names(&l.names);
-    let light_maps = std::mem::take(&mut l.light_maps);
     let mut world = World::new(res, locs);
-    for (id, data) in light_maps {
-        if let Err(e) = world.attach_light_map(id, &data) {
+    // The loader retains the raw `LIGHTS.N` bytes so later games can rebuild the
+    // per-map light maps; `attach_light_map` only parses them.
+    for (id, data) in &l.light_maps {
+        if let Err(e) = world.attach_light_map(*id, data) {
             eprintln!("LIGHTS.{id}: {e}");
         }
     }
@@ -410,6 +447,15 @@ impl Runtime {
             host_w: 0,
             host_h: 0,
             quit: false,
+        }
+    }
+
+    /// Discard the live game and return its raw resource buffers to the loader
+    /// so a later New Game / Load can rebuild the world. Used by the game-over /
+    /// victory movie post-state and by `start_game` before replacing a run.
+    pub(crate) fn dispose_game(&mut self) {
+        if let Some(game) = self.game.take() {
+            reclaim_game_resources(game);
         }
     }
 }

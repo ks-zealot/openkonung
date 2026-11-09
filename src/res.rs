@@ -159,7 +159,8 @@ impl Res {
 
     /// Return the four large original resource buffers and drop the decoded
     /// caches. Used by the frontend to compose one-time hero previews without
-    /// cloning GRAPH/OBJECTS (the live game reloads them from the same buffers).
+    /// cloning GRAPH/OBJECTS, and by the host lifecycle to reclaim the buffers
+    /// when a live game is discarded (see `World::into_loader_parts`).
     pub fn into_parts(self) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>) {
         (self.game, self.graph, self.objects, self.exe)
     }

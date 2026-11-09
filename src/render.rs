@@ -84,6 +84,26 @@ impl World {
         Ok(())
     }
 
+    /// Consume the world and return the raw buffers the loader needs to build a
+    /// fresh game: the four original resource images plus each map's verbatim
+    /// `Konung.N` bytes ([`Location::data`]).
+    ///
+    /// The original process keeps these images resident for its whole lifetime;
+    /// the remake hands them to the live game and reclaims them here whenever a
+    /// game is discarded (game over / New Game), so a later start never needs
+    /// the browser to re-upload the resources.
+    pub fn into_loader_parts(
+        self,
+    ) -> ((Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), Vec<(u32, Vec<u8>)>) {
+        let World { res, locs, .. } = self;
+        (
+            res.into_parts(),
+            locs.into_iter()
+                .map(|loc| (loc.loc_id, loc.data))
+                .collect(),
+        )
+    }
+
     /// Advance every prop flame emitter on `loc_id` by one 60 ms tick.
     /// `FUN_00426384` increments the per-emitter frame in the render pass and
     /// wraps at the selector's max; the game render pass runs on the same

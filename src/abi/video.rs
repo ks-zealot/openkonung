@@ -101,8 +101,9 @@ fn apply_after(after: VideoAfter) {
             rt.active = ActiveMode::Frontend;
             if !game_active {
                 // Game over / victory end the current run; the original hides
-                // Resume via `_81D5F8 = 0`.
-                rt.game = None;
+                // Resume via `_81D5F8 = 0`. Return the raw resource buffers to
+                // the loader so New Game / Load can rebuild the world.
+                rt.dispose_game();
             }
         }
     }
