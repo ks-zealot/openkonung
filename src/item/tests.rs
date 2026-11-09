@@ -51,8 +51,32 @@ fn table_selection_by_class() {
 }
 
 #[test]
-fn real_starting_item_mapping() {
-    let Some((db, game)) = db_and_game() else {
+fn modifier_and_stat_name_tables_match_the_original() {
+    let Some((db, _)) = db_and_game() else { return };
+    assert_eq!(db.modifier_name(0).as_deref(), Some(", зажигательные"));
+    assert_eq!(db.modifier_name(1).as_deref(), Some(", на оборотня"));
+    assert_eq!(db.modifier_name(-1), None);
+    assert_eq!(db.stat_name(1).as_deref(), Some(" Хар"));
+    assert_eq!(db.stat_name(2).as_deref(), Some(" Лов"));
+    assert_eq!(db.stat_name(5).as_deref(), Some(" Сил"));
+    assert_eq!(db.stat_name(8).as_deref(), Some(" Удр"));
+    assert_eq!(db.stat_name(0), None);
+}
+
+#[test]
+fn hover_detail_builds_the_original_single_line() {
+    let Some((db, game)) = db_and_game() else { return };
+    // Dragomir's starting knife (Game.1 instance 1).
+    let inst = ItemDb::decode_instance(&game, 1).unwrap();
+    let text = db.hover_detail(&inst).unwrap();
+    assert!(text.starts_with("Нож"), "{text}");
+    assert!(text.contains(", убойная сила "), "{text}");
+    assert!(text.contains(", износ "), "{text}");
+    assert!(text.contains(", вес "), "{text}");
+}
+
+#[test]
+fn real_starting_item_mapping() {    let Some((db, game)) = db_and_game() else {
         eprintln!("skipping: konung.res / Game.1 not present");
         return;
     };

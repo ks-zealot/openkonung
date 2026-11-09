@@ -48,6 +48,7 @@ module root; a matching sibling directory holds its subsystems and its
 | `debug_overlay.rs` | Debug overlays: portals (`T`), render layers (`L`), population (`P`). |
 | `graph.rs` | World-graph view (`H`): spring layout, fit, draw, labels. |
 | `input.rs` | Pointer/key/wheel handling, hover, party-cell hit-testing, character-screen toggles. |
+| `hover.rs` | Lower-panel hover text (`FUN_00430958` actor panel, `FUN_0042F5F8` item detail, `FUN_0042E9CC` fixed strings, ground marker). |
 | `tests.rs` | App-level tests (character screen, menu/click-through, portal matching, text wrap). |
 
 ## `res/` — resource decoding
@@ -105,7 +106,7 @@ module root; a matching sibling directory holds its subsystems and its
 | File | Responsibility |
 |---|---|
 | `layout.rs` | HUD sprite layout, inventory-strip slot math, party grid. |
-| `compose.rs` | `draw_game_hud` composition (party panel, inventory strip, AUTO, hover). |
+| `compose.rs` | `draw_game_hud` composition (party panel, inventory strip, AUTO) + `draw_hover_text`. |
 | `tests.rs` | HUD layout tests. |
 
 ## `intr/` — interface archives

@@ -233,7 +233,7 @@ impl PlayableApp {
 
     /// Pixel-accurate leader sprite hit test using the same frame as the draw
     /// pass (`player_render_x/y`, `player_frame`).
-    fn leader_sprite_covers(&mut self, mx: i32, my: i32) -> bool {
+    pub(super) fn leader_sprite_covers(&mut self, mx: i32, my: i32) -> bool {
         let iox = self.detail_pan[0].round() as i32;
         let ioy = self.detail_pan[1].round() as i32;
         let moving = self.player_active;

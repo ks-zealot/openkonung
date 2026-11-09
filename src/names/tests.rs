@@ -28,3 +28,34 @@ fn class_name_table_reference_values() {
     assert_eq!(class_name(&d, 5).as_deref(), Some("Воин"));
     assert_eq!(class_name(&d, 0), None);
 }
+
+#[test]
+fn nickname_table_reference_values() {
+    let Some(d) = konung() else { return };
+    assert_eq!(nickname(&d, 0), None);
+    assert_eq!(nickname(&d, 1).as_deref(), Some("Косой"));
+    assert_eq!(nickname(&d, 2).as_deref(), Some("Кривой"));
+    assert_eq!(nickname(&d, 31).is_some(), true);
+}
+
+#[test]
+fn monster_name_table_reference_values() {
+    let Some(d) = konung() else { return };
+    assert_eq!(monster_name(&d, 0x40), None);
+    assert_eq!(monster_name(&d, 0x41).as_deref(), Some("Гигантский Муравей"));
+    assert_eq!(monster_name(&d, 0x42).as_deref(), Some("Аспид"));
+    assert_eq!(monster_name(&d, 0x50).as_deref(), Some("Ядовитый червь"));
+    assert_eq!(monster_name(&d, 0x51), None);
+}
+
+#[test]
+fn profession_table_reference_values() {
+    let Some(d) = konung() else { return };
+    assert_eq!(profession_name(&d, 0), None);
+    assert_eq!(profession_name(&d, 1).as_deref(), Some("староста"));
+    assert_eq!(profession_name(&d, 2).as_deref(), Some("знахарь"));
+    assert_eq!(profession_name(&d, 3).as_deref(), Some("купец"));
+    assert_eq!(profession_name(&d, 4).as_deref(), Some("кузнец"));
+    assert_eq!(profession_name(&d, 5).as_deref(), Some("воевода"));
+    assert_eq!(profession_name(&d, 6), None);
+}

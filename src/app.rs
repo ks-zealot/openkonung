@@ -26,6 +26,7 @@ mod dialogue_exec;
 mod dialogue_ops;
 mod graph;
 mod buttons;
+mod hover;
 mod input;
 mod inventory;
 mod lighting;

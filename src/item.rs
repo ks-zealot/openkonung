@@ -55,8 +55,12 @@ use crate::constants::exe_tables::ITEM_CONDITION_VALUE_VA;
 use crate::constants::exe_tables::ITEM_DURABILITY_OFF;
 use crate::constants::exe_tables::ITEM_LIFETIME_OFF;
 use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
+use crate::constants::exe_tables::ITEM_MODIFIER_NAME_VA;
 use crate::constants::exe_tables::ITEM_MODIFIER_STRIDE;
 use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
+use crate::constants::exe_tables::ITEM_STAT_NAME_COUNT;
+use crate::constants::exe_tables::ITEM_STAT_NAME_STRIDE;
+use crate::constants::exe_tables::ITEM_STAT_NAME_VA;
 use crate::constants::exe_tables::SETTLEMENT_PROP_STRIDE;
 use crate::constants::exe_tables::SETTLEMENT_PROP_TABLE_VA;
 use crate::constants::exe_tables::ITEM_RANGE_OFF;
@@ -122,6 +126,11 @@ pub struct ItemInfo {
     /// Combat rating (`u16` at `0x459B7C + subtype*0x40`); summed as armor over
     /// equipment slots 3..=5 and used as the weapon base for the attack value.
     pub rating: u16,
+    /// Prototype trade value (`i16` at `+0x36` for stride-`0x40` records,
+    /// `+0x78` for stride-`0x80` records), before condition/quantity scaling.
+    /// `FUN_0042F5F8` uses its sign to decide whether a potion shows its
+    /// concentration.
+    pub price: i32,
     /// Prototype durability (`u16@+0x2E`, stride-`0x40` records only).
     pub durability: u16,
     /// Requirement stat id (`u16@+0x30`, stride-`0x40` records only).
@@ -214,11 +223,22 @@ impl ItemDb {
         } else {
             0
         };
+        // Prototype trade value (before condition/quantity scaling).
+        let price_off = if stride == 64 {
+            ITEM_VALUE_OFF_64
+        } else {
+            ITEM_VALUE_OFF_128
+        };
         // The name/prototype record is a separate parallel table read at +0.
         let no = va_to_file(name_va) + subtype as usize * stride;
         if no + stride > self.konung.len() {
             return None;
         }
+        let price = if no + price_off + 2 <= self.konung.len() {
+            rd_i16(&self.konung, no + price_off) as i32
+        } else {
+            0
+        };
         let (durability, requirement_stat, requirement_value, range, projectile_lifetime) =
             if stride == 64 {
                 (
@@ -252,6 +272,7 @@ impl ItemDb {
             icon,
             weight,
             rating,
+            price,
             durability,
             requirement_stat,
             requirement_value,
@@ -286,6 +307,204 @@ impl ItemDb {
         }
         Some(rd_u16(&self.konung, o) as u16)
     }
+
+    /// CP866 name suffix of weapon modifier `index` (`FUN_0042F5F8`: record
+    /// base `0x46276C`, stride `0x40`, name at `+0x00`). Includes the leading
+    /// `", "` as stored in the original table.
+    pub fn modifier_name(&self, index: i8) -> Option<String> {
+        if index < 0 || index as usize >= ITEM_MODIFIER_COUNT {
+            return None;
+        }
+        let o = va_to_file(ITEM_MODIFIER_NAME_VA) + index as usize * ITEM_MODIFIER_STRIDE;
+        if o + ITEM_MODIFIER_STRIDE > self.konung.len() {
+            return None;
+        }
+        let raw = &self.konung[o..o + ITEM_MODIFIER_STRIDE];
+        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+        let s = decode_cp866(&raw[..end]).trim_end().to_string();
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    /// Primary-stat display name by id `1..=8` (`FUN_0042F5F8`: table
+    /// `0x465E04`, 5-byte CP866 records). Includes the leading space.
+    pub fn stat_name(&self, id: u8) -> Option<String> {
+        if id == 0 || id as usize > ITEM_STAT_NAME_COUNT {
+            return None;
+        }
+        let o = va_to_file(ITEM_STAT_NAME_VA) + (id as usize - 1) * ITEM_STAT_NAME_STRIDE;
+        if o + ITEM_STAT_NAME_STRIDE > self.konung.len() {
+            return None;
+        }
+        let raw = &self.konung[o..o + ITEM_STAT_NAME_STRIDE];
+        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+        let s = decode_cp866(&raw[..end]);
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    }
+
+    /// Append the three quality stat bonuses and the quality requirement of the
+    /// `ITEM_CONDITION_VALUE_VA` record (`FUN_0042F5F8`).
+    ///
+    /// Record layout (`+0x10` stride): `i16 price`; `+0x02` requirement stat,
+    /// `+0x03` requirement value; then three `(stat, op, i16 value)` triples at
+    /// `+0x04/+0x05/+0x06`, `+0x08/+0x09/+0x0A`, `+0x0C/+0x0D/+0x0E`.
+    fn append_condition_text(&self, out: &mut String, condition: i8) {
+        if condition < 0 {
+            return;
+        }
+        let o = va_to_file(ITEM_CONDITION_VALUE_VA)
+            + condition as usize * ITEM_CONDITION_VALUE_STRIDE;
+        if o + ITEM_CONDITION_VALUE_STRIDE > self.konung.len() {
+            return;
+        }
+        let rec = &self.konung[o..o + ITEM_CONDITION_VALUE_STRIDE];
+        for &(stat_off, op_off, val_off) in &[(4usize, 5usize, 6usize), (8, 9, 10), (12, 13, 14)] {
+            let Some(name) = self.stat_name(rec[stat_off]) else {
+                continue;
+            };
+            out.push_str(&name);
+            let op = rec[op_off];
+            let value = i16::from_le_bytes([rec[val_off], rec[val_off + 1]]);
+            if op == 0 {
+                out.push('=');
+            } else if value > 0 {
+                out.push('+');
+            }
+            out.push_str(&value.to_string());
+        }
+        if rec[2] != 0 {
+            if let Some(name) = self.stat_name(rec[2]) {
+                out.push_str(", требует: ");
+                out.push_str(&name);
+                out.push(':');
+                out.push_str(&(rec[3] as i8).to_string());
+            }
+        }
+    }
+
+    /// Port of the lower-panel item detail builder `FUN_0042F5F8`.
+    ///
+    /// The original draws the returned string with `FUN_0042BD8C` (left
+    /// aligned, 15 px wrapped lines) after re-painting the bottom panel. Text
+    /// matches the shipped CP866 tables and the instance's class/subtype,
+    /// durability, quantity, poison, modifier and quality condition.
+    pub fn hover_detail(&self, inst: &ItemInstance) -> Option<String> {
+        let info = self.info(inst.class, inst.subtype)?;
+        let identified = inst.flags & 1 == 0;
+        let mut out = String::new();
+        match inst.class {
+            0..=5 => {
+                if identified {
+                    out.push_str(&info.name);
+                    if inst.class < 3 {
+                        out.push_str(", убойная сила ");
+                    } else {
+                        out.push_str(", броня: ");
+                    }
+                    out.push_str(&info.rating.to_string());
+                    out.push_str(", износ ");
+                    let current = inst.current_durability.round().max(1.0) as i32;
+                    let max = inst.max_durability.round() as i32;
+                    out.push_str(&current.to_string());
+                    out.push('/');
+                    out.push_str(&max.to_string());
+                    out.push_str(", вес ");
+                    out.push_str(&format!("{:4.2}", info.weight as f64 / 1000.0));
+                    if matches!(inst.class, 0 | 2) && inst.poison != 0 {
+                        out.push_str(", отравление: ");
+                        out.push_str(&inst.poison.to_string());
+                    }
+                    if let Some(name) = self.modifier_name(inst.modifier_index) {
+                        out.push_str(&name);
+                    }
+                    self.append_condition_text(&mut out, inst.condition);
+                    if info.requirement_stat != 0 {
+                        if let Some(name) = self.stat_name(info.requirement_stat as u8) {
+                            out.push_str(", требует: ");
+                            out.push_str(&name);
+                            out.push(':');
+                            out.push_str(&info.requirement_value.to_string());
+                        }
+                    }
+                } else {
+                    out.push_str(match inst.class {
+                        0 | 2 => "Неведомое оружие",
+                        1 => "Неведомый лук",
+                        _ => "Неведомый предмет",
+                    });
+                }
+            }
+            6..=8 => {
+                if identified {
+                    out.push_str(&info.name);
+                    out.push_str(", вес ");
+                    out.push_str(&format!("{:4.2}", info.weight as f64 / 1000.0));
+                    self.append_condition_text(&mut out, inst.condition);
+                } else {
+                    out.push_str("Неведомый предмет");
+                }
+            }
+            9 => {
+                out.push_str(&info.name);
+                // Potions/charges: +0x04 is a float charge count and a negative
+                // prototype price makes the original print it as concentration.
+                if info.price < 0 {
+                    out.push_str(", концентрация ");
+                    out.push_str(&format!("{:5.2}", f32::from_bits(inst.quantity)));
+                }
+                out.push_str(", вес ");
+                out.push_str(&format!("{:4.2}", info.weight as f64 / 1000.0));
+            }
+            11 => {
+                if identified {
+                    out.push_str(&info.name);
+                    out.push_str(", вес ");
+                    out.push_str(&format!("{:4.2}", info.weight as f64 / 1000.0));
+                } else {
+                    out.push_str("Неведомый предмет");
+                }
+            }
+            12 => {
+                out.push_str("Колчан стрел: ");
+                out.push_str(&inst.quantity.to_string());
+                if identified {
+                    out.push_str(&info.name);
+                    out.push_str(", убойная сила ");
+                    out.push_str(&info.rating.to_string());
+                    out.push_str(", вес ");
+                    out.push_str(&format!(
+                        "{:4.2}",
+                        info.weight as f64 * inst.quantity as f64 / 1000.0
+                    ));
+                    if inst.poison != 0 {
+                        out.push_str(", отравление: ");
+                        out.push_str(&inst.poison.to_string());
+                    }
+                    if let Some(name) = self.modifier_name(inst.modifier_index) {
+                        out.push_str(&name);
+                    }
+                } else {
+                    out.push_str(" неведомые стрелы");
+                }
+            }
+            // Class 10 has no switch case in `FUN_0042F5F8`; use the generic
+            // unidentified label instead of leaving stale panel text.
+            _ => out.push_str("Неведомый предмет"),
+        }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    }
+
 
     /// Prototype combat rating by subtype (`0x459B7C + subtype*0x40`), used by
     /// the projectile damage path where only the bow subtype is stored.
@@ -378,23 +597,6 @@ impl ItemDb {
         } else {
             0
         }
-    }
-
-    /// CP866 name suffix of weapon modifier `index` (e.g. `", на муравьев"`).
-    pub fn modifier_name(&self, index: i8) -> Option<String> {
-        if index < 0 || index as usize >= ITEM_MODIFIER_COUNT {
-            return None;
-        }
-        let o = va_to_file(ITEM_MODIFIER_TABLE_VA) + index as usize * ITEM_MODIFIER_STRIDE + 0x14;
-        if o + 0x2C > self.konung.len() {
-            return None;
-        }
-        let raw = &self.konung[o..o + 0x2C];
-        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-        if end == 0 {
-            return None;
-        }
-        Some(decode_cp866(&raw[..end]))
     }
 }
 

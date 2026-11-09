@@ -42,12 +42,21 @@ pub const ITEM_CONDITION_VALUE_VA: u32 = 0x458530;
 pub const ITEM_CONDITION_VALUE_STRIDE: usize = 0x10;
 /// Projectile lifetime byte (`+0x08`) read by `FUN_0041BF44` for bows.
 pub const ITEM_LIFETIME_OFF: usize = 0x08;
-/// Weapon-vs-creature modifier table (`FUN_0041aea8`); 18 records of `0x40`
-/// bytes: `+0x00 u16 value`, `+0x02 u16 target_archetype`, `+0x14` CP866 name
-/// suffix.
+/// Weapon-vs-creature modifier damage table (`FUN_0041aea8`); 18 records of
+/// `0x40` bytes. This VA is the damage field at name-record `+0x2C`:
+/// `+0x00 u16 value`, `+0x02 u16 target_archetype`. The CP866 name suffix begins
+/// at the record base [`ITEM_MODIFIER_NAME_VA`].
 pub const ITEM_MODIFIER_TABLE_VA: u32 = 0x462798;
 pub const ITEM_MODIFIER_STRIDE: usize = 0x40;
 pub const ITEM_MODIFIER_COUNT: usize = 18;
+/// Modifier **name** suffix table (`FUN_0042F5F8`): the same 18 × `0x40`
+/// records, starting at the CP866 name at `+0x00` (`", зажигательные"`, ...).
+pub const ITEM_MODIFIER_NAME_VA: u32 = 0x46276C;
+/// Primary-stat display names used by `FUN_0042F5F8` (`0x465E04`): eight
+/// 5-byte CP866 records (` Хар, Лов, Хар, Здр, Сил, Вын, Брн, Удр`).
+pub const ITEM_STAT_NAME_VA: u32 = 0x465E04;
+pub const ITEM_STAT_NAME_STRIDE: usize = 5;
+pub const ITEM_STAT_NAME_COUNT: usize = 8;
 /// Settlement target → prop object table (`FUN_0043adf0`), stride `0x40`;
 /// the base object record index is the `u16` at `+0x02`.
 pub const SETTLEMENT_PROP_TABLE_VA: u32 = 0x458A02;

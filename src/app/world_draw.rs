@@ -258,7 +258,6 @@ impl PlayableApp {
                 frame,
                 world,
                 player,
-                hovered_slot,
                 party_selected,
                 party,
                 ..
@@ -305,7 +304,6 @@ impl PlayableApp {
                 &mut world.res,
                 &owner_inventory,
                 inventory_scroll,
-                *hovered_slot,
                 held_id,
                 cursor_px,
                 &portraits,
@@ -450,6 +448,15 @@ impl PlayableApp {
             if let Some(state) = dialog.as_ref() {
                 crate::dialog::draw(frame, fw, fh, &mut world.res, state);
             }
+        }
+
+        // Original lower-panel hover text (`FUN_00430958` actor panel,
+        // `FUN_0042F5F8` item detail, `FUN_0042E9CC` fixed strings). Drawn after
+        // the interface overlays and before the game cursor, left aligned at
+        // viewport.left+10 / viewport.bottom+5 with 15 px wrapped lines.
+        if let Some(text) = self.hover_panel_text() {
+            let PlayableApp { frame, world, .. } = self;
+            crate::hud::draw_hover_text(frame, fw, fh, VIRTUAL_W, &world.res, &text);
         }
 
         // Original game-drawn mouse cursor (`FUN_0042A470` -> `FUN_0043D2FE`): the

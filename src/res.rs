@@ -249,6 +249,30 @@ impl Res {
         crate::names::class_name(&self.konung, entity_class)
     }
 
+    /// Original character nickname/surname by `Entity+0xD5` from `konung.res`.
+    pub fn nickname(&self, nickname_id: u8) -> Option<String> {
+        if self.konung.is_empty() {
+            return None;
+        }
+        crate::names::nickname(&self.konung, nickname_id)
+    }
+
+    /// Original monster name by `Entity+0x04 & 0x7F` from `konung.res`.
+    pub fn monster_name(&self, archetype_low: u8) -> Option<String> {
+        if self.konung.is_empty() {
+            return None;
+        }
+        crate::names::monster_name(&self.konung, archetype_low)
+    }
+
+    /// Settlement role name by `FUN_0041182C` slot `1..=5` from `konung.res`.
+    pub fn profession_name(&self, role: u8) -> Option<String> {
+        if self.konung.is_empty() {
+            return None;
+        }
+        crate::names::profession_name(&self.konung, role)
+    }
+
     /// Resolve an item-instance id (from an `Entity` inventory/equipment field)
     /// to its original icon index and CP866 name. The instance is decoded from
     /// the loaded save file (`Game.N`), matching the original loader. `None`
@@ -256,6 +280,19 @@ impl Res {
     /// item database is not loaded.
     pub fn item_info(&self, id: u16) -> Option<crate::item::ItemInfo> {
         self.item_db.as_ref()?.resolve(&self.save_game, id)
+    }
+
+    /// Full lower-panel item detail string, porting `FUN_0042F5F8`.
+    ///
+    /// Builds the same single-line CP866-derived text the original draws in the
+    /// bottom panel: name, combat/armor rating, wear, weight, poison, weapon
+    /// modifier, quality-condition bonuses/requirements and prototype
+    /// requirement. Returns `None` for id `0`, a missing save, or an unresolved
+    /// template.
+    pub fn item_hover_detail(&self, id: u16) -> Option<String> {
+        let db = self.item_db.as_ref()?;
+        let inst = crate::item::ItemDb::decode_instance(&self.save_game, id)?;
+        db.hover_detail(&inst)
     }
 
     /// Template info by class/subtype (for generated merchant stock).

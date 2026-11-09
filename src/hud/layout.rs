@@ -88,9 +88,9 @@ pub struct HudLayout {
     pub visible_slots: usize,
     /// Slot step (== slot width - 1 for the original 70x70 cell).
     pub slot_step: i32,
-    /// Bottom-bar text area used for the hovered item label (region below the
-    /// inventory cell row). The original hover-label coordinates could not be
-    /// recovered, so this is a documented approximation.
+    /// Bottom-bar text area used for the hover text. `FUN_0042BD8C` draws at
+    /// `x + 10`, `y + 5` and wraps to `w - 16` (the original uses
+    /// `_81D738+10`, `_81D760+5`, `(_81D744-_81D738)-0xf`).
     pub inventory_bar: Rect,
     /// Two scroll-arrow end caps drawn by the original strip renderer even at
     /// scroll 0: `(intr_id, x, y)`. Left = `INTR[18]`, right = `INTR[20]`.

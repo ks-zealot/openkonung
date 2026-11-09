@@ -328,7 +328,6 @@ fn item_icons_are_centered_in_their_slots() {
                 count: None,
             },
         ],
-        hovered: None,
         auto: None,
         icons: Vec::new(),
         pressed: None,
@@ -503,4 +502,31 @@ fn hp_bar_shows_only_bottom_fill_rows() {
     // Dead: no bar at all.
     let dead = draw(0);
     assert_eq!(px(&dead, fw, bx, by + 31), [0, 0, 0, 0]);
+}
+
+#[test]
+fn hover_text_wraps_to_the_original_panel_width() {
+    use super::compose::wrap_by_measure;
+    // Fake 6 px glyph advance, matching the 644/512 px panel widths.
+    let measure = |s: &str| s.chars().count() as i32 * 6;
+    let lines = wrap_by_measure("aaa bbb ccc ddd", 42, &measure);
+    assert_eq!(lines, vec!["aaa bbb", "ccc ddd"]);
+}
+
+#[test]
+fn hover_text_hard_splits_a_word_wider_than_the_panel() {
+    use super::compose::wrap_by_measure;
+    let measure = |s: &str| s.chars().count() as i32 * 6;
+    let lines = wrap_by_measure("abcdefgh", 18, &measure);
+    assert_eq!(lines, vec!["abc", "def", "gh"]);
+}
+
+#[test]
+fn hover_text_origin_matches_fun_0042bd8c() {
+    let l = layout_800();
+    assert_eq!((l.inventory_bar.x + 10, l.inventory_bar.y + 5), (150, 560));
+    assert_eq!(l.inventory_bar.w - 16, 644);
+    let l = layout_640();
+    assert_eq!((l.inventory_bar.x + 10, l.inventory_bar.y + 5), (122, 449));
+    assert_eq!(l.inventory_bar.w - 16, 512);
 }

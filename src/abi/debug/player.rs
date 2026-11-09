@@ -131,6 +131,49 @@ pub extern "C" fn debug_hover_item() -> u32 {
         .unwrap_or(0)
 }
 
+pub static mut DEBUG_HOVER_TEXT: Option<Vec<u8>> = None;
+
+/// Current lower-panel hover text (`FUN_00430958` / `FUN_0042F5F8` /
+/// `FUN_0042E9CC`). Returns 1 and stores the UTF-8 bytes, or 0 when nothing is
+/// hovered.
+#[no_mangle]
+pub extern "C" fn debug_hover_text() -> u32 {
+    let text = runtime_mut()
+        .game
+        .as_deref_mut()
+        .and_then(|g| g.debug_hover_text());
+    match text {
+        Some(s) => {
+            unsafe {
+                *addr_of_mut!(DEBUG_HOVER_TEXT) = Some(s.into_bytes());
+            }
+            1
+        }
+        None => {
+            unsafe {
+                *addr_of_mut!(DEBUG_HOVER_TEXT) = None;
+            }
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_hover_text_ptr() -> *const u8 {
+    match unsafe { &*addr_of!(DEBUG_HOVER_TEXT) } {
+        Some(v) => v.as_ptr(),
+        None => std::ptr::null(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn debug_hover_text_len() -> u32 {
+    match unsafe { &*addr_of!(DEBUG_HOVER_TEXT) } {
+        Some(v) => v.len() as u32,
+        None => 0,
+    }
+}
+
 /// Test-only: place the protagonist on a runtime cell (path/camera reset).
 #[no_mangle]
 pub extern "C" fn debug_set_player_cell(x: i32, y: i32) -> u32 {

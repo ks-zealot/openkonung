@@ -76,13 +76,12 @@ pub struct ItemIcon {
 }
 
 /// Runtime HUD state: party portraits, the resolved visible inventory icons and
-/// the hovered slot. The inventory itself lives on the protagonist; this is a
-/// per-frame view of it and never re-parses or re-initializes anything.
+/// the lower-left controls. The inventory itself lives on the protagonist; this
+/// is a per-frame view of it and never re-parses or re-initializes anything.
 #[derive(Clone, Debug, Default)]
 pub struct HudState {
     pub party: Vec<PartyPortrait>,
     pub items: Vec<ItemIcon>,
-    pub hovered: Option<usize>,
     /// AUTO button `(intr_id, x, y)` to overlay, if any.
     pub auto: Option<(usize, i32, i32)>,
     /// The original seven-icon lower-left strip (`0x81CF68[0..7]`), in draw
@@ -210,7 +209,6 @@ pub fn draw_game_hud(
     res: &mut Res,
     inventory: &[u16; 32],
     scroll: usize,
-    hovered: Option<usize>,
     held: Option<u16>,
     cursor: (i32, i32),
     party: &[PartyPortrait],
@@ -258,7 +256,6 @@ pub fn draw_game_hud(
     let state = HudState {
         party,
         items: items.clone(),
-        hovered,
         auto: Some((auto_id, l.auto_pos.0, l.auto_pos.1)),
         icons: icon_plan(l.logical_w, weapon_slot, battle).to_vec(),
         pressed,
@@ -293,56 +290,87 @@ pub fn draw_game_hud(
             }
         }
     }
+}
 
-    // Hovered item label, centered in the bottom bar (documented approximation:
-    // the original hover-text routine/coordinates could not be recovered).
-    let Some(slot) = hovered else { return };
-    if slot >= l.visible_slots {
-        return;
-    }
-    let idx = scroll + slot;
-    let Some(&id) = inventory.get(idx) else {
-        return;
-    };
-    if id == 0 {
-        return;
-    }
-    let Some(info) = res.item_info(id) else {
-        return;
-    };
+/// Draw the original lower-panel hover text.
+///
+/// `FUN_0042BD8C` paints the value returned by `FUN_00430958` / `FUN_0042F5F8`
+/// / `FUN_0042E9CC` with the small font `0x58BC34`, left aligned at
+/// `(_DAT_0081D738 + 10, _DAT_0081D760 + 5)`, wrapped to
+/// `(right - left) - 15`, line advance 15 px. At 800x600 that is (150, 560),
+/// 644 px wide; at 640x480 (122, 449), 512 px wide. The routine first re-blits
+/// the HUD background clipped to that region, which the per-frame HUD draw here
+/// already provides.
+pub fn draw_hover_text(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    logical_w: i32,
+    res: &crate::res::Res,
+    text: &str,
+) {
     let Some(font) = res.fonts.small.as_ref() else {
         return;
     };
-    let label = if info.class == 12 {
-        match res.item_quantity(id) {
-            Some(q) => format!("{} x{}", info.name, q),
-            None => info.name.clone(),
+    let l = layout(logical_w);
+    let max_w = (l.inventory_bar.w - 16).max(1);
+    let x = l.inventory_bar.x + 10;
+    let mut y = l.inventory_bar.y + 5;
+    for line in wrap_by_measure(text, max_w, &|s| font.measure(s)) {
+        if y >= l.logical_h {
+            break;
         }
-    } else {
-        info.name.clone()
-    };
-    let tw = font.measure(&label);
-    let bar = l.inventory_bar;
-    let name_y = bar.y + (bar.h - 24).max(0) / 2;
-    let x = bar.x + (bar.w - tw).max(0) / 2;
-    font.draw(frame, fw, fh, &label, x, name_y, Some([235, 235, 210]));
-    // Second line: verified numeric summary (weight/price). The original only
-    // drew the name; this is the same data-derived detail block used by the
-    // character screen / trade tooltip.
-    if let Some(detail) = crate::app::tooltip::item_detail_lines(res, id)
-        .into_iter()
-        .find(|line| line.contains("Вес:"))
-    {
-        let dw = font.measure(&detail);
-        let dx = bar.x + (bar.w - dw).max(0) / 2;
-        font.draw(
-            frame,
-            fw,
-            fh,
-            &detail,
-            dx,
-            name_y + 12,
-            Some([200, 208, 188]),
-        );
+        font.draw(frame, fw, fh, &line, x, y, Some([235, 235, 210]));
+        y += 15;
     }
+}
+
+/// Greedy word wrap with a hard split for words wider than `max_w`.
+///
+/// Extracted so the panel-wrap policy can be tested without a font table.
+pub(super) fn wrap_by_measure<F>(text: &str, max_w: i32, measure: &F) -> Vec<String>
+where
+    F: Fn(&str) -> i32,
+{
+    let max_w = max_w.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for word in text.split(' ') {
+        if word.is_empty() {
+            continue;
+        }
+        let trial = if line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{} {}", line, word)
+        };
+        if measure(&trial) <= max_w {
+            line = trial;
+            continue;
+        }
+        if !line.is_empty() {
+            lines.push(std::mem::take(&mut line));
+        }
+        if measure(word) <= max_w {
+            line.push_str(word);
+            continue;
+        }
+        let mut chunk = String::new();
+        for ch in word.chars() {
+            let mut candidate = chunk.clone();
+            candidate.push(ch);
+            if measure(&candidate) > max_w && !chunk.is_empty() {
+                lines.push(std::mem::take(&mut chunk));
+            }
+            chunk.push(ch);
+        }
+        line = chunk;
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
 }

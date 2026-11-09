@@ -20,6 +20,29 @@ pub const CHAR_NAME_RECORD: usize = 32;
 pub const CLASS_NAME_TABLE_OFF: usize = 0x40FC0;
 pub const CLASS_NAME_RECORD: usize = 16;
 
+/// Character nickname/surname table in `konung.res` (DGROUP VA `0x45FC7C`):
+/// 32-byte CP866 records indexed by `Entity+0xD5` (`1 Косой, 2 Кривой,
+/// 3 Глухой, 4 Слепой, 5 Сирота, ...`). Appended to the name with a space by
+/// `FUN_0042BC60`.
+pub const NICKNAME_TABLE_OFF: usize = 0x45E7C;
+pub const NICKNAME_RECORD: usize = 32;
+
+/// Monster name table in `konung.res` (DGROUP VA `0x45DB3C`): 32-byte CP866
+/// records indexed by `Entity+0x04 & 0x7F` (`0x41 Гигантский Муравей`,
+/// `0x42 Аспид`, ... `0x50 Ядовитый червь`). Used by `FUN_0042BC60` only for
+/// non-human archetypes `<= 0x50`; larger values use the character-name table.
+pub const MONSTER_NAME_TABLE_OFF: usize = 0x43D3C;
+pub const MONSTER_NAME_RECORD: usize = 32;
+pub const MONSTER_NAME_MIN: u8 = 0x41;
+pub const MONSTER_NAME_MAX: u8 = 0x50;
+
+/// Settlement waypoint-role names in `konung.res` (DGROUP VA `0x46270C`):
+/// 16-byte CP866 records indexed by `FUN_0041182C`'s `1..=5`
+/// (`1 староста, 2 знахарь, 3 купец, 4 кузнец, 5 воевода`). The stored records
+/// include a leading `", "`; [`profession_name`] strips it.
+pub const PROFESSION_TABLE_OFF: usize = 0x4890C;
+pub const PROFESSION_RECORD: usize = 16;
+
 /// CP866 glyphs for byte values 0x80..0xFF (code points). 0x00..0x7F is ASCII.
 const CP866_HIGH: [u16; 128] = [
     1040, 1041, 1042, 1043, 1044, 1045, 1046, 1047, 1048, 1049, 1050, 1051, 1052, 1053, 1054, 1055,
@@ -113,6 +136,54 @@ pub fn class_name(data: &[u8], entity_class: u8) -> Option<String> {
         CLASS_NAME_TABLE_OFF + (entity_class as usize - 1) * CLASS_NAME_RECORD,
         CLASS_NAME_RECORD,
     )?;
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Original character nickname/surname by `Entity+0xD5` (`nickname_id`), from
+/// the CP866 table at [`NICKNAME_TABLE_OFF`]. Returns `None` for id `0` /
+/// out-of-bounds and empty records.
+pub fn nickname(data: &[u8], nickname_id: u8) -> Option<String> {
+    if nickname_id == 0 {
+        return None;
+    }
+    decode_record(
+        data,
+        NICKNAME_TABLE_OFF + nickname_id as usize * NICKNAME_RECORD,
+        NICKNAME_RECORD,
+    )
+}
+
+/// Original monster name by `Entity+0x04 & 0x7F`, from the CP866 table at
+/// [`MONSTER_NAME_TABLE_OFF`]. Only `0x41..=0x50` are valid names; the table
+/// entries below `0x41` are unrelated UI strings.
+pub fn monster_name(data: &[u8], archetype_low: u8) -> Option<String> {
+    if !(MONSTER_NAME_MIN..=MONSTER_NAME_MAX).contains(&archetype_low) {
+        return None;
+    }
+    decode_record(
+        data,
+        MONSTER_NAME_TABLE_OFF + archetype_low as usize * MONSTER_NAME_RECORD,
+        MONSTER_NAME_RECORD,
+    )
+}
+
+/// Settlement role name by `FUN_0041182C`'s waypoint slot `1..=5`
+/// (`Settlement::role_of`), from the CP866 table at
+/// [`PROFESSION_TABLE_OFF`]. The stored record's leading `", "` is stripped.
+pub fn profession_name(data: &[u8], role: u8) -> Option<String> {
+    if !(1..=5).contains(&role) {
+        return None;
+    }
+    let s = decode_record(
+        data,
+        PROFESSION_TABLE_OFF + role as usize * PROFESSION_RECORD,
+        PROFESSION_RECORD,
+    )?;
+    let s = s.trim_start_matches(", ").trim().to_string();
     if s.is_empty() {
         None
     } else {
