@@ -1,4 +1,4 @@
-//! `debug` subsystem of [`crate::lib`] (split from `lib.rs`).
+//! `debug` subsystem of [`crate`] (split from `lib.rs`).
 //!
 //! Diagnostic-only wasm exports shared by the tools under `tools/`. The runtime
 //! never calls these; they expose the same decoders/state that gameplay uses.

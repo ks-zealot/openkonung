@@ -1,4 +1,4 @@
-//! `frame` subsystem of [`crate::lib`] (split from `lib.rs`).
+//! `frame` subsystem of [`crate`] (split from `lib.rs`).
 
 use super::*;
 

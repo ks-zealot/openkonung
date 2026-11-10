@@ -1,4 +1,4 @@
-//! `lifecycle` subsystem of [`crate::lib`] (split from `lib.rs`).
+//! `lifecycle` subsystem of [`crate`] (split from `lib.rs`).
 
 use super::*;
 

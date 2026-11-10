@@ -1,4 +1,4 @@
-//! `frontend_api` subsystem of [`crate::lib`] (split from `lib.rs`).
+//! `frontend_api` subsystem of [`crate`] (split from `lib.rs`).
 
 use super::*;
 

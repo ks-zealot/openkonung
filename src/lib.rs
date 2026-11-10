@@ -9,7 +9,67 @@
 //! discards [`PlayableApp`]. `active` selects which one is stepped/rendered and
 //! receives input. `frontend_boot` starts at the original startup menu; `boot`
 //! is retained as a direct game start.
+//!
+//! # ABI lifecycle
+//!
+//! The crate exports plain `extern "C"` functions; there is no generated glue.
+//! A browser host (or a headless Node harness) drives one [`Runtime`] through
+//! this sequence:
+//!
+//! 1. [`alloc`] reserves `len` bytes in linear memory so the host can copy a
+//!    file into it.
+//! 2. [`load_resource`] takes that `(kind, ptr, len)` triple, [`load_profile`]
+//!    takes a `Game.N` save, [`load_konung`] takes a `Konung.N` map and
+//!    [`load_pack`] takes the zipped resource bundle. Each call copies the
+//!    bytes into the loader, so the host buffer is free immediately after.
+//! 3. [`frontend_boot`] starts at the original startup menu; [`boot`] starts the
+//!    game directly. Both validate that every required resource is present.
+//! 4. [`step`] advances one animation/logic frame (the original budget is
+//!    60 ms), then [`frame_ptr`] plus [`frame_w`]/[`frame_h`] expose the RGBA
+//!    framebuffer, and `sound_count`/`sound_id` expose the clips queued by that
+//!    frame.
+//! 5. Progress is persisted by [`save_snapshot`]/[`load_snapshot`] and
+//!    [`config_write`]; the host owns the storage, the crate never touches a
+//!    filesystem.
+//!
+//! Pointer-taking functions document their memory contract individually: who
+//! owns the buffer, what a null pointer means, and what the return value
+//! encodes.
+//!
+//! # Module map
+//!
+//! | layer | modules | responsibility |
+//! |---|---|---|
+//! | ABI | `abi/*` modules, re-exported at the crate root | memory, lifecycle, input, frame, save, config, pack, video |
+//! | data | [`res`], [`loc`], [`item`], [`intr`], [`quest`], [`font`], [`menu_res`], [`names`], [`edges`], [`world_objects`], [`resource_pack`] | decode the shipped `*.res` archives and save maps |
+//! | rules | [`combat`], [`inventory`], [`trade`], [`save`], [`legacy_save`], [`script`], [`dialog`], [`character`], [`hero`], [`anim`], [`coords`], [`constants`] | pure gameplay rules and recovered constants |
+//! | runtime | [`app`], [`actors`], [`population`], [`lighting`], [`video`] | the live game: population, motion, combat, UI, save/load |
+//! | presentation | [`render`], [`hud`], [`character_screen`], [`trade_screen`], [`world_map`], [`frontend`], [`sound`], [`config`] | framebuffer composition, screens, audio |
+//!
+//! # Documentation conventions
+//!
+//! - `FUN_0040ABCD` names a function in the original executable by its virtual
+//!   address (`0x40ABCD`); `Entity+0x08` names a field of the original entity
+//!   record. Both are evidence anchors, not remake identifiers.
+//! - `KONUNG_SOURCE_OF_TRUTH.md` section numbers are cited where a rule was
+//!   recovered from the binaries; the document is the binding contract.
+//! - Comments describe what the code actually does. Behaviour that could not be
+//!   traced back to the original carries a `TODO(docs)` note instead of a
+//!   guessed explanation.
+//!
+//! Build the documentation with:
+//!
+//! ```text
+//! cargo doc --no-deps --document-private-items
+//! ```
+//!
+//! `--document-private-items` matters: most of the ported logic lives in
+//! `pub(super)` and private helpers that are part of the explanation but not of
+//! the exported API.
 
+#![warn(missing_docs)]
+#![warn(rustdoc::broken_intra_doc_links)]
+#![warn(rustdoc::private_intra_doc_links)]
 #![allow(clippy::missing_safety_doc)]
 
 #[path = "abi/config.rs"]

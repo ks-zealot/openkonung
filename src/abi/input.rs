@@ -1,4 +1,4 @@
-//! `input` subsystem of [`crate::lib`] (split from `lib.rs`).
+//! `input` subsystem of [`crate`] (split from `lib.rs`).
 
 use super::*;
 

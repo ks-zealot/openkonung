@@ -191,7 +191,7 @@ impl Res {
     /// Resolve and render frame 0 for a Game.N entity from its original visual
     /// fields (`KONUNG_SOURCE_OF_TRUTH.md` §5.1/§10).
     ///
-    /// Convenience wrapper equivalent to [`actor_frame_state`] with
+    /// Convenience wrapper equivalent to [`Self::actor_frame_state`] with
     /// `action = 0, anim_frame_index = 0` (used by NPC/mob rendering).
     ///
     /// Graphics family is chosen by `archetype & OBJECT_ARCHETYPE_BIT` (never `kind`):
@@ -225,16 +225,16 @@ impl Res {
         )
     }
 
-    /// Stateful variant of [`actor_frame`] for animated humanoids.
+    /// Stateful variant of [`Self::actor_frame`] for animated humanoids.
     ///
     /// Humanoid family (`archetype & OBJECT_ARCHETYPE_BIT == 0`): `base_id = visual_index`,
     /// `palette_id = palette_offset / PALETTE_OFFSET_SCALE`, resolved through
-    /// [`human_frame_from_base`] with the supplied `action` / `anim_frame_index`
+    /// [`Self::human_frame_from_base`] with the supplied `action` / `anim_frame_index`
     /// (frame wrapping/count comes from the GRAPH animation tables) and the
     /// entity's `equipment` (`Entity+0x66`) composited as GRAPH overlay blocks.
     ///
     /// Object/monster family: animation state is not yet supported, so this
-    /// preserves the existing frame-0 behavior of [`actor_frame`]; monsters have
+    /// preserves the existing frame-0 behavior of [`Self::actor_frame`]; monsters have
     /// no equipment overlays.
     pub fn actor_frame_state(
         &mut self,

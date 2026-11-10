@@ -56,7 +56,7 @@ const CP866_HIGH: [u16; 128] = [
 ];
 
 /// Encode a Unicode scalar to its CP866 byte (ASCII identity; Cyrillic and the
-/// CP866 high range via [`CP866_HIGH`]). Returns `None` when the character is
+/// CP866 high range via `CP866_HIGH`). Returns `None` when the character is
 /// not representable in CP866. Used by the original bitmap-font renderer.
 pub fn char_to_cp866(ch: char) -> Option<u8> {
     let c = ch as u32;

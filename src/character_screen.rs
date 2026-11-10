@@ -10,7 +10,7 @@
 //!   are drawn. The character name and class use the original **large** font
 //!   (`0x57B73C`); every stat value uses the original **small** font
 //!   (`0x58BC34`) at the **absolute** per-resolution anchors recovered from
-//!   `FUN_0042cbd0` case 3 (VA `0x42D3xx`, see [`VALUE_640`]/[`VALUE_800`]).
+//!   `FUN_0042cbd0` case 3 (VA `0x42D3xx`, see `VALUE_640`/`VALUE_800`).
 //! - The character name comes from the CP866 table `0x45E71C` (`+0xD4`); the
 //!   class from `0x45ADC0` (`+0x04`).
 //! - Equipment icons are drawn at **absolute logical screen coordinates** using

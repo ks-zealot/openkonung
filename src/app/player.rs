@@ -329,7 +329,7 @@ impl PlayableApp {
     /// including the active-weapon "in hand" variant (`Entity+0x12`). No Game.res
     /// variant fallback. One walk cycle == one cell step (`FUN_00413de4`).
     /// `(action, frame index, battle)` for the protagonist's current pose. The
-    /// same values drive [`player_frame`] and the ground-shadow lookup.
+    /// same values drive [`Self::player_frame`] and the ground-shadow lookup.
     pub(super) fn player_pose(&self, moving: bool) -> (usize, usize, bool) {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
         if self.player.dead {

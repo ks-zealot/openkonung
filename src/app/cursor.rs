@@ -5,7 +5,7 @@
 //! (`FUN_0042A470` -> `FUN_0043D2FE`). The frame is chosen by `FUN_00428740`
 //! (hover override) over the base id `_DAT_0081D660`, which `FUN_00424E0C` sets
 //! from the item class currently in hand. This module ports that selection; the
-//! bitmaps are decoded by [`crate::res::cursor`].
+//! bitmaps are decoded by `crate::res::cursor`.
 //!
 //! Frames (`GRAPH.RES` blocks 0..=10):
 //! `0` chest/armor, `1` attack, `2` bow, `3` "no", `4` neutral, `5` talk,

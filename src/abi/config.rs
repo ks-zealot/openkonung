@@ -1,4 +1,4 @@
-//! `config` subsystem of [`crate::lib`]: `KONUNG.CFG` browser persistence.
+//! `config` subsystem of [`crate`]: `KONUNG.CFG` browser persistence.
 //!
 //! `www/app.js` keeps the exact original 28 bytes as base64 in
 //! `localStorage["openkonung.cfg"]`; these exports copy them in/out of the

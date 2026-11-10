@@ -23,7 +23,7 @@
 //! next_image   = image_offset + 8 + payload_size
 //! ```
 //!
-//! Each row is independently RLE encoded (see [`decode_row`]). Pixels are
+//! Each row is independently RLE encoded (see `decode_row`). Pixels are
 //! RGB555 little-endian; skipped (transparent) pixels keep `alpha = 0`.
 //!
 //! The decoder knows only about images. Menu semantics (which index is a

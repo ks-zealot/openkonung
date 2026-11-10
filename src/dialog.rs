@@ -6,9 +6,9 @@
 //!   `0xFF` (`FUN_0042260C` -> `FUN_00435290`). The id indexes `QUEST_R.RES`
 //!   block B2 for the first node.
 //! - The interface is drawn by `FUN_0042CBD0(0)` (case `param+1 == 1`): it first
-//!   tiles **INTR[5]** (a 100x100 stone tile, `FUN_00430430`) over the window
-//!   rect as the background, then blits **INTR[1]** (the ~3%-opaque ornate
-//!   border) and **INTR[0]** (the divider band) at the per-resolution table
+//!   tiles **`INTR[5]`** (a 100x100 stone tile, `FUN_00430430`) over the window
+//!   rect as the background, then blits **`INTR[1]`** (the ~3%-opaque ornate
+//!   border) and **`INTR[0]`** (the divider band) at the per-resolution table
 //!   `0x4632C4..0x4632DC`, then draws the NPC text and the option list with the
 //!   small font (`0x58BC34`); the selected option uses the highlight font
 //!   (`0x58B8F0`). The text drawer `FUN_0042BD8C` wraps to a max width and
@@ -25,11 +25,11 @@ use crate::font::{Fonts, OriginalFont};
 use crate::quest::{QuestData, LINK_END, LINK_NONE};
 use crate::res::{blit, Res};
 
-/// INTR index of the dialog window background (`0x61F3E0` = entry[1]).
+/// INTR index of the dialog window background (`0x61F3E0` = `entry[1]`).
 pub const WINDOW_SPRITE: usize = 1;
-/// INTR index of the dialog band/divider (`0x61F3D8` = entry[0]).
+/// INTR index of the dialog band/divider (`0x61F3D8` = `entry[0]`).
 pub const BAND_SPRITE: usize = 0;
-/// INTR index of the 100x100 stone tile (`0x61F400` = entry[5]) tiled by the
+/// INTR index of the 100x100 stone tile (`0x61F400` = `entry[5]`) tiled by the
 /// original `FUN_00430430` to fill the window behind the border.
 pub const TILE_SPRITE: usize = 5;
 /// Edge length of [`TILE_SPRITE`]; the original tiles in 100-px steps.
@@ -43,9 +43,9 @@ const MAX_RESOLVE_HOPS: usize = 64;
 /// `_DAT_0081D644`: 0 = 640, 1 = 800).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DialogLayout {
-    /// INTR[1] window position.
+    /// `INTR[1]` window position.
     pub window_pos: (i32, i32),
-    /// INTR[0] band position.
+    /// `INTR[0]` band position.
     pub band_pos: (i32, i32),
     /// NPC statement column origin.
     pub text_pos: (i32, i32),
@@ -366,7 +366,7 @@ impl DialogState {
     }
 }
 
-/// Draw the dialog over the frame (INTR[1] window + INTR[0] band, then the NPC
+/// Draw the dialog over the frame (`INTR[1]` window + `INTR[0]` band, then the NPC
 /// statement and the option list with the original fonts).
 pub fn draw(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, state: &DialogState) {
     let lay = layout(fw as i32);

@@ -1,4 +1,4 @@
-//! `video` subsystem of [`crate::lib`]: browser movie playback handshake.
+//! `video` subsystem of [`crate`]: browser movie playback handshake.
 //!
 //! The Rust side only queues the original clip and post-movie state. The shell
 //! resolves the MP4 (packed or manifest fallback), plays it with a normal

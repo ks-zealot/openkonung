@@ -52,7 +52,7 @@ pub(super) struct SettlementWorkers {
 /// Runtime action row (`Entity+0x00`) and dead flag for an entity.
 ///
 /// `Entity+0x00` is the **action row**, not a separate "kind": `3`/`9` are the
-/// death rows. The remake stores the authored value in [`Entity::kind`] and the
+/// death rows. The remake stores the authored value in [`Entity`](crate::population::Entity) `kind` and the
 /// live row in [`crate::actors::ActorMotion::action`]; the population cache is
 /// therefore authoritative for cached locations, and the authored byte is only
 /// a fallback for locations that were never built.

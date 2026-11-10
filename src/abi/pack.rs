@@ -1,4 +1,4 @@
-//! `pack_api` subsystem of [`crate::lib`] (split from `lib.rs`).
+//! `pack_api` subsystem of [`crate`] (split from `lib.rs`).
 //!
 //! Loads the single-file resource archive produced by the native packer
 //! (`examples/pack.rs`). The archive is a standard ZIP whose `bundle.bin`
