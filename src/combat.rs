@@ -27,12 +27,15 @@ pub struct OriginalRng {
 }
 
 impl OriginalRng {
+    /// Seed the generator; `0` is replaced by `1` (the all-zero state of an LCG
+    /// would never advance).
     pub fn new(seed: u32) -> OriginalRng {
         OriginalRng {
             state: if seed == 0 { 1 } else { seed },
         }
     }
 
+    /// Advance one `0x41c64e6d`/`0x3039` step and return the high 15 bits.
     pub fn next_u32(&mut self) -> u32 {
         self.state = self.state.wrapping_mul(0x41c6_4e6d).wrapping_add(0x3039);
         (self.state >> 16) & 0x7FFF
@@ -45,6 +48,7 @@ impl OriginalRng {
 }
 
 impl Default for OriginalRng {
+    /// A generator seeded with `1`, matching the original's fixed start state.
     fn default() -> Self {
         OriginalRng::new(1)
     }
@@ -85,11 +89,17 @@ pub const HUMAN_ARMED_STR_HP: f64 = 0.04 * 0.0625;
 pub const MONSTER_STR_HP: f64 = 0.04 * 0.0625;
 /// `0x4500e4` / `0x45010c` / `0x450114` and the reaction constants.
 pub const REACTION_SKILL_SCALE: f64 = 0.00015;
+/// `0x4500e4` - human reaction base value before the mastery/skill term.
 pub const REACTION_BASE: f64 = 1.5;
+/// `0x45010c` - archery reaction skill scale (`0.7`).
 pub const ARCHERY_REACTION_SCALE: f64 = 0.7;
+/// `0x450114` - monster reaction base (`50`).
 pub const MONSTER_REACTION_BASE: f64 = 50.0;
+/// Monster reaction dexterity weight (`0.25` per point of base dexterity).
 pub const MONSTER_REACTION_DEX: f64 = 0.25;
 
+/// x87 `FISTP` round-to-nearest-even helper (`FUN_0043EAAE`); non-finite
+/// inputs collapse to `0` instead of trapping.
 fn round_even(v: f64) -> i64 {
     if !v.is_finite() {
         return 0;
@@ -113,21 +123,32 @@ pub enum CombatTarget {
 /// The combat-relevant view of an Entity / PlayerCharacter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CombatStats {
+    /// `Entity+0x04` archetype byte; bit `0x40` selects the object/monster family.
     pub archetype: u8,
     /// `Entity+0x12` active weapon/equipment slot.
     pub weapon_slot: u8,
+    /// `Entity+0x5C` internal HP (1600 at new game; displayed as `hp/16`+15).
     pub hp: u16,
+    /// `Entity+0x54` dexterity base.
     pub dexterity: u16,
+    /// `Entity+0x5E` strength base.
     pub strength: u16,
+    /// `Entity+0x62` endurance base; divides the mitigation term.
     pub endurance: u16,
+    /// `Entity+0x4E` innate armor, before the slots 3..=5 item ratings.
     pub base_armor: u16,
+    /// `Entity+0x40` melee mastery skill.
     pub melee_mastery: u16,
+    /// `Entity+0x44` archery mastery skill.
     pub archery_mastery: u16,
+    /// `Entity+0x50` periodic damage (poison), also the stinger loot value.
     pub periodic_damage: u16,
+    /// `Entity+0x66` six equipped item instance ids (`0` = empty slot).
     pub equipment: [u16; 6],
 }
 
 impl CombatStats {
+    /// Build the stats view from the runtime protagonist.
     pub fn from_player(p: &PlayerCharacter) -> CombatStats {
         CombatStats {
             archetype: p.entity_class(),
@@ -146,6 +167,7 @@ impl CombatStats {
         }
     }
 
+    /// Build the stats view from one authored/world `Entity` record.
     pub fn from_entity(e: &Entity) -> CombatStats {
         CombatStats {
             archetype: e.archetype,
@@ -164,6 +186,7 @@ impl CombatStats {
         }
     }
 
+    /// Whether this actor uses the object/monster family (`archetype & 0x40`).
     pub fn is_object_family(&self) -> bool {
         self.archetype & 0x40 != 0
     }
@@ -201,6 +224,10 @@ pub fn roll_hit(attacker: &CombatStats, rng: &mut OriginalRng) -> bool {
     reaction(attacker) >= roll
 }
 
+/// Resolve the active melee weapon's slot, decoded instance and prototype.
+///
+/// Returns `None` when the active slot is not a melee slot, the id is `0`, or
+/// the save/prototype lookup fails.
 fn weapon_info<'a>(
     db: &'a ItemDb,
     save: &[u8],
@@ -267,9 +294,14 @@ pub fn mitigate_damage(s: &CombatStats, incoming: i32, armor: i32) -> u16 {
 /// Snapshot of the bow fields copied into a projectile by `FUN_0041BF44`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BowShot {
+    /// Prototype combat value `u16@0x459B7C + subtype*0x40` (`ItemInfo::rating`).
     pub rating: u16,
+    /// Item instance `+0x02` weapon-modifier index into `0x462798`
+    /// (`-1` = no modifier).
     pub modifier: i8,
+    /// Item instance `+0x03` subtype; selects the `0x459B84` probe range.
     pub subtype: u8,
+    /// Item instance `+0x0C` poison added to the target on a hit.
     pub poison: u16,
 }
 
@@ -328,14 +360,22 @@ pub fn combat_power(db: &ItemDb, save: &[u8], s: &CombatStats) -> i32 {
 /// same armor/endurance mitigation as melee (no facing table, no weapon wear).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProjectileRoll {
+    /// `false` only when the dexterity dodge succeeded.
     pub hit: bool,
+    /// The `rand()%101 <= dex*0.5` dodge roll succeeded.
     pub dodged: bool,
+    /// Final damage after armor/endurance mitigation, applied to HP.
     pub damage: u16,
+    /// Raw `FUN_0041AC40` damage before mitigation (also the armor-wear input).
     pub incoming: u16,
+    /// `damage >= defender.hp`, i.e. the shot kills.
     pub lethal: bool,
+    /// Poison carried by the arrow, applied on a hit.
     pub poison: u16,
 }
 
+/// Resolve one arrow hit against a defender: dexterity dodge, then the melee
+/// armor/endurance mitigation (no facing table, no weapon wear).
 pub fn resolve_projectile(
     db: &ItemDb,
     save: &[u8],
@@ -370,15 +410,22 @@ pub fn resolve_projectile(
 /// `FUN_0041c3cc`) without applying HP or durability.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MeleeRoll {
+    /// `false` when the reaction hit test or the facing dodge failed.
     pub hit: bool,
+    /// The facing-table + dexterity dodge branch consumed the blow.
     pub dodged: bool,
+    /// Final damage after armor/endurance mitigation.
     pub damage: u16,
     /// Raw `FUN_0041aea8` value (before armor/endurance mitigation).
     pub incoming: u16,
+    /// `damage >= defender.hp`, i.e. the blow kills.
     pub lethal: bool,
+    /// Poison carried by the weapon instance (`+0x0C`); `0` when unarmed.
     pub poison: u16,
 }
 
+/// Run the full melee pipeline (`FUN_0041b060` hit test, `FUN_0041aea8`
+/// damage, facing table + dexterity dodge, `FUN_0041c3cc` mitigation).
 pub fn resolve_melee(
     db: &ItemDb,
     save: &[u8],

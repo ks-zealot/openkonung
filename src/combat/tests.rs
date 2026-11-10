@@ -2,16 +2,19 @@
 
 use super::*;
 
+/// Repository root that holds the original `konung.res` / `Game.N` files.
 fn install_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+/// Load the item database from `konung.res` plus the `Game.1` instance table.
 fn db_and_game() -> Option<(ItemDb, Vec<u8>)> {
     let konung = std::fs::read(install_dir().join("konung.res")).ok()?;
     let game = std::fs::read(install_dir().join("Game.1")).ok()?;
     Some((ItemDb::from_konung(&konung), game))
 }
 
+/// `Game.1` entity 0 (protagonist) and entity 26 (the shipped ant record).
 fn heroes() -> Option<(ItemDb, Vec<u8>, Entity, Entity)> {
     let (db, game) = db_and_game()?;
     let entities = crate::population::parse_entities(&game).ok()?;
@@ -22,6 +25,7 @@ fn heroes() -> Option<(ItemDb, Vec<u8>, Entity, Entity)> {
     Some((db, game, hero, mob))
 }
 
+/// `FACING_DODGE` is byte-for-byte the `0x450DB4` 8x8 table.
 #[test]
 fn facing_dodge_table_is_the_original_8x8_table() {
     assert_eq!(
@@ -39,6 +43,7 @@ fn facing_dodge_table_is_the_original_8x8_table() {
     );
 }
 
+/// The LCG result stays within `0x7FFF` and `roll()` within `0..=100`.
 #[test]
 fn lcg_matches_the_original_linear_congruential_step() {
     let mut rng = OriginalRng::new(1);
@@ -51,6 +56,7 @@ fn lcg_matches_the_original_linear_congruential_step() {
     }
 }
 
+/// Human reaction is `100` for the new-game hero and `59` for dexterity 35.
 #[test]
 fn reactions_match_the_verified_formulas() {
     let hero = CombatStats {
@@ -84,6 +90,7 @@ fn reactions_match_the_verified_formulas() {
     assert_eq!(reaction(&ant), 59); // round(50 + 35*0.25) = 58.75 -> 59
 }
 
+/// The shipped hero knife (120 raw vs ant armor 80) mitigates to exactly `42`.
 #[test]
 fn hero_knife_and_ant_armor_match_the_original_values() {
     let Some((db, game, hero, ant)) = heroes() else {
@@ -105,6 +112,7 @@ fn hero_knife_and_ant_armor_match_the_original_values() {
     assert_eq!(mitigate_damage(&as_, 120, 80), 42);
 }
 
+/// Item instance `+0x02` selects the modifier only against its listed archetype.
 #[test]
 fn weapon_modifier_selected_by_item_plus_02_target_archetype() {
     let Some((db, game, mut hero, _)) = heroes() else {
@@ -124,6 +132,7 @@ fn weapon_modifier_selected_by_item_plus_02_target_archetype() {
     assert_eq!(other_damage, 60 + db.info(12, 33).unwrap().rating as i32);
 }
 
+/// Facing `0` vs `0` has no dodge entry, so the reaction hit resolves to 42.
 #[test]
 fn resolve_melee_uses_facing_dodge_then_mitigation() {
     let Some((db, game, hero, ant)) = heroes() else {

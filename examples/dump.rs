@@ -14,6 +14,10 @@ use openkonung::population;
 use openkonung::render;
 use openkonung::res::Res;
 
+/// 64-bit FNV-1a hash of a byte slice.
+///
+/// The Python decoders in the repository root compute the same digest, so the
+/// printed value is the parity check: Rust and Python must agree byte for byte.
 fn fnv(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for &b in bytes {
@@ -23,6 +27,10 @@ fn fnv(bytes: &[u8]) -> u64 {
     h
 }
 
+/// Read a file when it exists, returning `None` for an absent optional input.
+///
+/// The harness prints the same keys whether or not an optional file is present,
+/// so a missing `konung.res` or `Game.N` just drops the corresponding lines.
 fn read(p: PathBuf) -> Option<Vec<u8>> {
     if p.exists() {
         Some(std::fs::read(&p).unwrap())
@@ -31,6 +39,25 @@ fn read(p: PathBuf) -> Option<Vec<u8>> {
     }
 }
 
+/// Decode the shipped game files and print stable, diffable diagnostics.
+///
+/// Arguments (all positional, all optional):
+///
+/// 1. `base` - install directory holding `Game.res`, `GRAPH.RES`,
+///    `Objects.res`, the executable and `Konung.N` (default `..`).
+/// 2. `profile` - `Game.N` index to encode transitions and entity tables from
+///    (default `2`).
+/// 3. `variant` - force a human GRAPH variant, `-1` = auto-detect (default).
+/// 4. `location` - `Konung.N` map id whose population/terrain is dumped
+///    (default `1`).
+/// 5. `entity` - when given, also print that source entity's full authored
+///    state (`Entity::debug_block`).
+///
+/// Output sections, in order: location names, palette/tile/prop/human frame
+/// hashes, the transition graph, typed population tables, runtime placement and
+/// per-actor visual resolution, static terrain/GRAPH/prop diagnostics, the
+/// spring layout, and a full render of `Konung.1`. Every section is
+/// independently checkable against `tools/parity.py`.
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let base = PathBuf::from(args.get(1).cloned().unwrap_or_else(|| "..".into()));

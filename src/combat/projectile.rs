@@ -3,11 +3,13 @@
 
 use super::{BowShot, CombatTarget};
 
+/// Capacity of the original projectile/effect pool at `0x80B0D0`.
 pub const POOL_CAP: usize = 100;
 /// `FUN_00420F30` moves a projectile eight sub-steps per logic frame.
 pub const SUBSTEPS: usize = 8;
 /// `0x45013c` = 0.25, `0x450144` = 0.001.
 pub const SPEED_SCALE: f32 = 0.25;
+/// `0x450144` = 0.001, added so a zero delta cannot divide by zero.
 pub const SPEED_EPSILON: f32 = 0.001;
 /// `FUN_0041BF44` aims 30 px above the target's projected cell.
 pub const AIM_Y_OFFSET: f32 = 30.0;
@@ -28,27 +30,36 @@ pub const DRAW_DY: [i16; 8] = [-3, 0, 0, -3, 0, 0, -17, 0];
 pub struct Projectile {
     /// Local-world screen pixels (camera added at draw time).
     pub x: f32,
+    /// Local-world screen y (camera added at draw time).
     pub y: f32,
+    /// Per-sub-step x velocity from [`aim_velocity`].
     pub vx: f32,
+    /// Per-sub-step y velocity from [`aim_velocity`].
     pub vy: f32,
     /// Frames remaining (`entry+0x1D`).
     pub life: u8,
+    /// The unit that fired the arrow.
     pub owner: CombatTarget,
     /// Negative prop target index (`Entity+0x06 == -(index+1)`).
     pub prop_target: Option<usize>,
+    /// Bow values copied at spawn (`FUN_0041BF44`).
     pub bow: BowShot,
     /// INTR sprite index base (`184 + facing*2`).
     pub sprite_base: usize,
+    /// Per-facing draw x offset (`entry+0x10`, table `0x4580A0`).
     pub draw_dx: i8,
+    /// Per-facing draw y offset (`entry+0x1A`, table `0x4580A1`).
     pub draw_dy: i16,
 }
 
 impl Projectile {
+    /// Alternating INTR frame index for the current world frame.
     pub fn sprite_index(&self, world_frame: u64) -> usize {
         self.sprite_base + (world_frame as usize & 1)
     }
 }
 
+/// The per-facing muzzle `(dx, dy)` nudge added to the shooter projection.
 pub fn muzzle_offset(facing: u8) -> (f32, f32) {
     let f = (facing & 7) as usize;
     (MUZZLE_X[f] as f32, MUZZLE_Y[f] as f32)
@@ -68,6 +79,10 @@ pub fn aim_velocity(from: (f32, f32), to: (f32, f32)) -> (f32, f32) {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Allocate one live projectile from the shooter toward the target.
+///
+/// `life` is clamped to at least `1` so a malformed bow lifetime cannot spawn
+/// a projectile that never gets stepped.
 pub fn spawn(
     owner: CombatTarget,
     from: (f32, f32),

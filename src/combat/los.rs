@@ -79,6 +79,7 @@ impl LineOfFire {
         }
     }
 
+    /// Whether the probe reached the target cell.
     pub fn is_clear(self) -> bool {
         self == LineOfFire::Clear
     }
@@ -139,6 +140,8 @@ pub fn probe(collision: &[u16], src: (i32, i32), target: (i32, i32), range: u16)
     LineOfFire::Blocked
 }
 
+/// Read one collision cell by runtime coordinates, or `None` when the point
+/// falls outside the 320x160 grid.
 fn cell_at(collision: &[u16], x: i32, y: i32) -> Option<&u16> {
     if x < 0 || y < 0 || x > crate::coords::RUNTIME_MAX_X || y > crate::coords::RUNTIME_MAX_Y {
         return None;

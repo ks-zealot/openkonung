@@ -6,9 +6,14 @@
 //! * unrevealable locations `0x45AE30` (56 bytes).
 //! Drawn by `FUN_00428390`; 361 rows x 502 px. Do not hand-edit.
 
+/// Mask width in pixels: 502 = `10 * 50 + 2`, the parchment's inner span.
 pub const MAP_W: usize = 502;
+/// Mask height in pixels; one row per pixel of `INTR[179]` (`361`).
 pub const MAP_H: usize = 361;
 
+/// One entry per mask row: `(location_index, run_width)` pairs, terminated by a
+/// `width == 0` entry. A run paints the location's discovered overlay colour
+/// starting at the current x, i.e. the original `0x450EBC` run table.
 pub const MAP_ROWS: &[&[(u8, u16)]] = &[
     &[
         (28u8, 84u16),

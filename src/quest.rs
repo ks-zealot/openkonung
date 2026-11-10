@@ -60,25 +60,51 @@
 //! the `FUN_00434fe8` condition evaluator), `0x8000` = set/negate the `B7`
 //! flag slot `operand`. The opcode space is shared between conditions and
 //! actions.
+//!
+//! The opcode catalogue (handler VAs, predicate/action classification) lives in
+//! [`crate::script`]; this module only decodes the containers, so a program here
+//! is a raw `Vec<u16>` of words. Execution is `crate::script::evaluate_condition`
+//! (B4) and `crate::script::action_steps` (B5), driven from `app/dialogue_exec.rs`
+//! and `app/dialogue_ops.rs`.
 
 use crate::names::decode_cp866;
 
 /// Required file size (sum of the seven blocks).
 pub const FILE_LEN: usize = 337_800;
 
+/// File offset of block `B1`, the node/option records (stride [`NODE_STRIDE`]).
 pub const B1_OFF: usize = 0;
+/// Length of block `B1`: `128000` bytes = 8000 records of [`NODE_STRIDE`].
 pub const B1_LEN: usize = 128_000;
+/// File offset of block `B2`, `u16[300]` mapping `dialogue_id` to its first
+/// `B1` node (original buffer VA `0x5E2190`).
 pub const B2_OFF: usize = 128_000;
+/// Length of block `B2`: `300` `u16` entries ([`DIALOGUE_ENTRIES`]).
 pub const B2_LEN: usize = 600;
+/// File offset of block `B3`, the CP866 text blob of NUL-terminated fragments
+/// (original buffer VA `0x5E23E8`).
 pub const B3_OFF: usize = 128_600;
+/// Length of block `B3` in bytes.
 pub const B3_LEN: usize = 64_000;
+/// File offset of block `B4`, the `u16[]` condition programs ended by
+/// [`PROGRAM_END`] (original buffer VA `0x5F1DE8`).
 pub const B4_OFF: usize = 192_600;
+/// Length of block `B4` in bytes.
 pub const B4_LEN: usize = 12_000;
+/// File offset of block `B5`, the `u16[]` action programs ended by
+/// [`PROGRAM_END`] (original buffer VA `0x5F4CC8`).
 pub const B5_OFF: usize = 204_600;
+/// Length of block `B5` in bytes.
 pub const B5_LEN: usize = 12_000;
+/// File offset of block `B6`, the `u16[]` per-line lists of `B3` byte offsets
+/// (original buffer VA `0x5F7BA8`).
 pub const B6_OFF: usize = 216_600;
+/// Length of block `B6` in bytes.
 pub const B6_LEN: usize = 120_000;
+/// File offset of block `B7`, the `u32` quest/global flag slots (original
+/// buffer VA `0x615068`, [`FLAG_SLOTS`] records).
 pub const B7_OFF: usize = 336_600;
+/// Length of block `B7` in bytes: `300` four-byte slots.
 pub const B7_LEN: usize = 1_200;
 
 /// Stride of a `B1` record.
@@ -112,6 +138,10 @@ pub const LINK_NONE: i16 = -1;
 /// are always this value.
 pub const UNUSED: u16 = 0xFFFF;
 
+/// Map the file's `0xFFFF` "unused" word to `0` so entry counts can be added.
+///
+/// A branch page stores `0xFFFF` in the unused `+0x0C` word; treating it as
+/// `65535` would make `entries` walk far past the record.
 #[inline]
 fn normalize_count(v: u16) -> u16 {
     if v == UNUSED {
@@ -125,10 +155,16 @@ fn normalize_count(v: u16) -> u16 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuestError {
     /// The buffer is smaller than [`FILE_LEN`]; never partially parsed.
-    Truncated { need: usize, got: usize },
+    Truncated {
+        /// Bytes required ([`FILE_LEN`]).
+        need: usize,
+        /// Bytes the caller supplied.
+        got: usize,
+    },
 }
 
 impl core::fmt::Display for QuestError {
+    /// Report the required and supplied sizes; the loader aborts before use.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             QuestError::Truncated { need, got } => {
@@ -218,14 +254,19 @@ impl QuestData {
         })
     }
 
+    /// Little-endian `u16` at absolute file offset `off` (a `B1`/`B2`/`B7` field).
     fn u16(&self, off: usize) -> u16 {
         crate::res::u16(&self.bytes, off) as u16
     }
 
+    /// Little-endian `i16` at absolute file offset `off`; link and program-id
+    /// fields are signed (`-1` = none, `-2` = end).
     fn i16(&self, off: usize) -> i16 {
         crate::res::i16(&self.bytes, off) as i16
     }
 
+    /// Little-endian `u32` at absolute file offset `off`; only the `B1` entry
+    /// `+0x00` text word and the `B7` flag slots are 32-bit.
     fn u32(&self, off: usize) -> u32 {
         let b = &self.bytes[off..off + 4];
         u32::from_le_bytes([b[0], b[1], b[2], b[3]])

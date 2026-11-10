@@ -26,6 +26,7 @@ use openkonung::resource_pack::{
 };
 use serde_json::Value;
 
+/// Entry point: run the packer and turn an error message into exit status 1.
 fn main() {
     if let Err(e) = run() {
         eprintln!("pack: {e}");
@@ -33,12 +34,21 @@ fn main() {
     }
 }
 
+/// Parsed command line.
 struct Args {
+    /// Directory holding the original install files.
     base: PathBuf,
+    /// Path of the raw manifest written by `tools/make_manifest.py`.
     manifest: PathBuf,
+    /// Destination ZIP archive.
     out: PathBuf,
 }
 
+/// Parse `--base`, `--manifest` and `--out`, rejecting anything else.
+///
+/// `--help` prints the usage line and exits with status 0. A missing option is
+/// an error rather than a default: the packer must never guess which install
+/// directory to read.
 fn parse_args() -> Result<Args, String> {
     let mut base = None;
     let mut manifest = None;
@@ -68,6 +78,16 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
+/// Build the pack from the manifest and write the archive.
+///
+/// Read order and kind assignment mirror the browser's per-file fallback: core
+/// resources (`KIND_GAME..NAMES`), both menu-image families, both INTR archives,
+/// the quest database, sounds, flames and lights, then `Game.N` profiles,
+/// `Konung.N` maps, `LIGHTS.N` maps, music and the transcoded MP4s.
+///
+/// The pack `build` id is computed from the payload, so the host can detect a
+/// stale archive. `validate()` runs before anything is written, therefore a
+/// rejected pack leaves no partial file behind.
 fn run() -> Result<(), String> {
     let args = parse_args()?;
     let started = std::time::Instant::now();
@@ -349,6 +369,10 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// Read `base/rel` and reject an empty file.
+///
+/// Empty files cannot be decoded by any loader, so they fail here instead of
+/// producing a pack that only breaks at boot time.
 fn read_blob(base: &Path, rel: &str) -> Result<Vec<u8>, String> {
     let path = base.join(rel);
     let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
@@ -358,6 +382,10 @@ fn read_blob(base: &Path, rel: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// Derive a numeric id from a file name such as `Game.2`.
+///
+/// Uses the last run of ASCII digits, which is how the install names profiles
+/// (`Game.0`..`Game.2`) and maps (`Konung.1`..`Konung.43`).
 fn id_from_name(name: &str) -> Option<u32> {
     let digits: String = name.chars().filter(|c| c.is_ascii_digit()).collect();
     digits.parse().ok()

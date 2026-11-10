@@ -2,18 +2,22 @@
 
 use super::*;
 
+/// A `QUEST_R.RES`-sized zero buffer (every block empty but present).
 fn blank() -> Vec<u8> {
     vec![0u8; FILE_LEN]
 }
 
+/// Write a little-endian `u16` at an absolute file offset.
 fn put_u16(b: &mut [u8], off: usize, v: u16) {
     b[off..off + 2].copy_from_slice(&v.to_le_bytes());
 }
 
+/// Write a little-endian `u32` at an absolute file offset.
 fn put_u32(b: &mut [u8], off: usize, v: u32) {
     b[off..off + 4].copy_from_slice(&v.to_le_bytes());
 }
 
+/// The seven blocks are butted together and exactly cover the declared size.
 #[test]
 fn blocks_are_contiguous_and_sum_to_file_len() {
     assert_eq!(B1_OFF, 0);
@@ -28,6 +32,7 @@ fn blocks_are_contiguous_and_sum_to_file_len() {
     assert_eq!(DIALOGUE_ENTRIES, 300);
 }
 
+/// One byte short of [`FILE_LEN`] is rejected outright, never half-parsed.
 #[test]
 fn truncated_is_rejected_not_partially_parsed() {
     assert_eq!(
@@ -39,6 +44,8 @@ fn truncated_is_rejected_not_partially_parsed() {
     );
 }
 
+/// A display page exposes `conditional + unconditional` entries starting at
+/// `header+1`, and its `B6` line composes to the `B3` text.
 #[test]
 fn synthetic_page_entries_and_text() {
     let mut b = blank();
@@ -77,6 +84,7 @@ fn synthetic_page_entries_and_text() {
     assert_eq!(q.line_text(3), "Hi");
 }
 
+/// A branch page's cases start at the header record itself, not at `header+1`.
 #[test]
 fn synthetic_branch_cases_start_at_header() {
     let mut b = blank();
@@ -92,6 +100,8 @@ fn synthetic_branch_cases_start_at_header() {
     assert_eq!(q.entries(20), vec![20, 21]);
 }
 
+/// Consecutive `B6` fragments whose first byte is a letter get one space
+/// separator, as `FUN_00435188` does.
 #[test]
 fn line_text_inserts_separator_before_words() {
     let mut b = blank();

@@ -1,5 +1,17 @@
 //! Exact Game.N transition graph.
 //!
+//! Each `Game.N` profile stores `250` 17-byte transition records at `+0x29600`
+//! (`TRANS_OFF` / `TRANS_COUNT` / `TRANS_REC` in [`crate::constants::game_layout`]).
+//! A record links a source location (`+0x03`, `src`) to a destination location
+//! (`+0x04`, `dst`), names the arrival cell (`+0x05/+0x07`) and the source
+//! trigger rectangle (`+0x09/+0x0B`-`+0x0D/+0x0F`), all in the raw 320x160
+//! runtime/Entity grid. `+0x02` (`meta`) disambiguates records that share the
+//! same source/destination pair.
+//!
+//! This module turns those records into the directed [`Edge`] graph the runtime
+//! walks, pairs reciprocal links ([`reciprocal_pairs`]) and optionally lays the
+//! locations out for the debug/map view ([`spring_layout`]).
+//!
 //! Faithful port of `konung_exact_country.py`.
 
 use std::collections::HashMap;
@@ -7,11 +19,17 @@ use std::collections::HashMap;
 use crate::loc::Location;
 use crate::res::u16;
 
+/// Exact size of a `Game.0/1/2` profile; any other size is rejected.
 pub const GAME_SIZE: usize = 0xAD4BE;
+/// Number of transition records in the `+0x29600` table.
 pub use crate::constants::game_layout::TRANS_COUNT;
+/// File offset of the transition table in a `Game.N` profile.
 pub use crate::constants::game_layout::TRANS_OFF;
+/// Stride of one transition record (17 bytes; `+0x10` is unused padding).
 pub use crate::constants::game_layout::TRANS_REC;
 
+/// Identity of one transition record, used to deduplicate the same link across
+/// profiles: `(meta, src, dst, arrival x, arrival y, rect x1, y1, x2, y2)`.
 pub type Key7 = (u8, u8, u8, u16, u16, u16, u16, u16, u16);
 
 /// One 17-byte `Game.N` transition record (`+0x29600`).
@@ -22,19 +40,30 @@ pub type Key7 = (u8, u8, u8, u16, u16, u16, u16, u16, u16);
 /// the raw runtime/Entity coordinate domain.
 #[derive(Clone, Copy)]
 pub struct Transition {
+    /// Index of the record in the `+0x29600` table (`0..250`).
     pub rec: usize,
+    /// `+0x02` meta byte; disambiguates parallel links of the same pair.
     pub meta: u8,
+    /// `+0x03` source location id (`Game.N` location index).
     pub src: u8,
+    /// `+0x04` destination location id.
     pub dst: u8,
+    /// `+0x05` destination arrival x (raw runtime/Entity grid).
     pub sx: u16,
+    /// `+0x07` destination arrival y (raw runtime/Entity grid).
     pub sy: u16,
+    /// `+0x09` trigger rectangle x1 in the source location.
     pub dx: u16,
+    /// `+0x0B` trigger rectangle y1 in the source location.
     pub dy: u16,
+    /// `+0x0D` trigger rectangle x2.
     pub dx2: u16,
+    /// `+0x0F` trigger rectangle y2.
     pub dy2: u16,
 }
 
 impl Transition {
+    /// Flatten the record into the cross-profile deduplication key.
     pub fn key7(&self) -> Key7 {
         (
             self.meta, self.src, self.dst, self.sx, self.sy, self.dx, self.dy, self.dx2, self.dy2,
@@ -42,6 +71,11 @@ impl Transition {
     }
 }
 
+/// Decode every live record of the `Game.N +0x29600` transition table.
+///
+/// Records whose `src` and `dst` are both `0` are the unused tail slots and are
+/// skipped. A buffer of any size other than [`GAME_SIZE`] yields no records: the
+/// profile is never parsed partially.
 pub fn read_transitions(data: &[u8]) -> Vec<Transition> {
     let mut out = Vec::new();
     if data.len() != GAME_SIZE {
@@ -71,11 +105,16 @@ pub fn read_transitions(data: &[u8]) -> Vec<Transition> {
     out
 }
 
+/// One directed location link used by the runtime map graph.
 #[derive(Clone)]
 pub struct Edge {
+    /// Source `+0x29600` record index.
     pub rec: usize,
+    /// `+0x02` meta byte of the record.
     pub meta: u8,
+    /// Source location id (`+0x03`).
     pub from: u32,
+    /// Destination location id (`+0x04`).
     pub to: u32,
     /// Destination arrival point (`+05/+07`), raw runtime/Entity coordinates.
     pub src: [i32; 2],
@@ -83,7 +122,10 @@ pub struct Edge {
     pub dst: [i32; 2],
     /// Source trigger rectangle corner 2 (`+0D/+0F`), raw runtime/Entity coords.
     pub dst2: [i32; 2],
+    /// Compass side of the source trigger inside its location, one of
+    /// `N/NE/E/SE/S/SW/W/NW` or `?` when the location is unknown.
     pub side: &'static str,
+    /// `Game.N` profile ids (0, 1, 2) that carry this exact link.
     pub profiles: Vec<u32>,
 }
 
@@ -109,14 +151,28 @@ impl Edge {
     }
 }
 
+/// Two edges that form an `a -> b` / `b -> a` return pair.
 pub struct Pair {
+    /// One endpoint location.
     pub a: u32,
+    /// Other endpoint location.
     pub b: u32,
+    /// Index into the edge list of the `a -> b` link.
     pub ab: usize,
+    /// Index into the edge list of the `b -> a` link.
     pub ba: usize,
+    /// Squared coordinate disagreement: each edge's trigger must sit on the
+    /// arrival cell of the other. `0` is a perfect geometric match.
     pub coord_error: i64,
 }
 
+/// Classify a point as a compass side of its location.
+///
+/// The location extent is `max(max_x, largest gate x, 159)` by
+/// `max(max_y, largest gate y, 79)`, i.e. at least the nominal 160x80 map, so a
+/// tiny location still yields a meaningful direction. The point is expressed
+/// relative to the extent centre, scaled per axis, and the `atan2` angle is
+/// quantised to one of eight 45-degree sectors.
 fn classify_side(x: i32, y: i32, loc: &Location) -> &'static str {
     let gate_max_x = loc.gates.iter().map(|g| g.x).fold(0.0f64, f64::max) as i32;
     let gate_max_y = loc.gates.iter().map(|g| g.y).fold(0.0f64, f64::max) as i32;
@@ -131,6 +187,15 @@ fn classify_side(x: i32, y: i32, loc: &Location) -> &'static str {
     dirs[idx.rem_euclid(8) as usize]
 }
 
+/// Build the directed edge graph, optionally restricted to one `Game.N` profile.
+///
+/// `profiles` maps profile id (`0..=2`) to its decoded records; every distinct
+/// [`Key7`] is kept once and remembers which profiles carry it. With
+/// `profile = Some(id)` only that profile's links are emitted, otherwise the
+/// union. Links with a zero source or destination location are dropped.
+/// `locs` supplies the extents used by [`classify_side`]; a link whose source
+/// location is not in `locs` gets the `"?"` side. Output order is source,
+/// destination and arrival coordinates, deduplicated.
 pub fn build_exact_edges(
     profile: Option<u32>,
     profiles: &HashMap<u32, Vec<Transition>>,

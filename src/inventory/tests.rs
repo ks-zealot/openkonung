@@ -3,6 +3,10 @@
 use super::*;
 use crate::res::Res;
 
+/// Load the original install resources, or `None` when they are absent.
+///
+/// Attaches the `Game.1` item-instance table so `item_info`/class lookups
+/// resolve against real instances.
 fn test_res() -> Option<Res> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |n: &str| std::fs::read(dir.join(n)).ok();
@@ -20,12 +24,15 @@ fn test_res() -> Option<Res> {
     Some(res)
 }
 
+/// The capacity formula is `10000 + endurance_base * 1000 / 3`.
 #[test]
 fn capacity_matches_original_formula() {
     assert_eq!(capacity(10), 10_000 + 10_000 / 3);
     assert_eq!(capacity(0), 10_000);
 }
 
+/// Insertion lands at slot 0 and shifts; a full bag is refused; removal shifts
+/// the tail and clears the last slot.
 #[test]
 fn inventory_insert_is_front_and_requires_a_free_slot() {
     let mut inv = [0u16; INVENTORY_SLOTS];
@@ -42,6 +49,8 @@ fn inventory_insert_is_front_and_requires_a_free_slot() {
     assert_eq!(inv[INVENTORY_SLOTS - 1], 0);
 }
 
+/// Main slots accept only their own class; additional slots map classes
+/// 6/7/8 to slots 0 and 1-2 and 3-4 only.
 #[test]
 fn main_and_additional_class_gates_match_original() {
     for slot in 0..MAIN_SLOTS {
@@ -59,6 +68,8 @@ fn main_and_additional_class_gates_match_original() {
     assert_eq!(additional_slot_for_class(6, 0x0F), None);
 }
 
+/// The recipe table has 33 rows and keeps the recovered first, twentieth and
+/// last records verbatim.
 #[test]
 fn craft_table_is_the_verified_33_records() {
     assert_eq!(RECIPES.len(), 33);
@@ -97,6 +108,8 @@ fn craft_table_is_the_verified_33_records() {
     );
 }
 
+/// A matched recipe rewrites the held subtype, consumes the target and adds the
+/// row's healing gain.
 #[test]
 fn craft_produces_the_table_result_and_consumes_the_target() {
     let Some(mut res) = test_res() else {
@@ -120,6 +133,8 @@ fn craft_produces_the_table_result_and_consumes_the_target() {
     assert!(res.item_quality(a).unwrap() <= 15.0);
 }
 
+/// An unknown pair produces «Непонятная смесь»: subtype 4, consumed target, no
+/// skill gain.
 #[test]
 fn craft_unknown_mix_uses_subtype_four() {
     let Some(mut res) = test_res() else {
@@ -140,6 +155,7 @@ fn craft_unknown_mix_uses_subtype_four() {
     assert_eq!(healing, 50);
 }
 
+/// Alchemy rejects combining an item with itself and any non-class-9 target.
 #[test]
 fn craft_rejects_non_class_nine_and_self_combination() {
     let Some(mut res) = test_res() else {
@@ -154,6 +170,7 @@ fn craft_rejects_non_class_nine_and_self_combination() {
     assert!(craft(&mut res, &mut healing, a, arrow).is_none());
 }
 
+/// A healing potion emits a full-HP set and becomes an empty jar (subtype 3).
 #[test]
 fn potion_use_heals_and_leaves_an_empty_jar() {
     let Some(mut res) = test_res() else {
@@ -170,6 +187,8 @@ fn potion_use_heals_and_leaves_an_empty_jar() {
     assert_eq!(res.item_class_subtype(id), Some((9, 3)));
 }
 
+/// Subtype 9 refuses to stack while a temporary effect timer is running and
+/// leaves the item unconsumed.
 #[test]
 fn potion_use_blocks_when_a_timed_effect_is_active() {
     let Some(mut res) = test_res() else {
@@ -184,6 +203,7 @@ fn potion_use_blocks_when_a_timed_effect_is_active() {
     assert_eq!(use_item(&mut res, &snap, id), Err(UseError::Blocked));
 }
 
+/// Oil clears the ammo modifier index and turns itself into an empty jar.
 #[test]
 fn oil_turns_arrows_into_plain_ammo_and_is_consumed() {
     let Some(mut res) = test_res() else {
@@ -201,6 +221,7 @@ fn oil_turns_arrows_into_plain_ammo_and_is_consumed() {
     assert_eq!(res.item_class_subtype(arrows), Some((12, 30)));
 }
 
+/// A rejected oil use returns `NotUsable` and leaves the oil instance intact.
 #[test]
 fn oil_rejects_non_ammo_without_consuming() {
     let Some(mut res) = test_res() else {
@@ -217,6 +238,8 @@ fn oil_rejects_non_ammo_without_consuming() {
     assert_eq!(res.item_class_subtype(oil), Some((9, 7)));
 }
 
+/// Poison writes its rounded quality into the target's poison field and is
+/// consumed into a jar.
 #[test]
 fn poison_coats_weapons_and_arrows() {
     let Some(mut res) = test_res() else {
@@ -231,6 +254,8 @@ fn poison_coats_weapons_and_arrows() {
     assert_eq!(res.item_class_subtype(poison), Some((9, 3)));
 }
 
+/// Matching class-12 stack keys add quantities and mark the incoming instance
+/// `class = 0xFF` so the caller does not insert it.
 #[test]
 fn ammo_stacks_merge_by_type_and_consume_the_incoming_instance() {
     let Some(mut res) = test_res() else {

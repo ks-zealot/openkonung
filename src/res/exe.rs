@@ -1,14 +1,31 @@
 //! `exe` subsystem of [`crate::res`] (split from `res.rs`).
+//!
+//! The original code and its data tables live in one flat 32-bit image: every
+//! recovered table is addressed by a DGROUP-relative virtual address (VA), and
+//! `exe_va_to_off` converts it to a file offset with the profile's raw/VA pair.
+//! The profile is chosen by executable size, because the shipped 1999
+//! `CLIENT.EXE` and the 2003 `LAN_KONG.EXE` place DGROUP differently.
 
+/// DGROUP address map of one supported executable image.
 #[derive(Clone, Copy)]
 pub struct ExeProfile {
+    /// Human-readable build name (used in diagnostics only).
     pub name: &'static str,
+    /// Virtual address of the start of DGROUP (`.data`).
     pub dgroup_va: u32,
+    /// File offset of the same DGROUP start.
     pub dgroup_raw: u32,
+    /// Base VA of the item-template record table.
     pub item_template_va: u32,
+    /// VA of the 24-dword human-overlay palette-offset table.
     pub overlay_palette_va: u32,
 }
 
+/// Look up the DGROUP profile by executable image size.
+///
+/// The two supported builds are `LAN_KONG.EXE` (3796992 bytes) and
+/// `CLIENT.EXE` v1.03 (939008 bytes). Returns `None` for any other size; there
+/// is no heuristic fallback because the table VAs would be wrong.
 pub fn exe_profile(len: usize) -> Option<ExeProfile> {
     match len {
         3796992 => Some(ExeProfile {
@@ -29,6 +46,10 @@ pub fn exe_profile(len: usize) -> Option<ExeProfile> {
     }
 }
 
+/// Convert a DGROUP VA to a file offset: `dgroup_raw + (va - dgroup_va)`.
+///
+/// The subtraction wraps for a VA below `dgroup_va`, so callers must pass an
+/// address that really is inside the image.
 pub fn exe_va_to_off(va: u32, p: &ExeProfile) -> usize {
     (p.dgroup_raw + (va - p.dgroup_va)) as usize
 }

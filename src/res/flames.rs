@@ -70,6 +70,7 @@ impl Res {
         self.flames.get(index).cloned()
     }
 
+    /// Number of decoded `FLAMES.RES` frames (`0` until loaded).
     pub fn flame_count(&self) -> usize {
         self.flames.len()
     }
@@ -113,6 +114,12 @@ pub fn parse_flames(data: &[u8]) -> Result<Vec<Img>, String> {
     Ok(frames)
 }
 
+/// Decode one `[u16 w][u16 h][u16 row_len[h]][rows]` frame payload.
+///
+/// Row tokens are `0x00` = end of row, `0x80 | n` = skip `n` pixels
+/// (transparent) and `n` = `n` literal RGB555 pixels. Literal pixels past the
+/// declared width are consumed but not stored; a row that overruns the payload
+/// is an error, so a corrupt frame never decodes partially.
 fn decode_flame_frame(payload: &[u8], index: usize) -> Result<Img, String> {
     if payload.len() < 4 {
         return Err(format!("FLAMES.RES: frame {index} payload too short"));
@@ -184,6 +191,7 @@ fn decode_flame_frame(payload: &[u8], index: usize) -> Result<Img, String> {
 mod tests {
     use super::*;
 
+    /// Build a 4x2 frame whose rows mix skip and literal tokens.
     fn synthetic_frame() -> Vec<u8> {
         // 4x2: row 0 = skip 1 + 2 pixels + end; row 1 = 1 skip + 1 pixel + end.
         let mut payload = Vec::new();
@@ -210,6 +218,8 @@ mod tests {
         payload
     }
 
+    /// Skipped pixels stay transparent and literal RGB555 values expand to full
+    /// red/green/blue channels.
     #[test]
     fn decodes_555_literals_and_skips() {
         let img = decode_flame_frame(&synthetic_frame(), 0).expect("decodes");
@@ -223,6 +233,8 @@ mod tests {
         assert_eq!(&img.data[blue_row..blue_row + 4], &[0, 0, 255, 255]);
     }
 
+    /// The shipped archive holds 74 256x195 frames and their brightest pixels
+    /// are warm (R >= G >= B).
     #[test]
     fn real_flames_has_74_frames_and_fire_colors() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -250,6 +262,8 @@ mod tests {
         assert!(max_r > 200, "frame must contain bright pixels");
     }
 
+    /// The seven `FLAME_RANGES` entries are contiguous and cover exactly the 74
+    /// shipped blocks.
     #[test]
     fn flame_ranges_cover_all_74_blocks() {
         let mut next = 0u8;

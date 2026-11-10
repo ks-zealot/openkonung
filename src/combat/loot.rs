@@ -13,18 +13,25 @@ use crate::item::{ItemDb, ItemInfo};
 /// New instance fields for one generated corpse item.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LootItemSpec {
+    /// Item class byte (instance `+0x00`), e.g. `9` for the poison stinger.
     pub class: u8,
+    /// Item subtype byte (instance `+0x03`), indexing the class prototype table.
     pub subtype: u8,
     /// `FUN_00418480` writes the generated quality roll to instance `+0x01`
     /// (condition), not the `+0x02` weapon-modifier index.
     pub condition: i8,
     /// Always `-1` for generated/monster loot; `+0x02` stays untouched.
     pub modifier: i8,
+    /// Prototype durability copied from the item record (instance `+0x06`).
     pub durability: f32,
+    /// Poison value (instance `+0x0C`); non-zero only for the stinger.
     pub poison: u16,
+    /// Item flag word (instance `+0x0A`); bit `0x0001` = unidentified.
     pub flags: u16,
 }
 
+/// The full corpse contents produced by `FUN_00418480` before the marker is
+/// written: copied inventory ids, newly allocated instances, and money.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LootPlan {
     /// Existing instance ids copied from the dead entity's inventory.
@@ -37,6 +44,7 @@ pub struct LootPlan {
 }
 
 impl LootPlan {
+    /// True when the corpse would carry nothing at all.
     pub fn is_empty(&self) -> bool {
         self.existing.is_empty() && self.generated.is_empty() && self.money == 0
     }
@@ -55,16 +63,22 @@ pub fn level_tier(level: u8) -> u32 {
     }
 }
 
+/// Generated-item quality count per killer level: `level/5 + 1` (at least 1).
 fn level_div(level: u8) -> u32 {
     level as u32 / 5 + 1
 }
 
+/// The prototype durability `f32` for a generated item, or `0.0` when the
+/// class/subtype has no prototype record.
 fn proto_durability(db: &ItemDb, class: u8, subtype: u8) -> f32 {
     db.info(class, subtype)
         .map(|i| i.durability as f32)
         .unwrap_or(0.0)
 }
 
+/// Unidentified-item roll for a generated drop: only `rand()%101 < 10` can
+/// flag it, and then only when `identification < rand()%100`. Returns `1` when
+/// the item starts unidentified.
 fn unidentified(rng: &mut OriginalRng, identification: u16) -> u16 {
     if rng.roll() < 10 && (identification as u32) < rng.next_u32() % 100 {
         1
@@ -73,6 +87,8 @@ fn unidentified(rng: &mut OriginalRng, identification: u16) -> u16 {
     }
 }
 
+/// Generated condition/quality value: a `tier`-bounded roll plus a `rand()%5`
+/// decade term. Written to instance `+0x01`.
 fn modifier(rng: &mut OriginalRng, tier: u32) -> i8 {
     let local = if tier < 2 { 0 } else { rng.next_u32() % tier };
     (local + (rng.next_u32() % 5) * 10) as i8

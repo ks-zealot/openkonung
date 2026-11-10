@@ -19,35 +19,54 @@
 //! `FUN_0041BB70`): a held class-9 item is combined with another class-9 item
 //! using the 33-record table at VA `0x450DF4`. The held item becomes the result;
 //! the target becomes a `out_b` item (`3` = empty jar, `0xFF` = consumed).
+//!
+//! Item use (`FUN_0041DAB0`) never mutates a character directly: it returns a
+//! list of [`StatOp`] mutations that the caller applies to either a
+//! [`PlayerCharacter`] or a companion [`Entity`] through
+//! [`apply_player_ops`]/[`apply_entity_ops`]. The temporary-effect fields
+//! `Entity+0xBC..+0xC2` (saved stats) and `+0xCA/+0xCE` (effect id / frame
+//! timer) are restored by [`tick_player_temp`]/[`tick_entity_temp`] once the
+//! timer reaches zero.
 
 use crate::character::PlayerCharacter;
 use crate::population::Entity;
 use crate::res::Res;
 
+/// Main equipment slots (`Entity+0x66..+0x71`, six `u16` item ids).
 pub const MAIN_SLOTS: usize = 6;
+/// Inventory slots (`Entity+0x72..+0xB1`, 32 `u16` item ids).
 pub const INVENTORY_SLOTS: usize = 32;
+/// Additional equipment slots (`Entity+0xB2..+0xBB`, five `u16` item ids).
 pub const ADDITIONAL_SLOTS: usize = 5;
 
 /// One editable inventory owner: the protagonist or a recruited companion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InventoryOwner {
+    /// The protagonist, whose containers live in `PlayerCharacter`.
     Protagonist,
+    /// Companion at this party-slot index (1-based entries follow slot 0).
     Party(usize),
 }
 
 /// A concrete item container inside one owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ItemLocation {
+    /// Main equipment slot `0..MAIN_SLOTS` (`Entity+0x66` base).
     Main(usize),
+    /// Additional equipment slot `0..ADDITIONAL_SLOTS` (`Entity+0xB2` base).
     Additional(usize),
+    /// The single special/ammo slot (`Entity+0xCC`).
     Special,
+    /// Inventory slot `0..INVENTORY_SLOTS` (`Entity+0x72` base).
     Inventory(usize),
 }
 
 /// The item currently on the mouse cursor (original `_81D670`/`_81D400`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeldItem {
+    /// 16-byte `Game.N` item instance id (0 = nothing held).
     pub id: u16,
+    /// Owner the item came from.
     pub owner: InventoryOwner,
     /// Container the item was lifted from.
     pub source: Option<ItemLocation>,
@@ -56,21 +75,32 @@ pub struct HeldItem {
 /// Immutable view of one owner's four containers.
 #[derive(Clone, Copy, Debug)]
 pub struct SlotsRef<'a> {
+    /// Six main equipment ids (`Entity+0x66..+0x71`).
     pub equipment: &'a [u16; MAIN_SLOTS],
+    /// 32 inventory ids (`Entity+0x72..+0xB1`).
     pub inventory: &'a [u16; INVENTORY_SLOTS],
+    /// Five additional equipment ids (`Entity+0xB2..+0xBB`).
     pub additional: &'a [u16; ADDITIONAL_SLOTS],
+    /// Single special/ammo id (`Entity+0xCC`).
     pub special: u16,
 }
 
 /// Mutable view of one owner's four containers.
 pub struct SlotsMut<'a> {
+    /// Six main equipment ids (`Entity+0x66..+0x71`).
     pub equipment: &'a mut [u16; MAIN_SLOTS],
+    /// 32 inventory ids (`Entity+0x72..+0xB1`).
     pub inventory: &'a mut [u16; INVENTORY_SLOTS],
+    /// Five additional equipment ids (`Entity+0xB2..+0xBB`).
     pub additional: &'a mut [u16; ADDITIONAL_SLOTS],
+    /// Single special/ammo id (`Entity+0xCC`).
     pub special: &'a mut u16,
 }
 
 impl<'a> SlotsRef<'a> {
+    /// Item id at one container slot; `None` when the slot index is out of range.
+    ///
+    /// `Special` always resolves to the single `+0xCC` word.
     pub fn get(&self, loc: ItemLocation) -> Option<u16> {
         match loc {
             ItemLocation::Main(i) => self.equipment.get(i).copied(),
@@ -82,6 +112,7 @@ impl<'a> SlotsRef<'a> {
 }
 
 impl<'a> SlotsMut<'a> {
+    /// Borrow the mutable view as a read-only [`SlotsRef`].
     pub fn as_ref(&self) -> SlotsRef<'_> {
         SlotsRef {
             equipment: &*self.equipment,
@@ -91,6 +122,7 @@ impl<'a> SlotsMut<'a> {
         }
     }
 
+    /// Item id at one container slot; `None` when the slot index is out of range.
     pub fn get(&self, loc: ItemLocation) -> Option<u16> {
         match loc {
             ItemLocation::Main(i) => self.equipment.get(i).copied(),
@@ -175,41 +207,77 @@ impl<'a> SlotsMut<'a> {
 /// Read-only owner snapshot used by weight, requirements and use/craft effects.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct OwnerSnapshot {
+    /// `Entity+0x33` character level.
     pub level: u8,
+    /// `Entity+0x34` i32 money.
     pub money: i32,
+    /// `Entity+0x38` u32 available/free XP.
     pub available_xp: u32,
+    /// `Entity+0x3C` u32 invested XP.
     pub invested_xp: u32,
+    /// `Entity+0x40` melee mastery.
     pub melee_mastery: u16,
+    /// `Entity+0x42` trade skill.
     pub trade: u16,
+    /// `Entity+0x44` archery mastery.
     pub archery_mastery: u16,
+    /// `Entity+0x46` building skill.
     pub building: u16,
+    /// `Entity+0x48` healing skill (drives alchemy quality and skill gain).
     pub healing: u16,
+    /// `Entity+0x4A` identification skill.
     pub identification: u16,
+    /// `Entity+0x4C` smithing skill.
     pub smithing: u16,
+    /// `Entity+0x4E` innate armor rating (without item armor).
     pub base_armor: u16,
+    /// `Entity+0x50` periodic (poison) damage per 16-frame pass.
     pub periodic_damage: u16,
+    /// `Entity+0x52` venom value copied into corpse-loot stingers; `0` for the
+    /// protagonist save block, which carries no such field.
     pub raw_0x52: u16,
+    /// `Entity+0x12` raw byte (active weapon slot / armour-slot selector).
     pub raw_0x12: u8,
+    /// `Entity+0x03` flags (`0x04` battle stance, `0x80` dead).
     pub flags_b: u8,
+    /// Whether the owner is dead (`flags_b & 0x80`).
     pub dead: bool,
+    /// `Entity+0x54` dexterity base.
     pub dexterity_base: u16,
+    /// `Entity+0x56` dexterity current (temporary effects lower it).
     pub dexterity_current: u16,
+    /// `Entity+0x58` charisma base.
     pub charisma_base: u16,
+    /// `Entity+0x5A` charisma current.
     pub charisma_current: u16,
+    /// `Entity+0x5E` strength base.
     pub strength_base: u16,
+    /// `Entity+0x60` strength current.
     pub strength_current: u16,
+    /// `Entity+0x62` endurance base (capacity = `*1000/3 + 10000`).
     pub endurance_base: u16,
+    /// `Entity+0x64` endurance current.
     pub endurance_current: u16,
+    /// `Entity+0x5C` HP in the internal 16x scale (1600 = full).
     pub hp_internal: u16,
+    /// `Entity+0xCE` temporary-effect timer in logic frames (0 = none).
     pub temp_effect_timer: u16,
+    /// `Entity+0xCA` temporary-effect id.
     pub temp_effect_id: u16,
+    /// `Entity+0xBC` saved dexterity current (temporary-effect backup).
     pub saved_dexterity: u16,
+    /// `Entity+0xBE` saved charisma current.
     pub saved_charisma: u16,
+    /// `Entity+0xC0` saved strength current.
     pub saved_strength: u16,
+    /// `Entity+0xC2` saved endurance current.
     pub saved_endurance: u16,
 }
 
 impl OwnerSnapshot {
+    /// Snapshot the protagonist's live `PlayerCharacter` fields.
+    ///
+    /// The player record has no `Entity+0x52`, so `raw_0x52` is reported as `0`.
     pub fn from_player(p: &PlayerCharacter) -> OwnerSnapshot {
         OwnerSnapshot {
             level: p.level,
@@ -247,6 +315,10 @@ impl OwnerSnapshot {
         }
     }
 
+    /// Snapshot a companion's authored `Game.N` entity record.
+    ///
+    /// `dead` is derived from `flags_b & 0x80`; every other field is a verbatim
+    /// `Entity+0x..` read.
     pub fn from_entity(e: &Entity) -> OwnerSnapshot {
         let s = &e.stats;
         OwnerSnapshot {
@@ -527,14 +599,23 @@ pub fn refresh_equipment(
 /// `FUN_0041BB70` recipe record (table VA `0x450DF4`, 33 x 6 bytes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Recipe {
+    /// Held item's class-9 subtype (first ingredient).
     pub a: u8,
+    /// Target item's class-9 subtype (second ingredient).
     pub b: u8,
+    /// Subtype written into the held item (the product).
     pub out_a: u8,
+    /// Subtype written into the target (`3` empty jar, `0xFF` consumed).
     pub out_b: u8,
+    /// Healing-skill gain, capped at 500 by [`craft`].
     pub skill_gain: u8,
+    /// Quality formula selector: `0` skill only, `1` held quality + skill,
+    /// `2` held quality + target quality, `3` `min(held, target)`,
+    /// `4` target quality + skill.
     pub op: u8,
 }
 
+/// The 33-record alchemy table at VA `0x450DF4`, in file order.
 pub const RECIPES: [Recipe; 33] = [
     Recipe {
         a: 3,
@@ -867,36 +948,63 @@ pub fn craft(res: &mut Res, healing: &mut u16, held: u16, target: u16) -> Option
 }
 
 /// One mutation produced by potion use.
+///
+/// The list is applied by [`apply_player_ops`] / [`apply_entity_ops`]; skill
+/// operations are applied in a second pass after the common stat pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatOp {
+    /// Halve current HP, leaving at least 1 internal point (`subtype 4`).
     HalveHp,
+    /// Set HP absolutely, clamped to 1600.
     SetHp(u16),
+    /// Add to HP, clamped to `0..=1600`.
     AddHp(i32),
+    /// Write the periodic (poison) damage field.
     SetPeriodic(u16),
+    /// Add to the periodic damage field, clamping at 0.
     AddPeriodic(i32),
+    /// Write dexterity current.
     SetDexterityCurrent(u16),
+    /// Add to dexterity current, clamping at 0.
     AddDexterityCurrent(i32),
+    /// Add to charisma current, clamping at 0.
     AddCharismaCurrent(i32),
+    /// Add to strength current, clamping at 1.
     AddStrengthCurrent(i32),
+    /// Add to endurance current, clamping at 0.
     AddEnduranceCurrent(i32),
+    /// Write the temporary-effect timer (`Entity+0xCE`).
     SetTempTimer(u16),
+    /// Write the temporary-effect id (`Entity+0xCA`).
     SetTempId(u16),
+    /// Copy the four current primary stats into `Entity+0xBC..+0xC2`.
     SaveStats,
+    /// Add available XP (saturating).
     AddAvailableXp(u32),
+    /// Add healing skill, capped at 500.
     AddHealing(u16),
+    /// Add building skill.
     AddBuilding(u16),
+    /// Add smithing skill.
     AddSmithing(u16),
+    /// Add trade skill, capped at 100.
     AddTrade(u16),
+    /// Add identification skill, capped at 100.
     AddIdentification(u16),
+    /// Clear the dead flag (`flags_b & 0x80`).
     Revive,
 }
 
 /// Errors from using an item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseError {
+    /// The instance is missing, not class 9, or the subtype has no use case.
     NotUsable,
+    /// The item needs a target item (subtype 7 «Масло»).
     NeedsTarget,
+    /// A temporary effect is already active (`Entity+0xCE != 0`).
     Blocked,
+    /// Quality below the minimum the subtype needs (subtype 12 needs `>= 6`).
     TooWeak,
 }
 
@@ -1065,10 +1173,16 @@ pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<
     Ok(ops)
 }
 
+/// Clamp `v` into `lo..=hi`.
 fn clamp_i32(v: i32, lo: i32, hi: i32) -> i32 {
     v.max(lo).min(hi)
 }
 
+/// Apply the non-skill [`StatOp`] variants to raw stat fields.
+///
+/// HP is clamped to `0..=1600`; periodic/dexterity/charisma/endurance clamp at
+/// 0, strength at 1; [`StatOp::SaveStats`] writes the four-current-stat tuple.
+/// Skill operations are skipped here and applied by [`apply_skill_ops`].
 fn apply_ops_common(
     hp: &mut u16,
     periodic: &mut u16,
@@ -1123,6 +1237,8 @@ fn apply_ops_common(
     }
 }
 
+/// Apply the five skill [`StatOp`] variants, each with its original cap
+/// (healing 500, trade 100, identification 100; building/smithing uncapped).
 fn apply_skill_ops(
     healing: &mut u16,
     building: &mut u16,
@@ -1145,6 +1261,10 @@ fn apply_skill_ops(
     }
 }
 
+/// Apply potion-use operations to the protagonist.
+///
+/// The saved-stat backup is read back into the `PlayerCharacter` after the
+/// common pass, and skill operations run in the second pass.
 pub fn apply_player_ops(p: &mut PlayerCharacter, ops: &[StatOp]) {
     let mut saved = (
         p.saved_dexterity,
@@ -1180,6 +1300,10 @@ pub fn apply_player_ops(p: &mut PlayerCharacter, ops: &[StatOp]) {
     );
 }
 
+/// Apply potion-use operations to a companion [`Entity`].
+///
+/// `Entity+0x03` bit `0x80` is decoded into the local dead flag, mutated by
+/// [`StatOp::Revive`], then cleared again; the other flag bits are preserved.
 pub fn apply_entity_ops(e: &mut Entity, ops: &[StatOp]) {
     let mut saved = (
         e.stats.saved_dexterity,
@@ -1219,6 +1343,8 @@ pub fn apply_entity_ops(e: &mut Entity, ops: &[StatOp]) {
     }
 }
 
+/// Decrement one temporary-effect timer and restore the saved stats when it
+/// reaches zero. Returns whether the effect expired this frame.
 fn restore_temp(
     timer: &mut u16,
     effect: &mut u16,

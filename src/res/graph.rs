@@ -1,7 +1,26 @@
 //! `graph` subsystem of [`crate::res`] (split from `res.rs`).
+//!
+//! Walks the `GRAPH.RES` block sequence and decodes the terrain tile bank:
+//!
+//! ```text
+//! 0x20000            11 cursor blocks: [u32 tag][u32 size][payload]
+//! terrain block      [u32 tag][u32 size]
+//!                      table   512 x {u32 offset, u32 palette_offset} (0x1000)
+//!                      payload tile data at block + 0x1008
+//! 3 human base blocks, then 24 human overlay blocks
+//! ```
+//!
+//! Terrain tiles are indexed `0..=511`; a table entry's offset is relative to
+//! the payload start and `0xFFFFFFFF` marks an absent tile.
 
 use super::*;
 
+/// Parse the `GRAPH.RES` block layout used by the rest of the decoder.
+///
+/// Returns `(terrain_table_pos, terrain_payload_pos, terrain_payload_size,
+/// human_base_positions, human_overlay_positions)`. A truncated archive yields
+/// whatever prefixes were readable instead of an error, so callers must treat
+/// empty position vectors as "no such block".
 pub(crate) fn parse_graph_layout(graph: &[u8]) -> (usize, usize, usize, Vec<usize>, Vec<usize>) {
     let mut pos = 0x20000usize;
     // 11 small blocks: [type, u32 size] + payload.
@@ -49,6 +68,10 @@ pub(crate) fn parse_graph_layout(graph: &[u8]) -> (usize, usize, usize, Vec<usiz
 }
 
 impl Res {
+    /// Decoded terrain tile by bank index, cached.
+    ///
+    /// The id is masked to 9 bits (512 tiles) first, so callers may pass an
+    /// unmasked terrain byte; an absent tile yields `None`.
     pub fn terrain_tile(&mut self, tile_id: usize) -> Option<Img> {
         let tile_id = tile_id & 0x1FF;
         if let Some(v) = self.terrain_tile_cache.get(&tile_id) {
@@ -59,6 +82,12 @@ impl Res {
         value
     }
 
+    /// Decode one terrain tile straight from `GRAPH.RES` without caching it.
+    ///
+    /// The 8-byte table entry at `terrain_table_pos + tile_id*8` holds
+    /// `{u32 payload offset, u32 palette_offset}`; `0xFFFFFFFF` or an
+    /// out-of-range entry is an absent tile. The palette is
+    /// `palette_offset / 512`, clamped to the last palette.
     pub(super) fn decode_terrain_tile(&self, tile_id: usize) -> Option<Img> {
         if tile_id >= 512 {
             return None;

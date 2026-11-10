@@ -1,4 +1,30 @@
 //! Original resource decoding: GRAPH/OBJECTS archives, indexed RLE, palettes and sprite composition.
+//!
+//! `GRAPH.RES` layout as walked by `res/graph.rs::parse_graph_layout`:
+//!
+//! ```text
+//! 0x00000..0x20000  256 palettes x 512 bytes (RGB555, palette id = offset / 512)
+//! 0x20000           11 cursor blocks: [u32 tag][u32 size][16-bit color sprite]
+//! after cursors     terrain block: [u32 tag][u32 size]
+//!                     [512 x {u32 offset, u32 palette_offset}]  (0x1000 bytes)
+//!                     tile payload region
+//! after terrain     3 human base body blocks
+//! after bases       24 human equipment overlay blocks
+//! ```
+//!
+//! Every block begins with a `u32` tag and carries its byte size at `+4`, so the
+//! walk is `pos += 8 + size` (the human blocks step by the size at `+4` alone
+//! because the caller already positioned at the block start).
+//!
+//! `OBJECTS.RES`: an 8-byte header, a 512-entry `{u32 offset, u32 size}` index
+//! at `+0x08`, and the block data region based at `0x1008`.
+//!
+//! Indexed sprite payloads use `raster.rs::decode_indexed_rle`:
+//! `[u16 width][u16 height][u16 row_size[height]][rows]`, where in a row `0x00`
+//! ends it, `0x80 | n` skips `n` transparent pixels and a literal token `n` is
+//! followed by `n` palette indices. Colours are always taken from the 256-entry
+//! palette selected by `palette_offset / 512`; the palette is per block, never
+//! global.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -42,6 +68,10 @@ pub use crate::constants::game_layout::GAME_VARIANT_COUNT;
 pub use crate::constants::game_layout::GAME_VARIANT_SIZE;
 
 impl Image {
+    /// Allocate `w * h` RGBA pixels and fill them with `fill`.
+    ///
+    /// An all-zero `fill` leaves the buffer zeroed, so transparent surfaces cost
+    /// no per-pixel stores.
     pub fn new(w: usize, h: usize, fill: [u8; 4]) -> Image {
         let mut data = vec![0u8; w * h * 4];
         if fill[3] != 0 || fill[0] != 0 || fill[1] != 0 || fill[2] != 0 {
@@ -55,25 +85,48 @@ impl Image {
     }
 }
 
+/// The decoded original resource set plus its address profile and sprite caches.
+///
+/// One `Res` owns the four raw archives, the palette table and the parsed block
+/// layout; every sprite accessor decodes lazily through the caches below.
 pub struct Res {
+    /// `Game.res` bytes. Only the variant table at `GAME_VARIANTS_OFF` is read
+    /// from here: it is **not** the item-instance table of a loaded game.
     pub game: Vec<u8>,
     /// The loaded save file (`Game.0/1/2`). Item instances are read from here
     /// (offset 0, 8192 × 16), not from `game` (which is `Game.res` and only
     /// supplies the variant table).
     pub save_game: Vec<u8>,
+    /// `GRAPH.RES` bytes: palettes, cursor blocks, terrain, human blocks.
     pub graph: Vec<u8>,
+    /// `Objects.res` bytes: the object/monster block archive.
     pub objects: Vec<u8>,
+    /// The shipped executable image, whose DGROUP holds the recovered tables.
     pub exe: Vec<u8>,
+    /// VA-to-file mapping for this executable size (see `exe_profile`).
     pub profile: ExeProfile,
+    /// The 256 RGB555 palettes of `GRAPH.RES`, expanded to RGB; index
+    /// `palette_offset / 512`.
     pub palettes: Vec<[[u8; 3]; 256]>,
 
+    /// `GRAPH.RES` offset of the 512-entry terrain table
+    /// (`{u32 offset, u32 palette_offset}` records).
     pub terrain_table_pos: usize,
+    /// `GRAPH.RES` offset of the terrain tile payload region.
     pub terrain_payload_pos: usize,
+    /// Byte length of the terrain tile payload region.
     pub terrain_payload_size: usize,
 
+    /// `GRAPH.RES` offsets of the three human base body blocks.
     pub human_base_positions: Vec<usize>,
+    /// `GRAPH.RES` offsets of the 24 human equipment overlay blocks (indexed by
+    /// the item prototype's `equipped_visual`).
     pub human_overlay_positions: Vec<usize>,
+    /// `OBJECTS.RES` block index: `(offset, size)` per object id, `None` for
+    /// unused/out-of-range slots.
     pub object_entries: Vec<Option<(usize, usize)>>,
+    /// Palette offset of each of the 24 human overlay blocks, read as 24
+    /// little-endian dwords at `ExeProfile::overlay_palette_va`.
     pub overlay_palette_offsets: Vec<u32>,
 
     /// Decoded `INTR{width}R.RES` interface archive (attached at game start via
@@ -94,18 +147,32 @@ pub struct Res {
     /// Decoded `LIGHTS.RES` masks/tiles, `None` until loaded.
     pub lights: Option<LightRes>,
 
+    /// Decoded terrain tiles keyed by the 9-bit tile id (see `graph.rs`).
     terrain_tile_cache: HashMap<usize, Option<Img>>,
+    /// Decoded prop sprites keyed by `(object_id, palette_override)` together
+    /// with the sprite anchor `(gx, gy)` of frame 0.
     prop_sprite_cache: HashMap<(usize, u32), (Img, i32, i32)>,
     /// Decoded monster/object sprite image keyed by `(object_id, palette_id,
     /// frame_id)`. The per-frame screen anchor (gx/gy) is **not** cached here:
     /// it depends on `(row, direction, frame_index)` and is resolved separately
     /// in `objects.rs::monster_anchor`.
     monster_frame_cache: HashMap<(usize, u32, usize), Img>,
+    /// Composed NPC/protagonist human frames keyed by
+    /// `(base_or_variant, action, direction, frame_index, palette, battle,
+    /// weapon_slot, equipment)`, with the `(image, gx, gy, count)` result.
     npc_frame_cache: HashMap<(i32, i32, i32, i32, i32, bool, u8, [u16; 6]), (Img, i32, i32, i32)>,
+    /// Composed 160x160 character-sheet paper dolls keyed by the same pose and
+    /// loadout fields as the world frame.
     paper_doll_cache: HashMap<(usize, i32, bool, u8, usize, usize, usize, [u16; 6]), Img>,
 }
 
 impl Res {
+    /// Build a resource set from the four raw archives and parse their layouts.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `exe` is not one of the two supported executable images,
+    /// because every DGROUP table address depends on the profile.
     pub fn new(game: Vec<u8>, graph: Vec<u8>, objects: Vec<u8>, exe: Vec<u8>) -> Res {
         let profile = exe_profile(exe.len())
             .unwrap_or_else(|| panic!("unsupported executable size {}", exe.len()));
@@ -166,11 +233,18 @@ impl Res {
         (self.game, self.graph, self.objects, self.exe)
     }
 
+    /// One 48-byte `Game.res` variant record (`GAME_VARIANT_SIZE`) selected by
+    /// its table index.
+    ///
+    /// Returns an empty slice when `variant_id` points past the buffer, so
+    /// callers must bound-check the fields they read.
     pub fn variant(&self, variant_id: usize) -> &[u8] {
         let o = GAME_VARIANTS_OFF + variant_id * GAME_VARIANT_SIZE;
         &self.game[o..o + GAME_VARIANT_SIZE]
     }
 
+    /// Bytes of one `OBJECTS.RES` block by object id, or an empty slice for an
+    /// unused index or a record that runs past the archive.
     pub fn object_block(&self, object_id: usize) -> &[u8] {
         match self.object_entries.get(object_id).and_then(|x| *x) {
             Some((off, size)) if off + size <= self.objects.len() => &self.objects[off..off + size],
