@@ -282,6 +282,7 @@ fn ammo_stacks_merge_by_type_and_consume_the_incoming_instance() {
     assert_eq!(res.item_class(incoming), Some(0xFF));
 }
 
+/// Only class-12 `u16` instances stack; two identical class-9 items stay apart.
 #[test]
 fn non_ammo_does_not_stack() {
     let Some(mut res) = test_res() else {
@@ -315,6 +316,8 @@ fn synthetic_save(instances: &[(u16, u8, u8)]) -> Vec<u8> {
     save
 }
 
+/// All stats exceed every prototype requirement so auto-equip gating cannot
+/// interfere with the inventory mechanics under test.
 fn permissive_snapshot() -> OwnerSnapshot {
     OwnerSnapshot {
         hp_internal: 60_000,
@@ -327,6 +330,8 @@ fn permissive_snapshot() -> OwnerSnapshot {
     }
 }
 
+/// Auto-equip takes the first inventory item whose class equals the slot,
+/// consumes it, and neither rescans an occupied slot nor invents an item.
 #[test]
 fn auto_equip_takes_the_class_match_and_consumes_the_inventory_slot() {
     let Some(mut res) = test_res() else {
@@ -357,6 +362,8 @@ fn auto_equip_takes_the_class_match_and_consumes_the_inventory_slot() {
     assert_eq!(slots.equipment[3], 0);
 }
 
+/// The refresh fills the ammo slot, then slots `0,1,3,4,5,2`, and selects the
+/// bow / slot-0 weapon / unarmed row for `Entity+0x12`.
 #[test]
 fn refresh_equipment_fills_ammo_then_slots_and_recomputes_the_weapon_slot() {
     let Some(mut res) = test_res() else {

@@ -3,44 +3,65 @@
 //! `FUN_004392B4` reads `LIGHTS.RES` as:
 //!
 //! ```text
-//! 0x1000  -> 64 small 8x8 light sprites
-//! 0x0AC0  -> one 64x43 light mask
-//! 19 x 0x1C80 -> 19 light tiles (114x64)
+//! +0x0000  0x1000  -> 64 small 8x8 light sprites (64 bytes each)
+//! +0x1000  0x0AC0  -> one 64x43 light mask
+//! +0x1AC0  19 x 0x1C80 -> 19 light tiles (114x64 bytes each)
 //! ```
 //!
-//! The shipped file is 145472 bytes; the original loader reads 145088 and
-//! leaves the final 384 bytes unread.
+//! The shipped file is 145472 bytes; the original loader reads 145088
+//! (`LIGHTS_RES_READ`) and leaves the final 384 bytes unread.
 //!
 //! Each `LIGHTS.N` map file is exactly 64000 bytes: an 80x160 low-resolution
-//! light-index map (`0x3200`) followed by a 320x160 per-cell map (`0xC800`).
+//! light-index map (`0x3200`, row-major `row*80 + col`) followed by a 320x160
+//! per-cell map (`0xC800`, column-major `x*160 + y`, the collision-grid order).
+//! Every byte is a light index; `0` means "no light" everywhere.
 
 use super::Res;
 
+/// Bytes of `LIGHTS.RES` the original loader consumes: 64 small masks, the
+/// large mask and 19 tiles.
 pub const LIGHTS_RES_READ: usize = 0x1000 + 0x0AC0 + 19 * 0x1C80;
+/// Number of 114x64 light tiles in `LIGHTS.RES`.
 pub const LIGHT_TILE_COUNT: usize = 19;
+/// Tile width in bytes/pixels.
 pub const LIGHT_TILE_W: usize = 114;
+/// Tile height in bytes/pixels.
 pub const LIGHT_TILE_H: usize = 64;
+/// Number of 8x8 radial light sprites.
 pub const LIGHT_SMALL_COUNT: usize = 64;
+/// Small light sprite width.
 pub const LIGHT_SMALL_W: usize = 8;
+/// Small light sprite height.
 pub const LIGHT_SMALL_H: usize = 8;
+/// Wide light mask width.
 pub const LIGHT_LARGE_W: usize = 64;
+/// Wide light mask height.
 pub const LIGHT_LARGE_H: usize = 43;
+/// Size of one `LIGHTS.N` file (`low` map plus `high` map).
 pub const LIGHT_MAP_LEN: usize = 0x3200 + 0xC800;
+/// Low light-map columns (`0x3200 / 160`).
 pub const LIGHT_LOW_W: usize = 80;
+/// Low light-map rows (`160`).
 pub const LIGHT_LOW_H: usize = 160;
+/// High light-map columns (the 320-wide runtime grid).
 pub const LIGHT_HIGH_W: usize = 320;
+/// High light-map rows (the 160-tall runtime grid).
 pub const LIGHT_HIGH_H: usize = 160;
 
 /// One 8-bit light/alpha mask. The original blits these through its light
 /// palette; the remake uses the byte as an intensity multiplier.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LightMask {
+    /// Mask width in bytes/pixels.
     pub w: usize,
+    /// Mask height in bytes/pixels.
     pub h: usize,
+    /// `w * h` row-major intensity bytes.
     pub data: Vec<u8>,
 }
 
 impl LightMask {
+    /// Intensity byte at `(x, y)`, or `0` outside the mask.
     pub fn get(&self, x: usize, y: usize) -> u8 {
         if x >= self.w || y >= self.h {
             return 0;
@@ -52,12 +73,19 @@ impl LightMask {
 /// Decoded `LIGHTS.RES`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LightRes {
+    /// The 64 8x8 radial masks at file offset 0.
     pub small: Vec<LightMask>,
+    /// The single 64x43 mask at file offset `0x1000`.
     pub large: LightMask,
+    /// The 19 114x64 tiles starting at file offset `0x1AC0`.
     pub tiles: Vec<LightMask>,
 }
 
 impl LightRes {
+    /// Split the raw `LIGHTS.RES` image into its masks and tiles.
+    ///
+    /// Rejects a file shorter than [`LIGHTS_RES_READ`]; the trailing 384 bytes
+    /// of the shipped file are ignored.
     pub fn parse(data: &[u8]) -> Result<LightRes, String> {
         if data.len() < LIGHTS_RES_READ {
             return Err(format!(
@@ -99,6 +127,7 @@ impl LightRes {
         })
     }
 
+    /// Light tile by 1-based light index; index `0` means "no tile".
     pub fn tile(&self, index: u8) -> Option<&LightMask> {
         if index == 0 {
             return None;
@@ -116,6 +145,8 @@ impl Res {
         Ok(count)
     }
 
+    /// Attached light tile by 1-based light index, `None` when `LIGHTS.RES` is
+    /// not loaded or the index is unused.
     pub fn light_tile(&self, index: u8) -> Option<&LightMask> {
         self.lights.as_ref().and_then(|l| l.tile(index))
     }
@@ -124,11 +155,17 @@ impl Res {
 /// Per-map light index maps from `LIGHTS.N`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LightMap {
+    /// 80x160 low-resolution map, `0x3200` bytes, indexed `row*80 + col`.
     pub low: Vec<u8>,
+    /// 320x160 runtime-grid map, `0xC800` bytes, indexed `x*160 + y`.
     pub high: Vec<u8>,
 }
 
 impl LightMap {
+    /// Split one `LIGHTS.N` image into its low and high maps.
+    ///
+    /// Rejects anything shorter than [`LIGHT_MAP_LEN`]; bytes past it are
+    /// ignored.
     pub fn parse(data: &[u8]) -> Result<LightMap, String> {
         if data.len() < LIGHT_MAP_LEN {
             return Err(format!(
@@ -143,6 +180,7 @@ impl LightMap {
         })
     }
 
+    /// An all-zero light map (80x160 low, 320x160 high): every cell unlit.
     pub fn zero() -> LightMap {
         LightMap {
             low: vec![0; 0x3200],
@@ -159,6 +197,8 @@ impl LightMap {
         self.low[row as usize * LIGHT_LOW_W + col as usize]
     }
 
+    /// High-map light index at runtime cell `(x, y)`, column-major
+    /// (`x*160 + y`); `0` outside the 320x160 grid.
     pub fn high_at(&self, x: i32, y: i32) -> u8 {
         if x < 0 || y < 0 || x >= LIGHT_HIGH_W as i32 || y >= LIGHT_HIGH_H as i32 {
             return 0;
@@ -180,6 +220,8 @@ pub fn light_scale(value: u8) -> f32 {
 mod tests {
     use super::*;
 
+    /// The shipped `LIGHTS.RES` yields exactly 64 small masks, one 64x43 mask
+    /// and 19 114x64 tiles.
     #[test]
     fn real_lights_res_has_expected_masks() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -201,6 +243,8 @@ mod tests {
         );
     }
 
+    /// The low map occupies the first `0x3200` bytes and the high map the
+    /// remaining `0xC800`, with no overlap.
     #[test]
     fn light_map_split_is_exact() {
         let mut data = vec![0u8; LIGHT_MAP_LEN];

@@ -149,6 +149,8 @@ fn resolve_melee_uses_facing_dodge_then_mitigation() {
     assert!(!roll.lethal);
 }
 
+/// Armor wear uses `min(incoming/armor, 1)` (0 when armor is `0`); weapon
+/// wear is `incoming * 0.0001`.
 #[test]
 fn armor_and_weapon_wear_match_the_verified_scales() {
     assert!((armor_wear(90, 102, 36) - 0.031_764_705).abs() < 1e-6);
@@ -156,6 +158,7 @@ fn armor_and_weapon_wear_match_the_verified_scales() {
     assert!((weapon_wear(90) - 0.009).abs() < 1e-6);
 }
 
+/// A level-0 killer copies money + ids 2..7 and generates no random item.
 #[test]
 fn corpse_loot_copies_inventory_and_money_without_generated_items() {
     let Some((db, game)) = db_and_game() else {
@@ -179,6 +182,7 @@ fn corpse_loot_copies_inventory_and_money_without_generated_items() {
     assert_eq!(plan.existing, vec![2, 3, 4, 5, 6, 7]);
 }
 
+/// `Entity+0x52 != 0` always adds a class-9 subtype-0 stinger with that poison.
 #[test]
 fn poison_actor_always_drops_a_stinger_with_its_poison_value() {
     let Some((db, game)) = db_and_game() else {
@@ -207,6 +211,7 @@ fn poison_actor_always_drops_a_stinger_with_its_poison_value() {
     assert_eq!(stinger.durability, 1.0);
 }
 
+/// A random corpse item needs `killer_level != 0` and `rand()%101 > 85`.
 #[test]
 fn generated_loot_only_rolls_for_a_nonzero_killer_level() {
     let Some((db, game)) = db_and_game() else {
@@ -251,6 +256,7 @@ fn generated_loot_only_rolls_for_a_nonzero_killer_level() {
     assert!(found, "no seed produced a generated item");
 }
 
+/// `level_tier` steps at levels 4, 7 and 10 (`3/6/8/10`).
 #[test]
 fn level_tiers_match_fun_00417144() {
     assert_eq!(crate::combat::loot::level_tier(1), 3);
@@ -260,6 +266,7 @@ fn level_tiers_match_fun_00417144() {
     assert_eq!(crate::combat::loot::level_tier(10), 10);
 }
 
+/// Shipped bow lifetimes and `rating * rating` / `modifier * rating` damage.
 #[test]
 fn bow_lifetime_and_ranged_damage_match_the_original() {
     let Some((db, game)) = db_and_game() else {
@@ -293,6 +300,7 @@ fn bow_lifetime_and_ranged_damage_match_the_original() {
     assert_eq!(ranged_damage(&db, &modified, 0x41), (112 * 112, 0));
 }
 
+/// The muzzle/draw tables and the per-axis velocity normalization match.
 #[test]
 fn projectile_geometry_matches_the_verified_tables() {
     use crate::combat::projectile as p;
@@ -324,6 +332,7 @@ fn projectile_geometry_matches_the_verified_tables() {
     assert_eq!(proj.draw_dy, -3);
 }
 
+/// Arrows pass the same dodge and mitigation as melee; high dexterity dodges.
 #[test]
 fn projectile_dodge_and_mitigation_use_the_melee_constants() {
     let Some((db, game, hero, ant)) = heroes() else {
@@ -352,6 +361,7 @@ fn projectile_dodge_and_mitigation_use_the_melee_constants() {
     let _ = hs;
 }
 
+/// A victim's own arrow stack (instance 102) is copied onto its corpse.
 #[test]
 fn arrow_carrying_mob_inventory_reaches_the_corpse_plan() {
     let Some((db, game)) = db_and_game() else {
@@ -377,6 +387,8 @@ fn arrow_carrying_mob_inventory_reaches_the_corpse_plan() {
     );
 }
 
+/// `from_player` reads HP/strength/dexterity/endurance/poison from the
+/// authored `Entity` fields, not the derived current values.
 #[test]
 fn player_stats_view_maps_the_authored_fields() {
     let p = PlayerCharacter {

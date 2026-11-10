@@ -1,7 +1,23 @@
 //! `objects` subsystem of [`crate::res`] (split from `res.rs`).
+//!
+//! `OBJECTS.RES` is an 8-byte header followed by a 512-entry index at `+0x08`
+//! (`{u32 offset, u32 size}`, `0xFFFFFFFF` in either word = unused); block data
+//! starts at `0x1008`, and an entry's `offset` is relative to that base.
+//!
+//! Two block families share the archive:
+//!
+//! - ids `0..=29` are the large actor blocks (animation table plus sprite and
+//!   anchor data at `+0x728`/`+0x1728`, sprite payload at `+0x3228`);
+//! - ids `>= 30` are 0x100-byte prop records: frame count at `+0x0C`, anchor at
+//!   `+0xC0`, flame descriptors at `+0x1C + i*5`, palette offset at `+0x14`.
 
 use super::*;
 
+/// Parse the 512-entry `OBJECTS.RES` block index.
+///
+/// Returns `(absolute offset, size)` for occupied slots and `None` for unused
+/// or truncated ones; the absolute offset already includes the `0x1008` data
+/// base.
 pub(crate) fn parse_object_index(objects: &[u8]) -> Vec<Option<(usize, usize)>> {
     let mut entries = Vec::with_capacity(512);
     for i in 0..512 {
@@ -32,6 +48,12 @@ pub(crate) fn monster_anchor_offset(row: usize, direction: usize, fi: usize) -> 
 }
 
 impl Res {
+    /// Frame-0 prop sprite and its anchor `(image, gx, gy)`, cached by
+    /// `(object_id, palette_override)`.
+    ///
+    /// `frame` is taken modulo the record's frame count at `+0x0C`; the cache
+    /// key intentionally ignores it because the anchor and palette are the same
+    /// for every frame of a prop.
     pub fn prop_sprite(
         &mut self,
         object_id: usize,
@@ -47,6 +69,14 @@ impl Res {
         value
     }
 
+    /// Decode one prop sprite from its object block.
+    ///
+    /// The sprite id comes from the `+0x80` table entry `{u32, u32}` at
+    /// `+0x80 + frame*8 + 4`, with the payload based at `+0x100`; the palette is
+    /// `palette_override` when non-zero, otherwise the block's `+0x14` offset
+    /// (`/ 512` = palette id). The screen anchor is the `i16` pair at
+    /// `+0xC0 + frame*8 + 4/+6`. A block shorter than `0xC8` yields a 1x1
+    /// transparent placeholder.
     pub(super) fn decode_prop_sprite(
         &self,
         object_id: usize,
@@ -191,6 +221,10 @@ impl Res {
         (u16(blk, o) as usize, count)
     }
 
+    /// Game.res variant monster frame: object id at variant `+0x3F` and palette
+    /// offset at `+0x41`, resolved to the animation-0 frame.
+    ///
+    /// Returns `(image, gx, gy, frame_count)`.
     pub fn monster_frame(
         &mut self,
         variant_id: usize,

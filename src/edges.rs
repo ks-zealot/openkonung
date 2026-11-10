@@ -259,6 +259,12 @@ pub fn build_exact_edges(
     edges
 }
 
+/// Pair the `a -> b` links with their `b -> a` return link.
+///
+/// `a` and `b` are visited in sorted order so the pairing is deterministic.
+/// Each candidate pair is scored by [`Pair::coord_error`] and assigned greedily
+/// (lowest error first), skipping edges already used. Returns the pairs plus the
+/// unpaired one-way edges and the `from == to` self edges, both as edge indices.
 pub fn reciprocal_pairs(edges: &[Edge]) -> (Vec<Pair>, Vec<usize>, Vec<usize>) {
     let mut directed: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
     for (i, e) in edges.iter().enumerate() {
@@ -319,6 +325,10 @@ pub fn reciprocal_pairs(edges: &[Edge]) -> (Vec<Pair>, Vec<usize>, Vec<usize>) {
     (pairs, one_way, self_edges)
 }
 
+/// Unit vector pointing outwards for a [`Edge::side`] compass label.
+///
+/// Screen convention: `y` grows downwards, so `N` is `(0, -1)`. An unknown label
+/// (`"?"`) gives the zero vector.
 pub fn side_vec(side: &str) -> (f64, f64) {
     match side {
         "N" => (0.0, -1.0),
@@ -333,6 +343,16 @@ pub fn side_vec(side: &str) -> (f64, f64) {
     }
 }
 
+/// Lay the locations out for the debug graph view with a forced spring layout.
+///
+/// Nodes start on an ellipse in sorted location-id order and 700 relaxation
+/// iterations apply `1/d^2` pairwise repulsion, a `2.4`-unit link length, a pull
+/// that rotates each target towards its [`Edge::side`] direction ([`side_vec`])
+/// and a linearly decaying step (`0.55` down to `0.05`, forces clamped to 0.25)
+/// so the last iterations only settle. Reciprocal links use the `a -> b` side.
+/// The result is translated so the minimum corner is `(0, 0)`.
+///
+/// This is a presentation helper only; game play uses the raw transition table.
 pub fn spring_layout(
     locs: &[Location],
     edges: &[Edge],

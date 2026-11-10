@@ -24,9 +24,13 @@ pub const SLOTS: usize = 32;
 /// Cells visible in one row (`_DAT_0081D644 + 5`).
 pub const VISIBLE: usize = 5;
 
+/// Row index of the player's bag (`0x81CB24[0]`).
 pub const ROW_PLAYER: usize = 0;
+/// Row index of the player's offer (items on the table).
 pub const ROW_PLAYER_OFFER: usize = 1;
+/// Row index of the partner's bag/settlement stock.
 pub const ROW_PARTNER: usize = 2;
+/// Row index of the partner's offer.
 pub const ROW_PARTNER_OFFER: usize = 3;
 
 /// Message shown by `FUN_0042E9CC` at `0x45BD1C`.
@@ -36,14 +40,20 @@ pub const MSG_TOO_HEAVY: &str = "Превышен вес";
 /// Message at `0x45BF1C`.
 pub const MSG_NOT_ENOUGH_MONEY: &str = "Слишком мало денег!";
 
+/// Validation failure of a confirm (`FUN_004203F4(1)`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TradeError {
+    /// The merged 32-slot bag does not fit (bag + received overflows).
     TooManyItems,
+    /// The merged inventory weight exceeds `(endurance_base*1000)/3 + 10000`.
     TooHeavy,
+    /// The player side of the table cannot cover the partner side.
     NotEnoughMoney,
 }
 
 impl TradeError {
+    /// Localized hover/feedback line for the error (`FUN_0042E9CC` message ids
+    /// `0x45BD1C`/`0x45C51C`/`0x45BF1C`).
     pub fn message(self) -> &'static str {
         match self {
             TradeError::TooManyItems => MSG_TOO_MANY,
@@ -76,18 +86,26 @@ pub struct TradeOutcome {
 /// One open exchange.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TradeState {
+    /// Settlement producer role (`1..=4`) of the partner; `0` for a plain NPC
+    /// dialogue trade.
     pub role: u8,
     /// `_DAT_0081D63C`: positive selects the settlement price multiplier.
     pub role_sign: i32,
+    /// Source `Entity` index of the trading NPC.
     pub npc_entity: usize,
     /// Displayed/available player money (`_DAT_0081D694`).
     pub player_money: i32,
     /// Real `Entity+0x34` (used only for the final transfer/clamp).
     pub player_real_money: i32,
+    /// Partner money still available (`Entity+0x34` for an NPC).
     pub partner_money: i32,
+    /// Player trade skill `Entity+0x42` (drives the price difference).
     pub player_trade: u16,
+    /// Partner trade skill `Entity+0x42`.
     pub partner_trade: u16,
+    /// Four rows of 32 item ids in the `0x81CB24` order.
     pub rows: [[u16; SLOTS]; ROWS],
+    /// Per-row first visible slot (`0x81CC24[row]`).
     pub page: [usize; ROWS],
     /// Player/partner money currently on the table (`0x81D6F4/0x81D6F8`).
     pub table_money: [i32; 2],
@@ -172,6 +190,9 @@ impl TradeState {
             .sum()
     }
 
+    /// Player offer value after the `FUN_0041AE00` sell multiplier.
+    ///
+    /// `value` is the per-instance base price (`FUN_0041B2A8`).
     pub fn player_offer_value(&self, value: impl Fn(u16) -> i32) -> i32 {
         sell_value(
             self.player_offer_base(value),
@@ -181,6 +202,9 @@ impl TradeState {
         )
     }
 
+    /// Partner offer value after the `FUN_0041B5A8` buy multiplier.
+    ///
+    /// `value` is the per-instance base price (`FUN_0041B2A8`).
     pub fn partner_offer_value(&self, value: impl Fn(u16) -> i32) -> i32 {
         buy_value(
             self.partner_offer_base(value),
@@ -270,6 +294,8 @@ impl TradeState {
         true
     }
 
+    /// Item id shown at one visible cell, or `0` when the row/column is out of
+    /// range. The column is `(page + visible_col) & 0x1F`.
     pub fn visible_cell(&self, row: usize, visible_col: usize) -> u16 {
         if row >= ROWS || visible_col >= VISIBLE {
             return 0;
@@ -278,10 +304,12 @@ impl TradeState {
         self.rows[row][col]
     }
 
+    /// Non-zero entries of one row.
     fn count(values: &[u16; SLOTS]) -> usize {
         values.iter().filter(|&&id| id != 0).count()
     }
 
+    /// Non-zero entries of one row, in slot order.
     fn collected(values: &[u16; SLOTS]) -> Vec<u16> {
         values.iter().copied().filter(|&id| id != 0).collect()
     }

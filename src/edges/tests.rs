@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Build an `4 -> 32` edge with the given arrival point and trigger rectangle.
 fn edge(src: [i32; 2], dst: [i32; 2], dst2: [i32; 2]) -> Edge {
     Edge {
         rec: 0,
@@ -16,6 +17,8 @@ fn edge(src: [i32; 2], dst: [i32; 2], dst2: [i32; 2]) -> Edge {
     }
 }
 
+/// `meta`, `src`, `dst` and both coordinate pairs come from the documented
+/// `+0x02/+0x03/+0x04/+0x05/+0x07/+0x09/+0x0B/+0x0D/+0x0F` offsets.
 #[test]
 fn read_transitions_parses_canonical_fields() {
     let mut data = vec![0u8; GAME_SIZE];
@@ -47,17 +50,20 @@ fn read_transitions_parses_canonical_fields() {
     assert_eq!((t.dx2, t.dy2), (12, 5), "trigger corner 2 +0D/+0F");
 }
 
+/// A buffer that is not exactly `GAME_SIZE` yields no transitions.
 #[test]
 fn read_transitions_rejects_wrong_size() {
     assert!(read_transitions(&vec![0u8; 16]).is_empty());
 }
 
+/// The arrival point is the `+05/+07` pair, not the trigger corners.
 #[test]
 fn arrival_is_plus05_plus07() {
     let e = edge([196, 8], [12, 5], [12, 5]);
     assert_eq!(e.arrival(), [196, 8]);
 }
 
+/// Swapped trigger corners yield the same normalized `(min, max)` rectangle.
 #[test]
 fn trigger_rect_normalizes_corners() {
     // Reversed corners must yield the same normalized rectangle.
@@ -67,6 +73,8 @@ fn trigger_rect_normalizes_corners() {
     assert_eq!(b.trigger_rect(), ([12, 5], [40, 30]));
 }
 
+/// Both rectangle corners are inside the trigger, and cells one step beyond
+/// either edge are outside.
 #[test]
 fn trigger_contains_boundaries_and_outside() {
     let e = edge([0, 0], [12, 5], [14, 7]);
@@ -79,6 +87,7 @@ fn trigger_contains_boundaries_and_outside() {
     assert!(!e.trigger_contains(13, 8));
 }
 
+/// A single-cell trigger rectangle matches only its own cell.
 #[test]
 fn point_trigger_matches_only_its_cell() {
     // Most Game.N records store a single-point trigger rect.

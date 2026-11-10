@@ -43,22 +43,36 @@ pub const INITIAL_SKILLS: Skills = Skills {
 /// never recomputed into the player after start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CharacterBuild {
+    /// Selected class; becomes `Entity+0x04` at game start.
     pub class: CharacterClass,
     /// `Entity+0x38` — free parameter points (spent/refunded by the stat
     /// steppers). Presets initialize this to 0.
     pub available_xp: u32,
+    /// Which combat specialization produced the four combat skills.
     pub combat_specialization: CombatSpecialization,
+    /// Which civil specialization produced the three civil skills.
     pub civil_specialization: CivilSpecialization,
+    /// `Entity+0x40` melee mastery.
     pub melee_mastery: u16,
+    /// `Entity+0x42` trade skill.
     pub trade: u16,
+    /// `Entity+0x44` archery mastery.
     pub archery_mastery: u16,
+    /// `Entity+0x46` building skill.
     pub building: u16,
+    /// `Entity+0x48` healing skill.
     pub healing: u16,
+    /// `Entity+0x4A` identification skill.
     pub identification: u16,
+    /// `Entity+0x4C` smithing skill.
     pub smithing: u16,
+    /// `Entity+0x54` dexterity base.
     pub dexterity: u16,
+    /// `Entity+0x58` charisma base.
     pub charisma: u16,
+    /// `Entity+0x5E` strength base.
     pub strength: u16,
+    /// `Entity+0x62` endurance base.
     pub endurance: u16,
 }
 
@@ -118,6 +132,8 @@ impl CharacterBuild {
         self.apply_civil(spec);
     }
 
+    /// Apply the four combat-specialization skill values (melee/archery and the
+    /// derived building/smithing), leaving the civil fields untouched.
     pub(super) fn apply_combat(&mut self, spec: CombatSpecialization) {
         match spec {
             CombatSpecialization::Fencing => {
@@ -135,6 +151,8 @@ impl CharacterBuild {
         }
     }
 
+    /// Apply the three civil-specialization skill values (trade/healing/
+    /// identification), leaving the combat fields untouched.
     pub(super) fn apply_civil(&mut self, spec: CivilSpecialization) {
         match spec {
             CivilSpecialization::Identification => {
@@ -155,6 +173,7 @@ impl CharacterBuild {
         }
     }
 
+    /// Snapshot the seven skill fields as a [`Skills`] record.
     pub fn skills(&self) -> Skills {
         Skills {
             melee_mastery: self.melee_mastery,
@@ -177,6 +196,8 @@ impl CharacterBuild {
         }
     }
 
+    /// Add `delta` to one primary stat, clamping at `0` (a decrease below zero
+    /// is not possible through the UI).
     pub(super) fn add_stat(&mut self, stat: PrimaryStat, delta: i32) {
         let cur = self.stat_value(stat) as i32;
         let v = (cur + delta).max(0) as u16;

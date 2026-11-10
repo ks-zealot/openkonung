@@ -1,16 +1,32 @@
 //! `raster` subsystem of [`crate::res`] (split from `res.rs`).
+//!
+//! Pixel containers, the RGB555 palette expansion, the indexed row RLE used by
+//! every GRAPH/OBJECTS/INTR sprite, and the alpha-compositing primitives the
+//! renderer builds on.
 
 use super::*;
 
+/// A decoded RGBA surface. `data` is row-major `w * h * 4` bytes in `R,G,B,A`
+/// order, top-left origin.
 #[derive(Clone)]
 pub struct Image {
+    /// Surface width in pixels.
     pub w: usize,
+    /// Surface height in pixels.
     pub h: usize,
+    /// `w * h * 4` RGBA bytes, row-major.
     pub data: Vec<u8>, // RGBA
 }
 
+/// Shared, immutable image handle (`Rc` so sprite caches can hand out copies).
 pub type Img = Rc<Image>;
 
+/// Expand one 512-byte RGB555 palette block of `GRAPH.RES` to RGB.
+///
+/// Palette `palette_id` starts at `palette_id * 512`; each entry is a
+/// little-endian `u16` with bits `10..14` red, `5..9` green and `0..4` blue,
+/// scaled by `255 / 31`. An out-of-range palette returns an all-black table
+/// rather than failing.
 pub fn palette_rgb(graph: &[u8], palette_id: usize) -> [[u8; 3]; 256] {
     let mut out = [[0u8; 3]; 256];
     let base = palette_id * 512;
@@ -85,6 +101,10 @@ pub fn decode_indexed_rle(payload: &[u8], off: usize) -> (Vec<u8>, Vec<u8>, usiz
     (idx, alpha, w, h)
 }
 
+/// Expand index + alpha arrays through a palette into an RGBA surface.
+///
+/// Pixels whose alpha byte is `0` stay fully transparent (and black), which is
+/// how the RLE skip runs survive into the composited sprite.
 pub fn indexed_to_rgba(
     idx: &[u8],
     alpha: &[u8],
@@ -105,22 +125,32 @@ pub fn indexed_to_rgba(
     Image { w, h, data }
 }
 
+/// Read a little-endian `u16` at `o`. Panics when `o + 2` is out of bounds.
 pub fn u16(b: &[u8], o: usize) -> u32 {
     (b[o] as u32) | ((b[o + 1] as u32) << 8)
 }
 
+/// Read a little-endian signed `i16` at `o` (sign-extended to `i32`). Panics
+/// when `o + 2` is out of bounds.
 pub fn i16(b: &[u8], o: usize) -> i32 {
     u16(b, o) as u16 as i16 as i32
 }
 
+/// Read a little-endian `u32` at `o`. Panics when `o + 4` is out of bounds.
 pub fn u32(b: &[u8], o: usize) -> u32 {
     (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24)
 }
 
+/// Read a little-endian signed `i32` at `o`. Panics when `o + 4` is out of
+/// bounds.
 pub fn i32v(b: &[u8], o: usize) -> i32 {
     u32(b, o) as i32
 }
 
+/// Project a map cell onto the terrain screen lattice:
+/// `x = MAP_ORIGIN_X + cx*GRID_X_STEP - (cy&1)*GRID_ODD_SHIFT`, `y = cy*GRID_Y_STEP`.
+///
+/// The odd-row half-step `GRID_ODD_SHIFT` produces the staggered diamond grid.
 pub fn cell_to_screen(cx: i32, cy: i32) -> (i32, i32) {
     (
         MAP_ORIGIN_X + cx * GRID_X_STEP - (cy & 1) * GRID_ODD_SHIFT,
