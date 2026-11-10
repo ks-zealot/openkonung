@@ -21,6 +21,11 @@ pub static mut DEBUG_HUD: Option<(Vec<u8>, u32, u32)> = None;
 ///
 /// Returns 0 when the INTR archive or `GRAPH.RES` is not loaded, or the archive
 /// fails its structural validation (the error is printed to stderr).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_render_intr_hud(variant: u32) -> u32 {
     let (intr, graph) = {
@@ -95,6 +100,11 @@ pub extern "C" fn debug_hud_ptr() -> *const u8 {
 
 /// Width of the last HUD preview in pixels (640 or 800), or 0 when there is
 /// none.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_hud_w() -> u32 {
     match unsafe { &*addr_of!(DEBUG_HUD) } {
@@ -105,6 +115,11 @@ pub extern "C" fn debug_hud_w() -> u32 {
 
 /// Height of the last HUD preview in pixels (480 or 600), or 0 when there is
 /// none.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_hud_h() -> u32 {
     match unsafe { &*addr_of!(DEBUG_HUD) } {
@@ -117,6 +132,11 @@ pub extern "C" fn debug_hud_h() -> u32 {
 ///
 /// Sets all 56 entries of the discovered-location mask and drops the cached map
 /// overlay so it is recomposed. Returns 1 when a game exists.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_reveal_all_locations() -> u32 {
     match runtime_mut().game.as_deref_mut() {
@@ -132,6 +152,11 @@ pub extern "C" fn debug_reveal_all_locations() -> u32 {
 /// Diagnostic: reveal one location index (0..55).
 ///
 /// Returns 1 on success, 0 when no game is active or the index is out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_reveal_location(index: u32) -> u32 {
     match runtime_mut().game.as_deref_mut() {
@@ -148,6 +173,11 @@ pub extern "C" fn debug_reveal_location(index: u32) -> u32 {
 ///
 /// Opening also closes the quest log (the two windows are exclusive) and drops
 /// the cached overlay. Returns 1 when a game exists.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_set_map_open(open: u32) -> u32 {
     match runtime_mut().game.as_deref_mut() {
@@ -162,6 +192,11 @@ pub extern "C" fn debug_set_map_open(open: u32) -> u32 {
 }
 
 /// 1 while the world map (interface mode 5) is open, else 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_map_open() -> u32 {
     runtime_mut()
@@ -172,6 +207,11 @@ pub extern "C" fn debug_map_open() -> u32 {
 }
 
 /// Id of the loaded `Konung.N` location the game is currently on, or 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_current_map() -> u32 {
     runtime_mut()
@@ -183,6 +223,11 @@ pub extern "C" fn debug_current_map() -> u32 {
 
 /// Packed `(x << 16) | y` of the first map-local pixel in a location run;
 /// `0xFFFFFFFF` when the location has no run.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_map_location_point(index: u32) -> u32 {
     match crate::world_map::point_for_location(index as u8) {

@@ -66,6 +66,11 @@ pub extern "C" fn config_write(ptr: *mut u8, len: u32) -> u32 {
 ///
 /// The shell compares it against the revision it last persisted so a settings
 /// edit is written to `localStorage` exactly once.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn config_revision() -> u32 {
     crate::config::revision()
@@ -75,6 +80,11 @@ pub extern "C" fn config_revision() -> u32 {
 ///
 /// Index order is `video_mode, transparency, day_night, light_effects, music,
 /// shadows, sound`; any other index returns 0. Diagnostic only.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_config_word(index: u32) -> u32 {
     let c = crate::config::config();

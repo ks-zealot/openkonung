@@ -49,6 +49,11 @@ pub extern "C" fn debug_entity_state_ptr() -> *const u8 {
 }
 
 /// Byte length of the last [`debug_entity_state`] dump, or 0 when there is none.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_entity_state_len() -> u32 {
     match unsafe { &*addr_of!(DEBUG_ENTITY_STATE) } {

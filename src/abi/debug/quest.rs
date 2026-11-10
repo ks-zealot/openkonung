@@ -12,6 +12,11 @@ use super::super::*;
 /// A successful parse reports the fixed `B2` dialogue table length
 /// (`DIALOGUE_ENTRIES`), which is what the smoke compares against the shipped
 /// file rather than a count of non-empty nodes.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_quest_dialogue_count() -> u32 {
     let bytes = loader_mut().quest.clone();
@@ -33,6 +38,11 @@ pub extern "C" fn debug_quest_dialogue_count() -> u32 {
 /// Each touched slot gets the `0x80` active bit and the chosen line index in its
 /// high half. Returns the number of slots activated (0 when no game or no
 /// `QUEST_R.RES` is loaded).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_activate_journal_slots(count: u32) -> u32 {
     let Some(g) = runtime_mut().game.as_deref_mut() else {

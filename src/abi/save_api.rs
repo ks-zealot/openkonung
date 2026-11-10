@@ -27,6 +27,11 @@ static mut SAVE_REQUEST: i32 = -1;
 static mut LOAD_REQUEST: i32 = -1;
 
 /// Build, compress and retain the current game snapshot. Returns 1 on success.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn save_snapshot() -> u32 {
     let Some(game) = super::runtime_mut().game.as_deref() else {
@@ -59,6 +64,11 @@ pub extern "C" fn save_snapshot_ptr() -> *const u8 {
 }
 
 /// Length of the retained snapshot bytes.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn save_snapshot_len() -> u32 {
     unsafe { (*std::ptr::addr_of!(SAVE_BUF)).len() as u32 }
@@ -66,6 +76,11 @@ pub extern "C" fn save_snapshot_len() -> u32 {
 
 /// Fill the retained name buffer with the current location label. Returns 1
 /// when a live game exists.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn save_default_name() -> u32 {
     let Some(game) = super::runtime_mut().game.as_deref() else {
@@ -90,6 +105,11 @@ pub extern "C" fn save_default_name_ptr() -> *const u8 {
 }
 
 /// Length of the retained default save name.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn save_default_name_len() -> u32 {
     unsafe { (*std::ptr::addr_of!(NAME_BUF)).len() as u32 }
@@ -215,6 +235,11 @@ pub fn request_load_slot(slot: u32) {
 }
 
 /// Browser shell: take the pending save request (`-1` when none).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn take_save_request() -> i32 {
     unsafe {
@@ -225,6 +250,11 @@ pub extern "C" fn take_save_request() -> i32 {
 }
 
 /// Browser shell: take the pending load request (`-1` when none).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn take_load_request() -> i32 {
     unsafe {
@@ -235,6 +265,11 @@ pub extern "C" fn take_load_request() -> i32 {
 }
 
 /// Diagnostic: 1 when a live game exists.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_save_slot_named(slot: u32) -> u32 {
     save_slot_named(slot) as u32
@@ -247,6 +282,11 @@ static mut LEGACY_TEXT: Vec<u8> = Vec::new();
 
 /// Build the live game's original `KONUNG.SAn` payload. Returns its length, or
 /// 0 when no game is running.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn legacy_export_size() -> u32 {
     let Some(game) = super::runtime_mut().game.as_deref() else {
@@ -363,6 +403,11 @@ pub extern "C" fn legacy_names_text_ptr() -> *const u8 {
 }
 
 /// Byte length of the retained slot-name text, or 0 when none was parsed.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn legacy_names_text_len() -> u32 {
     unsafe { (*std::ptr::addr_of!(LEGACY_TEXT)).len() as u32 }

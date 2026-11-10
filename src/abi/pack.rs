@@ -90,6 +90,11 @@ pub extern "C" fn load_pack(ptr: *mut u8, len: u32) -> u32 {
 }
 
 /// 1 when a resource pack has populated the loader.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_pack_loaded() -> u32 {
     pack_state().is_some() as u32
@@ -109,6 +114,11 @@ pub extern "C" fn debug_pack_build_ptr() -> *const u8 {
 }
 
 /// Byte length of the pack build id, or 0 when no pack is loaded.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_pack_build_len() -> u32 {
     pack_state().map(|s| s.build.len() as u32).unwrap_or(0)
@@ -119,6 +129,11 @@ pub extern "C" fn debug_pack_build_len() -> u32 {
 // --------------------------------------------------------------------------
 
 /// Number of packed music tracks, or 0 when no pack is loaded.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn pack_music_count() -> u32 {
     pack_state().map(|s| s.music.len() as u32).unwrap_or(0)
@@ -139,6 +154,11 @@ pub extern "C" fn pack_music_ptr(i: u32) -> *const u8 {
 }
 
 /// Byte length of packed music track `i`, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn pack_music_len(i: u32) -> u32 {
     pack_state()
@@ -162,6 +182,11 @@ pub extern "C" fn pack_music_name_ptr(i: u32) -> *const u8 {
 }
 
 /// Byte length of packed music track `i`'s name, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn pack_music_name_len(i: u32) -> u32 {
     pack_state()
@@ -175,6 +200,11 @@ pub extern "C" fn pack_music_name_len(i: u32) -> u32 {
 // --------------------------------------------------------------------------
 
 /// Number of packed movies, or 0 when no pack is loaded.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn pack_video_count() -> u32 {
     pack_state().map(|s| s.videos.len() as u32).unwrap_or(0)
@@ -195,6 +225,11 @@ pub extern "C" fn pack_video_ptr(i: u32) -> *const u8 {
 }
 
 /// Byte length of packed movie `i`, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn pack_video_len(i: u32) -> u32 {
     pack_state()
@@ -218,6 +253,11 @@ pub extern "C" fn pack_video_name_ptr(i: u32) -> *const u8 {
 }
 
 /// Byte length of packed movie `i`'s name, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn pack_video_name_len(i: u32) -> u32 {
     pack_state()

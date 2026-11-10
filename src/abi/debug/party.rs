@@ -10,6 +10,11 @@ use super::super::*;
 ///
 /// This excludes the protagonist, who is held separately in
 /// `PlayableApp::player`; it counts the original reserved group 0 beyond slot 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_party_count() -> u32 {
     runtime_mut()
@@ -23,6 +28,11 @@ pub extern "C" fn debug_party_count() -> u32 {
 ///
 /// The id indexes the `Game.N` Entity table, which is how the smoke checks that
 /// the recruit opcode `0x123` (`FUN_00431820`) appended the right NPC.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_party_member_id(i: u32) -> u32 {
     runtime_mut()

@@ -312,6 +312,11 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
 ///
 /// There is no character-creation screen here, so a default Warrior build is
 /// used (same `Entity+0x04 = 5` the heroes previously carried).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn boot(hero_index: u32, variant: i32) -> u32 {
     start_game(
@@ -324,6 +329,11 @@ pub extern "C" fn boot(hero_index: u32, variant: i32) -> u32 {
 /// Start at the original frontend main menu. `width` selects the original
 /// layout/resource resolution (must be `640` or `800`; anything else is `800`).
 /// A live game, if any, is preserved. Returns 1 on success, 0 on failure.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn frontend_boot(width: u32) -> u32 {
     let res = match width {
@@ -356,6 +366,11 @@ pub extern "C" fn frontend_boot(width: u32) -> u32 {
 /// Rebuild the currently active frontend at a different original resolution
 /// (debug aid; task §23). Preserves the live game, `game_active`, and the real
 /// host size. Returns 1 on success, 0 on failure.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn frontend_set_resolution(width: u32) -> u32 {
     let res = match width {

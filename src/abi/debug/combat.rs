@@ -16,6 +16,11 @@ pub static mut DEBUG_COMBAT_STATE: Option<Vec<u8>> = None;
 /// Diagnostic: move a live object-family actor beside the protagonist, make it
 /// a weak poison carrier, put the leader in battle stance and issue the attack
 /// order. Returns `entity_id + 1` or 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_combat_setup() -> u32 {
     match runtime_mut().game.as_mut() {
@@ -57,6 +62,11 @@ pub extern "C" fn debug_combat_state() -> u32 {
 }
 
 /// Diagnostic: kill the protagonist and return 1.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_combat_kill_player() -> u32 {
     match runtime_mut().game.as_mut() {
@@ -67,6 +77,11 @@ pub extern "C" fn debug_combat_kill_player() -> u32 {
 
 /// Diagnostic: force one player -> staged-target melee resolution; returns the
 /// final damage (0 for miss/no target).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_combat_force() -> u32 {
     match runtime_mut().game.as_mut() {
@@ -77,6 +92,11 @@ pub extern "C" fn debug_combat_force() -> u32 {
 
 /// Diagnostic: teleport onto the newest corpse marker and run the original
 /// pickup. Returns 1 when a marker was present.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_combat_collect() -> u32 {
     match runtime_mut().game.as_mut() {
@@ -103,6 +123,11 @@ pub extern "C" fn debug_combat_state_ptr() -> *const u8 {
 
 /// Byte length of the last [`debug_combat_state`] report, or 0 when there is
 /// none.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_combat_state_len() -> u32 {
     match unsafe { &*addr_of!(DEBUG_COMBAT_STATE) } {
@@ -118,6 +143,11 @@ pub extern "C" fn debug_combat_state_len() -> u32 {
 /// neighbouring free cell with weak stats, sets `Group+0x1D = 1` (activity:
 /// combat) and records the actor as the staged target. Returns `entity_id + 1`
 /// (0 on failure).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_ai_setup() -> u32 {
     match runtime_mut().game.as_mut() {
@@ -132,6 +162,11 @@ pub extern "C" fn debug_ai_setup() -> u32 {
 /// Encoding: `0` leader, `1000 + slot` party member, `2000 + id` world actor,
 /// `3000 + id` world prop, `-1` for "no target" or an actor that is not in the
 /// current location's population.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_world_target(entity_id: u32) -> i32 {
     match runtime_mut().game.as_deref() {
@@ -141,6 +176,11 @@ pub extern "C" fn debug_world_target(entity_id: u32) -> i32 {
 }
 
 /// `Group+0x1D` activity byte of group `group_id`, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_group_activity(group_id: u32) -> u32 {
     match runtime_mut().game.as_deref() {
@@ -151,6 +191,11 @@ pub extern "C" fn debug_group_activity(group_id: u32) -> u32 {
 
 /// Diagnostic: overwrite `Group+0x1D` of group `group_id`. Returns 1 when the
 /// group exists, 0 otherwise.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_set_group_activity(group_id: u32, activity: u32) -> u32 {
     match runtime_mut().game.as_mut() {
@@ -161,6 +206,11 @@ pub extern "C" fn debug_set_group_activity(group_id: u32, activity: u32) -> u32 
 
 /// Enumerating `Group` index of runtime actor `entity_id` on the current map, or
 /// -1 when the actor is not populated.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_world_group(entity_id: u32) -> i32 {
     match runtime_mut().game.as_deref() {

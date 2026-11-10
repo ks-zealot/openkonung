@@ -13,12 +13,22 @@ use super::super::*;
 // --------------------------------------------------------------------------
 
 /// Number of queued overlay strings for the active frontend/game.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn text_count() -> u32 {
     texts().map(|t| t.len() as u32).unwrap_or(0)
 }
 
 /// Logical screen x of string `i`, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn text_x(i: u32) -> i32 {
     texts()
@@ -28,6 +38,11 @@ pub extern "C" fn text_x(i: u32) -> i32 {
 }
 
 /// Logical screen y of string `i`, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn text_y(i: u32) -> i32 {
     texts()
@@ -38,6 +53,11 @@ pub extern "C" fn text_y(i: u32) -> i32 {
 
 /// Packed `0xRRGGBB` colour of string `i`, or white (`0xFFFFFF`) when out of
 /// range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn text_rgb(i: u32) -> u32 {
     texts()
@@ -48,6 +68,11 @@ pub extern "C" fn text_rgb(i: u32) -> u32 {
 
 /// Font scale factor of string `i` (1.0 = original size), or 1.0 when out of
 /// range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn text_scale(i: u32) -> f32 {
     texts()
@@ -72,6 +97,11 @@ pub extern "C" fn text_ptr(i: u32) -> *const u8 {
 }
 
 /// Byte length of string `i`, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn text_len(i: u32) -> u32 {
     texts()

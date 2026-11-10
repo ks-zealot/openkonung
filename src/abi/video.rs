@@ -38,6 +38,11 @@ fn current_name() -> Option<&'static [u8]> {
 
 /// Queue the startup `POSTER.FLM` intro once per runtime. Returns 1 when a
 /// movie was queued, 0 when already played / no frontend exists.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn start_intro_video() -> u32 {
     if video::intro_played() || video::is_pending() {
@@ -52,6 +57,11 @@ pub extern "C" fn start_intro_video() -> u32 {
 }
 
 /// 1 while a movie is waiting to be played/finished.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn video_pending() -> u32 {
     video::is_pending() as u32
@@ -72,6 +82,11 @@ pub extern "C" fn video_name_ptr() -> *const u8 {
 }
 
 /// Byte length of the pending clip name, or 0 when no clip is pending.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn video_name_len() -> u32 {
     current_name().map(|b| b.len() as u32).unwrap_or(0)
@@ -82,6 +97,11 @@ pub extern "C" fn video_name_len() -> u32 {
 ///
 /// Returns 1 when a pending clip was consumed, 0 when there was nothing to
 /// finish.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn video_finish() -> u32 {
     let Some(done) = video::finish() else {
@@ -143,12 +163,22 @@ fn apply_after(after: VideoAfter) {
 // --------------------------------------------------------------------------
 
 /// Same as [`video_pending`] (diagnostic alias used by `tools/video_smoke.mjs`).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_video_pending() -> u32 {
     video_pending()
 }
 
 /// Same as [`video_name_len`] (diagnostic alias).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_video_name_len() -> u32 {
     video_name_len()
@@ -165,6 +195,10 @@ pub extern "C" fn debug_video_name_ptr() -> *const u8 {
 }
 
 /// Diagnostic: forget the pending clip and the "intro already played" flag.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary and there is no return value.
 #[no_mangle]
 pub extern "C" fn debug_video_reset() {
     video::reset();
@@ -175,6 +209,11 @@ pub extern "C" fn debug_video_reset() {
 ///
 /// Returns 1 when the clip was queued, 0 for an unknown selector or when another
 /// clip is already pending.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_queue_video(kind: u32, loc: u32, after: u32) -> u32 {
     let clip = match kind {

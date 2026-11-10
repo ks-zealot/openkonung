@@ -16,6 +16,10 @@ use super::*;
 /// 60 ms logic tick (`ORIGINAL_FRAME_MS`, ~16.67 Hz), so the original animation
 /// cadence is preserved on any refresh rate. The call is a no-op while a movie
 /// is pending ([`crate::video::is_pending`]): the shell owns the clock then.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary and there is no return value.
 #[no_mangle]
 pub extern "C" fn step(dt: f32) {
     if crate::video::is_pending() {
@@ -64,6 +68,11 @@ pub extern "C" fn frame_ptr() -> *const u8 {
 
 /// Framebuffer width in pixels: the frontend's logical width (640 or 800) or
 /// the fixed 800 of the live game.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn frame_w() -> u32 {
     let rt = runtime_mut();
@@ -79,6 +88,11 @@ pub extern "C" fn frame_w() -> u32 {
 
 /// Framebuffer height in pixels: the frontend's logical height (480 or 600) or
 /// the fixed 600 of the live game.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn frame_h() -> u32 {
     let rt = runtime_mut();
@@ -93,6 +107,11 @@ pub extern "C" fn frame_h() -> u32 {
 }
 
 /// 1 when the frontend requested a quit (`FrontendCommand::Quit`), else 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn should_quit() -> u32 {
     runtime_mut().quit as u32
@@ -107,6 +126,10 @@ pub extern "C" fn should_quit() -> u32 {
 /// The original game scales its fixed 640x480/800x600 layout to the window; the
 /// remake keeps the logical frame and only needs the host size for pointer
 /// mapping, so a resize never changes the framebuffer dimensions.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary and there is no return value.
 #[no_mangle]
 pub extern "C" fn on_resize(w: u32, h: u32) {
     let rt = runtime_mut();
@@ -122,6 +145,11 @@ pub extern "C" fn on_resize(w: u32, h: u32) {
 
 /// Host (canvas backing-store) size as recorded by the last `on_resize`,
 /// independent of the active mode.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn host_w() -> u32 {
     runtime_mut().host_w.max(0) as u32
@@ -129,6 +157,11 @@ pub extern "C" fn host_w() -> u32 {
 
 /// Host (canvas backing-store) height as recorded by the last `on_resize`;
 /// negative values are clamped to 0 (`0` = the host has not reported one yet).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn host_h() -> u32 {
     runtime_mut().host_h.max(0) as u32

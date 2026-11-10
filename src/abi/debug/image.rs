@@ -33,6 +33,11 @@ pub static mut DEBUG_IMAGE_H: u32 = 0;
 /// `kind` is one of the `KIND_MENU640`/`MENU800`/`NEWH640`/`NEWH800`/
 /// `SAVE640`/`SAVE800` selectors; any other value, an unloaded archive, a parse
 /// error or an out-of-range index returns 0 and leaves the buffer untouched.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_decode_menu_image(kind: u32, index: u32) -> u32 {
     let bytes: Vec<u8> = {
@@ -83,12 +88,22 @@ pub extern "C" fn debug_image_ptr() -> *const u8 {
 }
 
 /// Width of the last decoded image in pixels, or 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_image_w() -> u32 {
     unsafe { DEBUG_IMAGE_W }
 }
 
 /// Height of the last decoded image in pixels, or 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_image_h() -> u32 {
     unsafe { DEBUG_IMAGE_H }
@@ -97,6 +112,11 @@ pub extern "C" fn debug_image_h() -> u32 {
 /// Decode INTR interface sprite `index` from `variant` (`640` or anything else
 /// = 800) into the shared debug RGBA buffer and return 1 on success. Used by
 /// `tools/intr_png.mjs`; not used at runtime.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_decode_intr_image(variant: u32, index: u32) -> u32 {
     let (bytes, graph) = {
@@ -135,6 +155,11 @@ pub extern "C" fn debug_decode_intr_image(variant: u32, index: u32) -> u32 {
 // --------------------------------------------------------------------------
 
 /// Number of original cursor frames (11). Diagnostic only.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_cursor_count() -> u32 {
     res::CURSOR_COUNT as u32
@@ -143,6 +168,11 @@ pub extern "C" fn debug_cursor_count() -> u32 {
 /// Decode original mouse-cursor frame `i` (0..11) from the loaded `GRAPH.RES`
 /// into the shared debug RGBA buffer and return 1 on success. Used by
 /// `tools/cursor_png.mjs`; not used at runtime.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_decode_cursor_image(i: u32) -> u32 {
     let graph = loader_mut().graph.clone();

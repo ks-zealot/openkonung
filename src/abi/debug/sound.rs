@@ -41,6 +41,11 @@ fn ensure_sound_archive() -> bool {
 }
 
 /// Number of occupied clips in the loaded `SOUNDS.RES`, or 0. Diagnostic only.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_sound_count() -> u32 {
     if ensure_sound_archive() {
@@ -72,6 +77,11 @@ pub extern "C" fn debug_sound_clip_ptr(id: u32) -> *const u8 {
 }
 
 /// Byte length of clip `id`, or 0.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_sound_clip_len(id: u32) -> u32 {
     if !ensure_sound_archive() {
@@ -90,6 +100,11 @@ pub extern "C" fn debug_sound_clip_len(id: u32) -> u32 {
 ///
 /// `id` is ignored: the primary DirectSound buffer runs at one fixed rate, and
 /// per-clip pitch variation is applied through [`sound_rate`] instead.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_sound_rate(_id: u32) -> u32 {
     crate::sound::SAMPLE_RATES[0]
@@ -103,6 +118,11 @@ pub extern "C" fn debug_sound_rate(_id: u32) -> u32 {
 ///
 /// The queue holds exactly one frame: it is cleared at the start of every
 /// [`step`] and drained by the shell before the next one.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn sound_count() -> u32 {
     let rt = runtime_mut();
@@ -114,6 +134,11 @@ pub extern "C" fn sound_count() -> u32 {
 }
 
 /// Requested sound id `i` from the active frontend/game, or 0 when out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn sound_id(i: u32) -> u32 {
     let rt = runtime_mut();
@@ -138,6 +163,11 @@ pub extern "C" fn sound_id(i: u32) -> u32 {
 /// The value is `round_ties_even((source_row - player_row) * 62.5)` from
 /// `src/sound/position.rs` (`FUN_00438DC4`); `www/app.js` maps it onto a
 /// `StereoPannerNode`.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn sound_pan(i: u32) -> i32 {
     let rt = runtime_mut();
@@ -153,6 +183,11 @@ pub extern "C" fn sound_pan(i: u32) -> i32 {
 }
 
 /// Volume in hundredths of a decibel (`0` full, `-10000` silent) of sound `i`.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn sound_volume(i: u32) -> i32 {
     let rt = runtime_mut();
@@ -168,6 +203,11 @@ pub extern "C" fn sound_volume(i: u32) -> i32 {
 }
 
 /// Secondary-buffer sample rate of sound `i` (22050/19050/25050).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn sound_rate(i: u32) -> u32 {
     let rt = runtime_mut();

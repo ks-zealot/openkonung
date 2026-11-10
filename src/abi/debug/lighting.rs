@@ -8,6 +8,11 @@ use crate::*;
 /// The spans are the per-scanline run lists the original keeps in
 /// `DAT_004C6B50` and darkens in `FUN_0043D247`; the smoke uses them to prove
 /// the shadow pass covered the expected pixels.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_shadow_span(index: u32, field: u32) -> i32 {
     runtime_mut()
@@ -19,6 +24,11 @@ pub extern "C" fn debug_shadow_span(index: u32, field: u32) -> i32 {
 
 /// Number of spans emitted by the last shadow pass (`FUN_0043C040`). Zero when
 /// the `shadows` config word is off or nothing on screen casts a shadow.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_shadow_spans() -> u32 {
     runtime_mut()
@@ -32,6 +42,10 @@ pub extern "C" fn debug_shadow_spans() -> u32 {
 ///
 /// The world frame drives the ambient lighting curve
 /// (`frame % 0x5460`), so the smoke can jump to any time of day.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary and there is no return value.
 #[no_mangle]
 pub extern "C" fn debug_set_world_frame(lo: u32, hi: u32) {
     if let Some(g) = runtime_mut().game.as_deref_mut() {
@@ -40,6 +54,11 @@ pub extern "C" fn debug_set_world_frame(lo: u32, hi: u32) {
 }
 
 /// World frame low 32 bits (diagnostics); the high half is not exposed.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_world_frame_lo() -> u32 {
     runtime_mut()
@@ -50,6 +69,11 @@ pub extern "C" fn debug_world_frame_lo() -> u32 {
 }
 
 /// Number of attached `LIGHTS.N` maps.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the status or
+/// quantity described above, never an address.
 #[no_mangle]
 pub extern "C" fn debug_light_map_count() -> u32 {
     runtime_mut()
