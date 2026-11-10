@@ -7,10 +7,10 @@
 
 use super::super::*;
 
-/// Shared one-frame text buffer for [`debug_combat_state`].
+/// Retained UTF-8 report of the last [`debug_combat_state`] call.
 ///
-/// `None` until the first report; the bytes are UTF-8 and stay valid until the
-/// next `debug_combat_state` call overwrites them.
+/// `None` until the first report; the bytes stay valid until the next
+/// `debug_combat_state` call replaces them.
 pub static mut DEBUG_COMBAT_STATE: Option<Vec<u8>> = None;
 
 /// Diagnostic: move a live object-family actor beside the protagonist, make it

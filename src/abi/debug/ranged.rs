@@ -57,8 +57,9 @@ pub extern "C" fn debug_prop_setup(prop_index: u32) -> u32 {
     }
 }
 
-/// Diagnostic: format the ranged/prop state (ammo count, bow durability,
-/// projectile hits, settlement target state and flags) into the shared buffer.
+/// Diagnostic: format the ranged/prop state (live projectiles, ammo slot and
+/// quantity, bow durability, attack frame, target HP/death, and the settlement
+/// target state/flags) into the shared buffer.
 ///
 /// # Memory contract
 ///

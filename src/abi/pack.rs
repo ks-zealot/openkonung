@@ -22,7 +22,8 @@ use crate::resource_pack::{MusicBlob, ResourcePack, VideoBlob, PACK_ENTRY};
 pub struct PackState {
     /// Pack content build id (UTF-8 bytes; FNV of resource names + bytes).
     pub build: Vec<u8>,
-    /// Original Ogg background-music tracks, in pack order.
+    /// Original Ogg background-music tracks, in pack order (the order the
+    /// packer recorded them; ids are the track numbers).
     pub music: Vec<MusicBlob>,
     /// Transcoded H.264/AAC MP4 movies, in pack order.
     pub videos: Vec<VideoBlob>,

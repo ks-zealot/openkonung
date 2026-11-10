@@ -1,11 +1,10 @@
 //! Text overlay queue.
 //!
-//! The game/frontend does not rasterise its own UI strings for the browser in
-//! every case: some labels are handed to the shell as positioned `TextItem`
-//! entries so it can render them with a real font. [`text_count`] reports the
-//! queue length; the remaining accessors read item `i`. All of them return
-//! neutral defaults for an out-of-range index, so the shell can iterate without
-//! a bounds check of its own.
+//! Some frontend labels and in-game messages are not rasterised in wasm; the
+//! game/frontend pushes positioned `TextItem` entries and the shell renders them
+//! with a real font (`14 * scale` px). [`text_count`] reports the queue length;
+//! the remaining accessors read item `i`. All of them return neutral defaults for
+//! an out-of-range index, so the shell can iterate without a bounds check.
 
 use super::super::*;
 
