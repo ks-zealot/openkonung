@@ -1,0 +1,30 @@
+wing: openkonung
+rooms:
+- name: docs
+  description: Documentation from docs/
+  keywords:
+  - documentation
+  - docs
+  - reverse-engineering
+- name: src
+  description: Rust/wasm source from src/
+  keywords:
+  - rust
+  - wasm
+  - source
+  - remake
+- name: tools
+  description: Build, test and analysis scripts from tools/
+  keywords:
+  - tools
+  - scripts
+  - tests
+- name: www
+  description: Browser shell from www/
+  keywords:
+  - web
+  - browser
+  - shell
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []

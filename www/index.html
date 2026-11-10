@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>OpenKonung — playable prototype</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: Consolas, "Courier New", monospace;
+    color: #dfe;
+  }
+  #game {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: default;
+    image-rendering: pixelated;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.86);
+    z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  #status {
+    max-width: 720px;
+    padding: 24px 32px;
+    border: 1px solid #2b3a33;
+    border-radius: 8px;
+    background: #0b1210;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    font-size: 14px;
+  }
+  #status .err { color: #ff8a8a; }
+  #status .ok { color: #9ef0b6; }
+  #status h1 { font-size: 18px; margin: 0 0 10px; color: #cfe9d8; }
+  #video-overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    z-index: 20;
+  }
+  #video-overlay.show { display: flex; }
+  #movie {
+    max-width: 100%;
+    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+  #video-skip {
+    position: fixed;
+    right: 18px;
+    top: 14px;
+    z-index: 21;
+    padding: 6px 10px;
+    border: 1px solid #46554c;
+    border-radius: 4px;
+    background: rgba(8, 14, 11, 0.78);
+    color: #dfe;
+    font: 13px Consolas, "Courier New", monospace;
+    cursor: pointer;
+  }
+  #video-skip:hover { border-color: #9ef0b6; color: #fff; }
+  #video-hint {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 16px;
+    z-index: 21;
+    text-align: center;
+    color: #a8bdb0;
+    font: 13px Consolas, "Courier New", monospace;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <canvas id="game" width="800" height="600"></canvas>
+  <div id="overlay">
+    <div id="status"><h1>OpenKonung</h1><span id="msg">loading…</span><div id="build" style="margin-top:8px;color:#6f8">build: …</div></div>
+  </div>
+  <div id="video-overlay">
+    <video id="movie" playsinline preload="auto"></video>
+    <button id="video-skip" type="button">Skip ▸</button>
+    <div id="video-hint">Click to play · Esc or Skip to continue</div>
+  </div>
+  <script>
+    // Cache-coherent bootstrap: fetch the manifest with no-store, read its
+    // content build id, then load app.js under that id so a stale JS/WASM/
+    // manifest combination cannot be served together.
+    (async () => {
+      let build = 'dev';
+      try {
+        const r = await fetch('manifest.json', { cache: 'no-store' });
+        const m = await r.json();
+        build = m.build || 'dev';
+      } catch (e) {
+        console.warn('manifest fetch failed during bootstrap', e);
+      }
+      const el = document.getElementById('build');
+      if (el) el.textContent = 'build: ' + build;
+      console.log('[OpenKonung] build id', build);
+      window.__OPENKONUNG_BUILD__ = build;
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = 'app.js?v=' + encodeURIComponent(build);
+      s.onerror = () => {
+        // Fallback: still try to load the shell.
+        const s2 = document.createElement('script');
+        s2.type = 'module';
+        s2.src = 'app.js';
+        document.body.appendChild(s2);
+      };
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
