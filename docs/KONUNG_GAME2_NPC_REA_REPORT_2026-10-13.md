@@ -44,9 +44,9 @@ file offset `0x80`. The hashes were checked again after analysis and matched.
 
 Evidence files:
 
-- [Main REA evidence](KONUNG_GAME2_NPC_REA_EVIDENCE_2026-10-13.json):
+- [Main REA evidence](evidence/KONUNG_GAME2_NPC_REA_EVIDENCE_2026-10-13.json):
   36 complete retained records exported by REA (21,985,175 bytes).
-- [Population timer evidence](KONUNG_GAME2_NPC_TIMER_REA_EVIDENCE_2026-10-13.json):
+- [Population timer evidence](evidence/KONUNG_GAME2_NPC_TIMER_REA_EVIDENCE_2026-10-13.json):
   independently retained inline REA records from the parallel read-only timer trace.
   This is a saved collection of exact tool responses, not a REA export-format bundle.
 

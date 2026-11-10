@@ -13,13 +13,8 @@ try {
     if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
     if (-not $py) { throw 'python not found (needed for asset discovery and manifest generation)' }
 
-    # 1) Locate the original install files (repo root -> assets/ -> parent) or an
-    #    existing resource pack. The resolver prints one line per candidate and
-    #    returns the raw install directory (empty when only a pack is available).
-    $assetArgs = @((Join-Path $root 'tools\assets.py'), '--repo-root', $root, '--print-base')
-    if ($Assets) { $assetArgs += @('--assets', $Assets) }
-    $base = (& $py.Source @assetArgs | Select-Object -Last 1)
-    if ($LASTEXITCODE -ne 0) { throw 'asset discovery failed (see [assets] log above)' }
+    # 1) Resource pack. If one already exists, reuse it and never scan or read
+    #    the original .res/.exe files. -Repack forces a fresh scan + archive.
     $pack = Join-Path $root 'www\konung.zip.pack'
     $legacyPack = Join-Path $root 'www\openkonung.pack.zip'
 
@@ -31,8 +26,16 @@ try {
     $havePack = Test-Path -LiteralPath $pack
     $needPack = $Repack -or (-not $havePack)
 
-    if ($needPack -and -not $base) {
-        throw 'no original files found; cannot build the resource pack. Put them in web/assets/ or web/ (or pass -Assets <dir>).'
+    $base = ""
+    if ($needPack) {
+        # Locate the original install files (repo root -> assets/ -> parent).
+        $assetArgs = @((Join-Path $root 'tools\assets.py'), '--repo-root', $root, '--print-base')
+        if ($Assets) { $assetArgs += @('--assets', $Assets) }
+        $base = (& $py.Source @assetArgs | Select-Object -Last 1)
+        if ($LASTEXITCODE -ne 0) { throw 'asset discovery failed (see [assets] log above)' }
+        if (-not $base) {
+            throw 'no original files found; cannot build the resource pack. Put them in assets/ or the repository root (or pass -Assets <dir>).'
+        }
     }
 
     Write-Host 'Building wasm (release)...'

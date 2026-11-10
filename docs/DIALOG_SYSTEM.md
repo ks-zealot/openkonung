@@ -165,7 +165,7 @@ For `op >= 0x112`, `FUN_0043159C` does `CALL [op*4 + 0x465BD4]` — an **op-inde
 function-pointer table; entries below `0x112` are unused filler, so the real table
 begins at `0x46601C`. Shipped dialogues use `op 0x112..0x16E` (93 handlers),
 catalogued with handler VA, kind (predicate/action) and effect in
-[`web/src/script.rs`](web/src/script.rs) (const `OPS`); the full human-readable
+[`web/src/script.rs`](../src/script.rs) (const `OPS`); the full human-readable
 reference (including the low-opcode families `0x00..0x111`) is
 [`QUEST_OPCODES.md`](QUEST_OPCODES.md).
 

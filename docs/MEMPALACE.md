@@ -24,7 +24,7 @@ mempalace-mcp --help
 ## 2. Initialize from the repository
 
 ```bash
-cd web
+# from the repository root
 mempalace init . --palace ~/.mempalace/konung-research --yes --auto-mine --no-llm
 ```
 

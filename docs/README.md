@@ -87,3 +87,4 @@ markdown file lives in this folder.
 | [`MEMPALACE_DUMP.md`](MEMPALACE_DUMP.md) | Full palace dump. |
 | [`MEMPALACE_COVERAGE.md`](MEMPALACE_COVERAGE.md) | Coverage report. |
 | [`mempalace_dump.jsonl`](mempalace_dump.jsonl) | Machine-readable dump. |
+| [`evidence/`](evidence/) | Raw REA evidence bundles referenced by the NPC report. |

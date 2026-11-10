@@ -7,9 +7,9 @@
 # beforehand.
 #
 # Usage:
-#   bash web/setup.sh
-#   bash web/setup.sh --mem-palace
-#   bash web/serve.sh          # then open http://localhost:8000/
+#   bash setup.sh
+#   bash setup.sh --mem-palace
+#   bash serve.sh          # then open http://localhost:8000/
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,6 +68,7 @@ bash "$ROOT/build.sh"
 
 if [ "$MEM_PALACE" -eq 1 ]; then
     echo "==> Initializing MemPalace from the repository docs..."
+    cd "$ROOT"
     if command -v mempalace >/dev/null 2>&1; then
         mempalace init . --palace "$HOME/.mempalace/konung-research" --yes --auto-mine --no-llm
     else
@@ -78,5 +79,5 @@ fi
 
 echo
 echo "Done. Start the game with:"
-echo "    bash web/serve.sh"
+echo "    bash serve.sh"
 echo "Then open http://localhost:8000/"

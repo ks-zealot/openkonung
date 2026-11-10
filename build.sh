@@ -2,7 +2,7 @@
 # Build the OpenKonung wasm module, the single-file resource pack
 # (www/konung.zip.pack) and www/manifest.json.
 #
-# First build: reads the original files from web/, web/assets/ or web/..
+# First build: reads the original files from ./, assets/ or ../
 # Later builds: reuse www/konung.zip.pack and never touch .res/.exe.
 # Pass --repack to rebuild the archive after changing the original assets.
 set -euo pipefail
@@ -33,7 +33,7 @@ if ! command -v cargo >/dev/null 2>&1 && [ -f "$HOME/.cargo/env" ]; then
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then
-    echo "error: cargo not found. Run web/setup.sh first." >&2
+    echo "error: cargo not found. Run setup.sh first." >&2
     exit 1
 fi
 
@@ -50,11 +50,6 @@ if command -v rustup >/dev/null 2>&1; then
     rustup target add wasm32-unknown-unknown >/dev/null 2>&1 || true
 fi
 
-ASSET_ARGS=(--repo-root "$ROOT" --print-base)
-if [ -n "$ASSETS" ]; then
-    ASSET_ARGS+=(--assets "$ASSETS")
-fi
-BASE="$("$PYTHON" "$ROOT/tools/assets.py" "${ASSET_ARGS[@]}" | tail -n 1)"
 PACK="$ROOT/www/konung.zip.pack"
 LEGACY="$ROOT/www/openkonung.pack.zip"
 
@@ -68,10 +63,19 @@ NEED_PACK=0
 if [ "$REPACK" -eq 1 ] || [ ! -f "$PACK" ]; then
     NEED_PACK=1
 fi
-if [ "$NEED_PACK" -eq 1 ] && [ -z "$BASE" ]; then
-    echo "error: no original files found; cannot build the resource pack." >&2
-    echo "       Put them in web/assets/ or web/ (or pass --assets <dir>)." >&2
-    exit 2
+
+BASE=""
+if [ "$NEED_PACK" -eq 1 ]; then
+    ASSET_ARGS=(--repo-root "$ROOT" --print-base)
+    if [ -n "$ASSETS" ]; then
+        ASSET_ARGS+=(--assets "$ASSETS")
+    fi
+    BASE="$("$PYTHON" "$ROOT/tools/assets.py" "${ASSET_ARGS[@]}" | tail -n 1)"
+    if [ -z "$BASE" ]; then
+        echo "error: no original files found; cannot build the resource pack." >&2
+        echo "       Put them in assets/ or ./ (or pass --assets <dir>)." >&2
+        exit 2
+    fi
 fi
 
 echo "Building wasm (release)..."
@@ -102,4 +106,4 @@ else
     "$PYTHON" "$ROOT/tools/make_manifest.py" --from-pack "$PACK" --out "$ROOT/www/manifest.json"
 fi
 
-echo "Built web/www/openkonung.wasm, web/www/konung.zip.pack and web/www/manifest.json"
+echo "Built www/openkonung.wasm, www/konung.zip.pack and www/manifest.json"

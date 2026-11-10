@@ -7,7 +7,7 @@ shovel is a *carried* requirement for collecting it.
 ## Data — the "dig table"
 
 `Game.N +0x21900`, 500 × `0x40` (the same table the remake loads as
-[`WorldObjectSource`](../web/src/world_objects.rs)):
+[`WorldObjectSource`](../src/world_objects.rs)):
 
 | offset | type | meaning |
 |---|---|---|

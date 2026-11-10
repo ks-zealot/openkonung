@@ -8,24 +8,28 @@ or the directory above the repository (`Game.res`, `GRAPH.RES`, `Objects.res`,
 `www/konung.zip.pack`; later builds reuse it without touching any `.res`/`.exe`.
 
 - `src/*.rs` — the canonical Rust/wasm browser port. **Active development.**
-- Root `*.py` — legacy Python decoders/viewers kept as reference + parity oracles.
+- The legacy Python decoders/viewers in the original install directory are kept
+  as reference + parity oracles.
 
 `KONUNG_SOURCE_OF_TRUTH.md` is the binding implementation contract. When code and
 the document disagree, re-check the original binaries, then fix the code; do not
 invent coordinate scaling, clamping, fallbacks, or reinterpretations. Follow its
 evidence hierarchy and answer its §14 "CHECK" list in your work log.
 
-`README.md` and the `docs/*_FIX*.md` / `docs/PLAYABLE_V*.md` notes are
-chronological and often stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code
-over them.
+The `docs/*_FIX*.md` / `docs/PLAYABLE_V*.md` notes are chronological and often
+stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
 
 ## Commands (run from the repository root)
+- From-scratch bootstrap (toolchain check + build): `.\setup.ps1` (Windows) or
+  `bash setup.sh`.
 - Build wasm + resource pack + manifest: `.\build.ps1` (Windows) or `bash build.sh`.
   Requires the `wasm32-unknown-unknown` target. Outputs `www/openkonung.wasm`,
   `www/konung.zip.pack` and `www/manifest.json`. The pack is written by the separate native target
   `cargo run --release --example pack -- --base <install-dir>
   --manifest www/manifest.raw.json --out www/konung.zip.pack` (see
-  “Packed resources” below).
+  “Packed resources” below). The first build reads the original files from
+  `assets/`, the repository root or the parent directory; later builds reuse
+  the pack and never read `.res`/`.exe` (pass `-Repack`/`--repack` to rebuild).
 - Typecheck all targets incl. the `dump` and `pack` examples:
   `cargo check --all-targets`
 - Unit tests: `cargo test` (dev profile).
@@ -75,8 +79,8 @@ over them.
   uses the runtime decoder via the wasm ABI): `node tools/menu_png.mjs`
   (writes `tools/menu_dump/`).
 - Run in browser: `.\serve.ps1` or `bash serve.sh` -> http://localhost:8000/
-  (`server.py` serves `www` at `/` and the original game assets from the
-  install dir, so `manifest.base = "/"` resolves directly to the game files.)
+  (`server.py` serves `www` at `/` and auto-detects the original install dir for
+  the `?nopack=1` fallback; the normal page loads only `konung.zip.pack`.)
 - Rust↔Python parity: `python tools/parity.py [base] [profile] [variant]`
   vs `cargo run --release --example dump -- <base> [profile] [variant]`.
   Both print FNV hashes and must match byte-for-byte.
@@ -91,7 +95,10 @@ over them.
   produced by the native-only `examples/pack.rs` target; `bundle.bin` is a
   `bincode`-serialized `resource_pack::ResourcePack` (raw original bytes tagged
   with the existing `KIND_*` selectors + Game.N profiles + 43 Konung.N maps +
-  the 10 Ogg tracks), and `pack.json` is a human-readable index. The wasm ABI
+  the 10 Ogg tracks), `pack.json` is a human-readable index, and
+  `manifest.raw.json` is the embedded per-file manifest used by
+  `make_manifest.py --from-pack` (so later builds never rescan `.res`/`.exe`).
+  The wasm ABI
   `load_pack(ptr,len)` (`abi/pack.rs`) finds/inflates `bundle.bin` with a minimal
   ZIP reader (`flate2`, CRC-verified, no ZIP64), deserializes it, validates the
   required resources, and atomically fills the same `Loader` used by

@@ -24,17 +24,17 @@ rustup target add wasm32-unknown-unknown
 
 The build probes three directories, in order:
 
-1. the repository root (`web/`)
-2. `web/assets/` — **recommended**
-3. the directory above the repository (`web/..`)
+1. the repository root (`./`)
+2. `assets/` inside the repository — **recommended**
+3. the directory above the repository (`../`)
 
 The first directory that contains every required file is used. The build prints
 one line per candidate and a final error with the missing names if none match.
 
 ```text
-[assets] C:\...\web -> missing: konung.res, GRAPH.RES
-[assets] C:\...\web\assets -> OK (8/8 required files)
-[assets] using raw install: C:\...\web\assets
+[assets] C:\...\openkonung -> missing: konung.res, GRAPH.RES
+[assets] C:\...\openkonung\assets -> OK (8/8 required files)
+[assets] using raw install: C:\...\openkonung\assets
 ```
 
 ### Required files
@@ -81,7 +81,7 @@ Konung.ico
 ### Windows
 
 ```powershell
-cd web
+# from the repository root
 .\setup.ps1
 ```
 
@@ -91,11 +91,12 @@ cd web
 ### Linux / macOS
 
 ```bash
-bash web/setup.sh
+# from the repository root
+bash setup.sh
 ```
 
 `setup.sh` installs the base packages and Rust via rustup if needed, then calls
-`build.sh`. Use `bash web/build.sh` directly for later builds.
+`build.sh`. Use `bash build.sh` directly for later builds.
 
 ### First build vs later builds
 
@@ -171,6 +172,20 @@ node tools/page_smoke.mjs http://localhost:8000/
 Install Rust from <https://rustup.rs/> and reopen the terminal. On Windows:
 `winget install Rustlang.Rustup`.
 
+### `running scripts is disabled on this system`
+
+Windows blocks `.ps1` files by default. Run them with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+or allow local scripts for your user:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
 ### `error: failed to find a precompiled artifact for wasm32-unknown-unknown`
 
 ```bash
@@ -179,7 +194,7 @@ rustup target add wasm32-unknown-unknown
 
 ### `[assets] ERROR: original Konung files not found`
 
-Put the required files in `web/assets/`. The error lists every searched
+Put the required files in `assets/`. The error lists every searched
 directory and every missing filename.
 
 ### The page says the resource pack could not be loaded

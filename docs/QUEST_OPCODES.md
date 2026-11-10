@@ -3,7 +3,7 @@
 Complete catalogue of the opcodes used by the `QUEST_R.RES` dialogue
 **condition** (`B4`) and **action** (`B5`) programs, recovered from `konung.res`
 (Ghidra 12.1.4; sha256 `d698c4f2…679810`). The machine-readable source of truth
-is [`web/src/script.rs`](web/src/script.rs); this document mirrors it and adds the
+is [`web/src/script.rs`](../src/script.rs); this document mirrors it and adds the
 low-opcode families, the usage census and the execution model.
 
 ## 1. Program encoding and dispatch
@@ -313,5 +313,5 @@ persisted. Version-1 payloads decode with default extras (migration path).
 
 - [`DIALOG_SYSTEM.md`](DIALOG_SYSTEM.md) §7 — opcode dispatch + trade.
 - [`KONUNG_SOURCE_OF_TRUTH.md`](KONUNG_SOURCE_OF_TRUTH.md) §30 — dialogue/quest.
-- [`web/src/script.rs`](web/src/script.rs) — machine-readable catalogue.
-- [`web/src/quest.rs`](web/src/quest.rs) — `QUEST_R.RES` decoder (programs, text, flags).
+- [`web/src/script.rs`](../src/script.rs) — machine-readable catalogue.
+- [`web/src/quest.rs`](../src/quest.rs) — `QUEST_R.RES` decoder (programs, text, flags).

@@ -71,9 +71,9 @@ directory, copies `target/…/openkonung.wasm` into `www/`, and writes
 `examples/pack.rs`. Later runs reuse the pack and never read `.res`/`.exe`
 (pass `-Repack`/`--repack` after changing the original assets).
 
-**Current verified state:** `cargo check --all-targets` clean (no warnings);
-`cargo test` → **227 passed, 0 failed**; `smoke` and `frontend_smoke` → OK;
-release wasm builds (~434 KB) and the manifest lists 43 Konung maps.
+**Current verified state:** `cargo check --all-targets` clean; `cargo test` →
+**529 passed, 0 failed**; `smoke`, `frontend_smoke` and `pack_smoke` → OK;
+release wasm builds (~1.17 MB) and the manifest lists 43 Konung maps.
 
 ## 4. Runtime architecture
 
