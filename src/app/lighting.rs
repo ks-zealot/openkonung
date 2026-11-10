@@ -41,12 +41,7 @@ impl PlayableApp {
         })
     }
 
-    pub(super) fn apply_world_lighting(
-        &mut self,
-        sprites: &[WorldSprite],
-        ox: i32,
-        oy: i32,
-    ) {
+    pub(super) fn apply_world_lighting(&mut self, sprites: &[WorldSprite], ox: i32, oy: i32) {
         let cfg = crate::config::config();
         if cfg.light_effects == 0 {
             return;
@@ -76,7 +71,11 @@ impl PlayableApp {
                 let (lx, ly) = terrain_to_local_px(col, row);
                 let sx = ox + lx;
                 let sy = oy + ly;
-                if sx >= VIRTUAL_W || sy >= VIRTUAL_H || sx + TERRAIN_TILE_W <= 0 || sy + TERRAIN_TILE_H <= 0 {
+                if sx >= VIRTUAL_W
+                    || sy >= VIRTUAL_H
+                    || sx + TERRAIN_TILE_W <= 0
+                    || sy + TERRAIN_TILE_H <= 0
+                {
                     continue;
                 }
                 // Clone the mask row data so the frame/world borrows stay split.
@@ -103,7 +102,12 @@ impl PlayableApp {
                             continue;
                         }
                         let o = (py as usize * fw + px as usize) * 4;
-                        let [r, g, b, al] = [self.frame[o], self.frame[o + 1], self.frame[o + 2], self.frame[o + 3]];
+                        let [r, g, b, al] = [
+                            self.frame[o],
+                            self.frame[o + 1],
+                            self.frame[o + 2],
+                            self.frame[o + 3],
+                        ];
                         let lit = light_pixel([r, g, b, al], a);
                         self.frame[o..o + 4].copy_from_slice(&lit);
                     }
@@ -113,13 +117,23 @@ impl PlayableApp {
 
         // Lit entity cells use the unshaded palette in the original.
         for s in sprites {
-            let (cx, cy) = crate::coords::local_px_to_entity(s.lx.round() as i32, s.ly.round() as i32);
+            let (cx, cy) =
+                crate::coords::local_px_to_entity(s.lx.round() as i32, s.ly.round() as i32);
             if map.high_at(cx, cy) == 0 {
                 continue;
             }
             let ax = ox + s.lx.round() as i32 + s.gx;
             let ay = oy + s.ly.round() as i32 + s.gy;
-            blit(&mut self.frame, fw, fh, &s.img.data, s.img.w, s.img.h, ax, ay);
+            blit(
+                &mut self.frame,
+                fw,
+                fh,
+                &s.img.data,
+                s.img.w,
+                s.img.h,
+                ax,
+                ay,
+            );
         }
     }
 }

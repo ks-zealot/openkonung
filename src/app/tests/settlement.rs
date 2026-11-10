@@ -86,7 +86,11 @@ fn voivode_training_levels_up_the_village() {
         mastery_after > mastery_before,
         "mastery moves toward the voivode ({mastery_before} -> {mastery_after})"
     );
-    assert_eq!(entity_level(&app, 187), 6, "the voivode never trains itself");
+    assert_eq!(
+        entity_level(&app, 187),
+        6,
+        "the voivode never trains itself"
+    );
 
     // The cached current-location actor is mirrored, not rebuilt.
     let pop = app.population_cache.get(&19).expect("population");
@@ -256,9 +260,12 @@ fn apprentice_stands_next_to_the_master_not_on_him() {
         .expect("apprentice motion");
     let cell = motion.cell;
     assert_ne!(cell, station, "must not stand on the master's cell");
-    let adjacent = (0..8u8)
-        .any(|d| crate::coords::step_by_direction(station.0, station.1, d) == cell);
-    assert!(adjacent, "apprentice cell {cell:?} must be adjacent to {station:?}");
+    let adjacent =
+        (0..8u8).any(|d| crate::coords::step_by_direction(station.0, station.1, d) == cell);
+    assert!(
+        adjacent,
+        "apprentice cell {cell:?} must be adjacent to {station:?}"
+    );
     assert_eq!(motion.facing, waypoint.facing, "faces the station facing");
 }
 
@@ -296,11 +303,14 @@ fn target_pass_scales_by_workers_and_gates_training() {
     app.tick_settlement_pass(1);
     assert_eq!(app.settlements[si].targets[0].state, 1);
     assert_eq!(
-        app.settlements[si].targets[0].timer,
-        180,
+        app.settlements[si].targets[0].timer, 180,
         "24 * 60 / 8 workers"
     );
-    assert_eq!(settlement_timer3(&app, 19), 0, "training blocked by local_30");
+    assert_eq!(
+        settlement_timer3(&app, 19),
+        0,
+        "training blocked by local_30"
+    );
     assert_eq!(entity_level(&app, 183), before_level);
 
     app.tick_settlement_pass(1);
@@ -339,7 +349,13 @@ fn settlement_claim_wakes_the_group_for_a_hostile_party() {
     let group_id = app.settlements[si].group_id as usize;
     app.settlements[si].flags_4b2 |= 1;
     {
-        let group = app.tables.as_mut().unwrap().groups.get_mut(group_id).unwrap();
+        let group = app
+            .tables
+            .as_mut()
+            .unwrap()
+            .groups
+            .get_mut(group_id)
+            .unwrap();
         group.activity_1d = 0;
         group.rect_a = crate::population::Rect {
             x1: 0,
@@ -468,7 +484,11 @@ fn defeat_freezes_runtime_death_rows_on_the_last_frame() {
     assert_eq!(motion.death_frames, 5);
     assert_eq!(motion.frame, 4);
     // The live defender is idled, not hidden.
-    let live = pop.actors.iter().find(|a| a.entity.index == second).unwrap();
+    let live = pop
+        .actors
+        .iter()
+        .find(|a| a.entity.index == second)
+        .unwrap();
     assert_eq!(live.entity.archetype & 0x80, 0);
     let live_motion = pop.motion.get(&second).unwrap();
     assert!(!live_motion.dead);

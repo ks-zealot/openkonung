@@ -153,8 +153,7 @@ impl PlayableApp {
             }
         }
         for (i, m) in self.party.iter_mut().enumerate() {
-            if self.party_selected.get(i + 1).copied().unwrap_or(false)
-                && m.entity.raw_0x12 != slot
+            if self.party_selected.get(i + 1).copied().unwrap_or(false) && m.entity.raw_0x12 != slot
             {
                 m.entity.raw_0x12 = slot;
                 changed = true;
@@ -206,10 +205,7 @@ impl PlayableApp {
     fn nearest_engage_target(&self) -> Option<crate::combat::CombatTarget> {
         const ENGAGE_RADIUS: i32 = 12;
         let loc = self.current_map;
-        let player = (
-            self.player_x.round() as i32,
-            self.player_y.round() as i32,
-        );
+        let player = (self.player_x.round() as i32, self.player_y.round() as i32);
         let pop = self.population_cache.get(&loc)?;
         let tables = self.tables.as_ref();
         let mut best: Option<(i32, usize)> = None;
@@ -282,4 +278,3 @@ fn next_weapon_slot(raw: u8, eq: &[u16; 6]) -> u8 {
         }
     }
 }
-

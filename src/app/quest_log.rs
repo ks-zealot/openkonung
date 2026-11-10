@@ -51,16 +51,7 @@ impl PlayableApp {
 
         crate::world_map::draw_stone(frame, fw, fh, &mut world.res, vp);
         if let Some(b) = world.res.intr_sprite(1) {
-            blit(
-                frame,
-                fw,
-                fh,
-                &b.data,
-                b.w,
-                b.h,
-                border.0,
-                border.1,
-            );
+            blit(frame, fw, fh, &b.data, b.w, b.h, border.0, border.1);
         }
 
         let Some(quest) = world.res.quest.as_ref() else {
@@ -136,4 +127,3 @@ fn wrap_text(font: &crate::font::FontTable, text: &str, max_w: i32) -> Vec<Strin
     }
     out
 }
-

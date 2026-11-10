@@ -56,7 +56,7 @@ fn hud_buttons_match_the_original_hit_table() {
     assert_eq!(crate::hud::button_at(120, 460, 800), Some(5)); // engage
     assert_eq!(crate::hud::button_at(30, 560, 800), Some(6)); // quest
     assert_eq!(crate::hud::button_at(100, 560, 800), Some(7)); // character
-    // 640 variant.
+                                                               // 640 variant.
     assert_eq!(crate::hud::button_at(60, 280, 640), Some(1));
     assert_eq!(crate::hud::button_at(5, 310, 640), Some(2));
     assert_eq!(crate::hud::button_at(105, 310, 640), Some(3));

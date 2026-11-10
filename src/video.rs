@@ -44,7 +44,10 @@ impl VideoClip {
     }
 
     pub fn parse(name: &str) -> Option<VideoClip> {
-        let stem = name.strip_suffix(".mp4").unwrap_or(name).to_ascii_lowercase();
+        let stem = name
+            .strip_suffix(".mp4")
+            .unwrap_or(name)
+            .to_ascii_lowercase();
         match stem.as_str() {
             "poster" => Some(VideoClip::Poster),
             "win" => Some(VideoClip::Win),
@@ -127,15 +130,24 @@ mod tests {
         assert_eq!(VideoClip::Poster.file_name(), "poster.mp4");
         assert_eq!(VideoClip::Defeat(7).file_name(), "defeat7.mp4");
         assert_eq!(VideoClip::GameOver.source_name(), "GAMEOVER.FLM");
-        assert_eq!(VideoClip::parse("defeat19.mp4"), Some(VideoClip::Defeat(19)));
+        assert_eq!(
+            VideoClip::parse("defeat19.mp4"),
+            Some(VideoClip::Defeat(19))
+        );
         assert_eq!(VideoClip::parse("POSTER.FLM"), None);
     }
 
     #[test]
     fn only_one_movie_is_pending_at_a_time() {
         reset();
-        assert!(request(VideoClip::Poster, VideoAfter::Menu { game_active: false }));
-        assert!(!request(VideoClip::Win, VideoAfter::Menu { game_active: false }));
+        assert!(request(
+            VideoClip::Poster,
+            VideoAfter::Menu { game_active: false }
+        ));
+        assert!(!request(
+            VideoClip::Win,
+            VideoAfter::Menu { game_active: false }
+        ));
         assert_eq!(pending().unwrap().clip, VideoClip::Poster);
         assert_eq!(finish().unwrap().clip, VideoClip::Poster);
         assert!(pending().is_none());

@@ -170,8 +170,8 @@ impl PlayableApp {
 
         // Party portrait hover (`FUN_004381C8` code `0x1E`): the original also
         // calls `FUN_00430958` on the selected member; cell 0 is the leader.
-        if let Some(cell) = (0..layout.party_cells.len())
-            .find(|&i| layout.party_cells[i].contains(vx, vy))
+        if let Some(cell) =
+            (0..layout.party_cells.len()).find(|&i| layout.party_cells[i].contains(vx, vy))
         {
             if cell == 0 {
                 if !self.player.dead {
@@ -207,11 +207,7 @@ impl PlayableApp {
 
     fn entity_by_index(&self, index: usize) -> Option<&Entity> {
         if let Some(pop) = self.population_cache.get(&self.current_map) {
-            if let Some(actor) = pop
-                .actors
-                .iter()
-                .find(|a| a.source_entity_id() == index)
-            {
+            if let Some(actor) = pop.actors.iter().find(|a| a.source_entity_id() == index) {
                 return Some(&actor.entity);
             }
         }
@@ -222,11 +218,7 @@ impl PlayableApp {
     }
 
     fn character_display_name(&self, name_id: u8, nickname_id: u8) -> String {
-        let mut name = self
-            .world
-            .res
-            .character_name(name_id)
-            .unwrap_or_default();
+        let mut name = self.world.res.character_name(name_id).unwrap_or_default();
         if nickname_id != 0 {
             if let Some(nickname) = self.world.res.nickname(nickname_id) {
                 if !name.is_empty() {
@@ -249,9 +241,7 @@ impl PlayableApp {
             self.world.res.monster_name(low).unwrap_or_default()
         };
         let class = if human {
-            self.world
-                .res
-                .class_name(entity.archetype & 7)
+            self.world.res.class_name(entity.archetype & 7)
         } else {
             None
         };
@@ -302,10 +292,7 @@ impl PlayableApp {
 
     fn player_panel_text(&self) -> String {
         let name = self.character_display_name(self.player.hero.name_id, 0);
-        let class = self
-            .world
-            .res
-            .class_name(self.player.entity_class());
+        let class = self.world.res.class_name(self.player.entity_class());
         let info = ActorPanelInfo {
             name: &name,
             class: class.as_deref(),

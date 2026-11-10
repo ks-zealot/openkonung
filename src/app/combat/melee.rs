@@ -47,11 +47,7 @@ impl PlayableApp {
             return Some(roll);
         }
         self.combat_hits = self.combat_hits.saturating_add(1);
-        self.play_melee_impact(
-            a.archetype,
-            a.weapon_slot,
-            self.combatant_cell(attacker),
-        );
+        self.play_melee_impact(a.archetype, a.weapon_slot, self.combatant_cell(attacker));
         let hp_before = d.hp;
         if roll.lethal {
             // `FUN_004123BC` case 5 calls `FUN_00418480(defender, 0, 0)`:

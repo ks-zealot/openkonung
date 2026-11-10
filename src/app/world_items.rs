@@ -413,9 +413,11 @@ impl PlayableApp {
     /// class-`0x0B` subtype-`0x18` («Лопата») instance. Only the bag counts —
     /// equipment/additional slots are not scanned by the original.
     fn shovel_in_bag(&self) -> bool {
-        self.player.inventory.iter().copied().any(|id| {
-            id != 0 && self.world.res.item_class_subtype(id) == Some((11, 24))
-        })
+        self.player
+            .inventory
+            .iter()
+            .copied()
+            .any(|id| id != 0 && self.world.res.item_class_subtype(id) == Some((11, 24)))
     }
 
     /// `FUN_0041B7E4`: sum of every carried item's weight.

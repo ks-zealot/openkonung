@@ -19,10 +19,7 @@ impl PlayableApp {
         if self.game_over || !self.player.dead {
             return;
         }
-        if video::request(
-            VideoClip::GameOver,
-            VideoAfter::Menu { game_active: false },
-        ) {
+        if video::request(VideoClip::GameOver, VideoAfter::Menu { game_active: false }) {
             self.game_over = true;
         }
     }

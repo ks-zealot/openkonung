@@ -289,7 +289,11 @@ pub fn raise_cost_index(
     for &(cost, spec, normal) in STAT_TIERS.iter() {
         let threshold = if specialized { spec } else { normal };
         if threshold > value {
-            return if cost <= available_xp { Some(cost) } else { None };
+            return if cost <= available_xp {
+                Some(cost)
+            } else {
+                None
+            };
         }
     }
     if 999 <= available_xp {

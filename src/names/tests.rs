@@ -42,7 +42,10 @@ fn nickname_table_reference_values() {
 fn monster_name_table_reference_values() {
     let Some(d) = konung() else { return };
     assert_eq!(monster_name(&d, 0x40), None);
-    assert_eq!(monster_name(&d, 0x41).as_deref(), Some("Гигантский Муравей"));
+    assert_eq!(
+        monster_name(&d, 0x41).as_deref(),
+        Some("Гигантский Муравей")
+    );
     assert_eq!(monster_name(&d, 0x42).as_deref(), Some("Аспид"));
     assert_eq!(monster_name(&d, 0x50).as_deref(), Some("Ядовитый червь"));
     assert_eq!(monster_name(&d, 0x51), None);

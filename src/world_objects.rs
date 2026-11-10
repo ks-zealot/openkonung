@@ -149,7 +149,10 @@ pub fn parse_source_block(block: &[u8]) -> Vec<WorldObjectSource> {
         if o + WORLD_OBJECT_STRIDE > block.len() {
             break;
         }
-        out.push(WorldObjectSource::from_record(i, &block[o..o + WORLD_OBJECT_STRIDE]));
+        out.push(WorldObjectSource::from_record(
+            i,
+            &block[o..o + WORLD_OBJECT_STRIDE],
+        ));
     }
     out
 }

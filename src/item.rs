@@ -58,17 +58,17 @@ use crate::constants::exe_tables::ITEM_MODIFIER_COUNT;
 use crate::constants::exe_tables::ITEM_MODIFIER_NAME_VA;
 use crate::constants::exe_tables::ITEM_MODIFIER_STRIDE;
 use crate::constants::exe_tables::ITEM_MODIFIER_TABLE_VA;
-use crate::constants::exe_tables::ITEM_STAT_NAME_COUNT;
-use crate::constants::exe_tables::ITEM_STAT_NAME_STRIDE;
-use crate::constants::exe_tables::ITEM_STAT_NAME_VA;
-use crate::constants::exe_tables::SETTLEMENT_PROP_STRIDE;
-use crate::constants::exe_tables::SETTLEMENT_PROP_TABLE_VA;
+use crate::constants::exe_tables::ITEM_PROBE_RANGE_OFF;
 use crate::constants::exe_tables::ITEM_RANGE_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_STAT_OFF;
 use crate::constants::exe_tables::ITEM_REQUIREMENT_VALUE_OFF;
+use crate::constants::exe_tables::ITEM_STAT_NAME_COUNT;
+use crate::constants::exe_tables::ITEM_STAT_NAME_STRIDE;
+use crate::constants::exe_tables::ITEM_STAT_NAME_VA;
 use crate::constants::exe_tables::ITEM_VALUE_OFF_128;
 use crate::constants::exe_tables::ITEM_VALUE_OFF_64;
-use crate::constants::exe_tables::ITEM_PROBE_RANGE_OFF;
+use crate::constants::exe_tables::SETTLEMENT_PROP_STRIDE;
+use crate::constants::exe_tables::SETTLEMENT_PROP_TABLE_VA;
 
 /// Table `(icon_base_va, stride, name_base_va)` for an item class.
 fn table_for(class: u8) -> Option<(u32, usize, u32)> {
@@ -360,8 +360,8 @@ impl ItemDb {
         if condition < 0 {
             return;
         }
-        let o = va_to_file(ITEM_CONDITION_VALUE_VA)
-            + condition as usize * ITEM_CONDITION_VALUE_STRIDE;
+        let o =
+            va_to_file(ITEM_CONDITION_VALUE_VA) + condition as usize * ITEM_CONDITION_VALUE_STRIDE;
         if o + ITEM_CONDITION_VALUE_STRIDE > self.konung.len() {
             return;
         }
@@ -505,7 +505,6 @@ impl ItemDb {
             Some(out)
         }
     }
-
 
     /// Prototype combat rating by subtype (`0x459B7C + subtype*0x40`), used by
     /// the projectile damage path where only the bow subtype is stored.

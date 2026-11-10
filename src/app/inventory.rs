@@ -96,7 +96,10 @@ impl PlayableApp {
     }
 
     /// Minimal sheet used by the character-screen raise predicates.
-    pub(crate) fn growth_sheet(&self, owner: InventoryOwner) -> Option<crate::character_screen::CharacterSheet> {
+    pub(crate) fn growth_sheet(
+        &self,
+        owner: InventoryOwner,
+    ) -> Option<crate::character_screen::CharacterSheet> {
         Some(crate::character_screen::CharacterSheet {
             class: self.owner_class(owner),
             snapshot: self.snapshot(owner)?,
@@ -428,9 +431,7 @@ impl PlayableApp {
         if moved {
             self.held_item = None;
             let sound = match dest {
-                ItemLocation::Main(_) => {
-                    crate::sound::events::equip_main(class, displaced_class)
-                }
+                ItemLocation::Main(_) => crate::sound::events::equip_main(class, displaced_class),
                 ItemLocation::Additional(_) | ItemLocation::Special => {
                     crate::sound::events::EQUIP_OTHER
                 }
@@ -603,9 +604,7 @@ impl PlayableApp {
         let mut found = false;
         for step in 0..56 {
             let i = (start + step) % 56;
-            if self.discovered_locations[i] == 0
-                && crate::world_map::MAP_RESERVED[i] == 0
-            {
+            if self.discovered_locations[i] == 0 && crate::world_map::MAP_RESERVED[i] == 0 {
                 self.discovered_locations[i] = 1;
                 found = true;
                 break;
@@ -620,7 +619,6 @@ impl PlayableApp {
         self.queue_sound(crate::sound::events::MAP_ITEM);
         true
     }
-
 
     /// Right-click an inventory slot: use a class-9 item in place.
     pub fn use_inventory_slot(&mut self, visible_slot: usize) -> bool {
@@ -658,11 +656,7 @@ impl PlayableApp {
     /// Both items must belong to the same owner. The used item remains in the
     /// inventory transformed by the use (oil -> empty jar) and the target is
     /// modified in place.
-    pub fn use_held_on_item(
-        &mut self,
-        target_owner: InventoryOwner,
-        target: ItemLocation,
-    ) -> bool {
+    pub fn use_held_on_item(&mut self, target_owner: InventoryOwner, target: ItemLocation) -> bool {
         let Some(held) = self.held_item else {
             return false;
         };
@@ -859,4 +853,3 @@ impl PlayableApp {
         }
     }
 }
-

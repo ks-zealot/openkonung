@@ -104,7 +104,11 @@ pub fn ambient(world_frame: u64, day_night: u32) -> Ambient {
     }
     let d = (p - t12 as i32) / 2;
     if d < 0x79 {
-        return rgb((d / 2 - 0x1E).max(0), (d - 0x3C).max(0), (d / 3 - 0x14).max(0));
+        return rgb(
+            (d / 2 - 0x1E).max(0),
+            (d - 0x3C).max(0),
+            (d / 3 - 0x14).max(0),
+        );
     }
     Ambient::default()
 }

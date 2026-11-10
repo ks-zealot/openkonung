@@ -359,8 +359,7 @@ impl PlayableApp {
                 .unwrap_or(0);
 
             let group_id = self.settlements[si].group_id;
-            let party_ids: HashSet<usize> =
-                self.party.iter().map(|m| m.entity.index).collect();
+            let party_ids: HashSet<usize> = self.party.iter().map(|m| m.entity.index).collect();
             let PlayableApp {
                 world,
                 settlement_trade,
@@ -375,14 +374,7 @@ impl PlayableApp {
             }
             let changed = if prod4 != 0 {
                 tick_role4(
-                    res,
-                    t,
-                    passes,
-                    kit,
-                    &mut smith,
-                    tables,
-                    group_id,
-                    &party_ids,
+                    res, t, passes, kit, &mut smith, tables, group_id, &party_ids,
                 )
             } else {
                 None

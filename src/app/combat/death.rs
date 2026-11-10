@@ -41,10 +41,7 @@ impl PlayableApp {
                     crate::anim::death_action(battle) as u8,
                     self.player.raw_0x12,
                     true,
-                    Some((
-                        self.player_x.round() as i32,
-                        self.player_y.round() as i32,
-                    )),
+                    Some((self.player_x.round() as i32, self.player_y.round() as i32)),
                 );
             }
             CombatTarget::Party(i) => {

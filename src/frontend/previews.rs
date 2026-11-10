@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 /// Number of pre-rendered active-weapon-slot variants per hero.
 pub const PREVIEW_SLOTS: usize = 3;
-/// Size of the offscreen preview surface (`FUN_0042EA6C`). 
+/// Size of the offscreen preview surface (`FUN_0042EA6C`).
 pub const PREVIEW_SIZE: usize = 160;
 
 /// Cosmetic preview loadout stored in `HeroTemplate.preset` (`Entity+0x66..`).

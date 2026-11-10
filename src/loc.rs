@@ -170,7 +170,10 @@ impl Location {
             return COLLISION_BLOCKED;
         }
         let idx = (x * RUNTIME_H + y) as usize;
-        self.collision.get(idx).copied().unwrap_or(COLLISION_BLOCKED)
+        self.collision
+            .get(idx)
+            .copied()
+            .unwrap_or(COLLISION_BLOCKED)
     }
 
     pub fn terrain_cells(&self) -> Vec<u16> {

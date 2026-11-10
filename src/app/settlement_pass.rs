@@ -22,11 +22,10 @@ impl PlayableApp {
         for _ in 0..passes {
             // The original computes `local_24` before the defense/claim block;
             // the target pass must use that value, not a post-claim one.
-            let workers: Vec<super::settlement_targets::SettlementWorkers> = (0..self
-                .settlements
-                .len())
-                .map(|si| self.settlement_workers(si))
-                .collect();
+            let workers: Vec<super::settlement_targets::SettlementWorkers> =
+                (0..self.settlements.len())
+                    .map(|si| self.settlement_workers(si))
+                    .collect();
             for si in 0..self.settlements.len() {
                 if workers.get(si).map(|w| w.free).unwrap_or(0) == 0 {
                     self.settlement_no_worker_clear(si);

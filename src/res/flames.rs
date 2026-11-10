@@ -138,9 +138,7 @@ fn decode_flame_frame(payload: &[u8], index: usize) -> Result<Img, String> {
             .checked_add(row_len)
             .ok_or_else(|| format!("FLAMES.RES: frame {index} row {row} overflow"))?;
         if row_end > payload.len() {
-            return Err(format!(
-                "FLAMES.RES: frame {index} row {row} out of bounds"
-            ));
+            return Err(format!("FLAMES.RES: frame {index} row {row} out of bounds"));
         }
         let mut q = row_start;
         let mut x = 0usize;
@@ -245,7 +243,10 @@ mod tests {
             max_g = max_g.max(px[1]);
             max_b = max_b.max(px[2]);
         }
-        assert!(max_r >= max_g && max_g >= max_b, "fire should be red/yellow");
+        assert!(
+            max_r >= max_g && max_g >= max_b,
+            "fire should be red/yellow"
+        );
         assert!(max_r > 200, "frame must contain bright pixels");
     }
 

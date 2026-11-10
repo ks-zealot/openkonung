@@ -129,7 +129,8 @@ impl QuestContext {
     }
 
     fn settlement(&self) -> Option<&Settlement> {
-        self.settlement_index().and_then(|i| self.settlements.get(i))
+        self.settlement_index()
+            .and_then(|i| self.settlements.get(i))
     }
 
     fn settlement_mut(&mut self) -> Option<&mut Settlement> {
@@ -236,11 +237,7 @@ impl QuestContext {
         };
         self.tables
             .as_ref()
-            .map(|t| {
-                t.entities[range]
-                    .iter()
-                    .any(|e| e.archetype & 0x80 != 0)
-            })
+            .map(|t| t.entities[range].iter().any(|e| e.archetype & 0x80 != 0))
             .unwrap_or(false)
     }
 
@@ -257,9 +254,9 @@ impl QuestContext {
         self.tables
             .as_ref()
             .map(|t| {
-                !t.entities[range].iter().any(|e| {
-                    e.archetype & 0x80 == 0 && e.kind != 9 && e.kind != 3
-                })
+                !t.entities[range]
+                    .iter()
+                    .any(|e| e.archetype & 0x80 == 0 && e.kind != 9 && e.kind != 3)
             })
             .unwrap_or(true)
     }
@@ -364,10 +361,11 @@ impl QuestContext {
     }
 
     fn inventory_contains(&self, class: u8, subtype: u8) -> bool {
-        self.player
-            .inventory
-            .iter()
-            .any(|&id| self.item_instance(id).map(|(c, s, _)| (c, s) == (class, subtype)).unwrap_or(false))
+        self.player.inventory.iter().any(|&id| {
+            self.item_instance(id)
+                .map(|(c, s, _)| (c, s) == (class, subtype))
+                .unwrap_or(false)
+        })
     }
 
     fn inventory_slot(&self, class: u8, subtype: u8) -> Option<usize> {
@@ -462,10 +460,7 @@ impl QuestContext {
     /// computes `(max - current)` after setting `current = max`, so the value is
     /// always zero and the update is skipped.
     fn repair_party_gear(&mut self) -> bool {
-        let smithing = self
-            .npc()
-            .map(|e| e.stats.smithing)
-            .unwrap_or(0);
+        let smithing = self.npc().map(|e| e.stats.smithing).unwrap_or(0);
         let threshold = smithing as f64 * 10.0;
 
         let equipment = self.player.equipment;
@@ -607,10 +602,7 @@ impl QuestContext {
                     }
                     // Role 2: trade `+0x42`, capped by the merchant and 100.
                     2 => {
-                        let mut trade = entity
-                            .stats
-                            .trade
-                            .saturating_add(gain.max(0) as u16);
+                        let mut trade = entity.stats.trade.saturating_add(gain.max(0) as u16);
                         if producer != 0 && master_skill < trade {
                             trade = master_skill;
                         }
@@ -624,9 +616,8 @@ impl QuestContext {
                         } else {
                             own + (master_skill as f64 - own) * 0.03 * gain as f64
                         };
-                        entity.stats.smithing = value
-                            .round_ties_even()
-                            .clamp(0.0, u16::MAX as f64) as u16;
+                        entity.stats.smithing =
+                            value.round_ties_even().clamp(0.0, u16::MAX as f64) as u16;
                     }
                 }
             }
@@ -650,7 +641,8 @@ impl QuestContext {
         motion.cell = cell;
         motion.render_cell = cell;
         motion.facing = entity.facing & 7;
-        motion.action = crate::anim::idle_action(crate::anim::battle_from_flags(entity.flags_b)) as u8;
+        motion.action =
+            crate::anim::idle_action(crate::anim::battle_from_flags(entity.flags_b)) as u8;
         self.party.push(PartyMember { entity, motion });
         let cell_index = self.party.len();
         if cell_index < crate::hud::PARTY_CELLS {
@@ -776,7 +768,13 @@ impl QuestContext {
             return false;
         }
         let waypoint = waypoint_slot
-            .and_then(|slot| self.settlements.get(si)?.waypoints.get(slot as usize).copied())
+            .and_then(|slot| {
+                self.settlements
+                    .get(si)?
+                    .waypoints
+                    .get(slot as usize)
+                    .copied()
+            })
             .filter(|w| w.owner == 0);
         entity.index = dest;
         entity.group_id = settlement.group_id;
@@ -926,10 +924,7 @@ impl QuestContext {
     /// term and the leader's HP is restored. `0x14F` does the same for the
     /// whole party (`FUN_00433BA0`).
     fn heal_target(&mut self, group_wide: bool) -> bool {
-        let base = self
-            .npc()
-            .map(|e| e.stats.healing as f64)
-            .unwrap_or(0.0);
+        let base = self.npc().map(|e| e.stats.healing as f64).unwrap_or(0.0);
         if group_wide {
             let player_hp = self.player.hp_internal as i32;
             let delta = (640 - player_hp) as f64 / 1024.0 + base;
@@ -940,8 +935,7 @@ impl QuestContext {
                     continue;
                 }
                 let delta = (640 - m.entity.stats.hp_internal as i32) as f64 / 1024.0 + base;
-                m.entity.stats.healing =
-                    delta.round().clamp(0.0, u16::MAX as f64) as u16;
+                m.entity.stats.healing = delta.round().clamp(0.0, u16::MAX as f64) as u16;
                 m.entity.stats.hp_internal = 1600;
             }
             true
@@ -1127,10 +1121,7 @@ impl QuestContext {
                 .map(|s| s.flags_4b2 & 0x10 != 0)
                 .unwrap_or(false),
             0x12F => self.player.dialogue_id != 0xFF,
-            0x130 => self
-                .settlement()
-                .map(|s| s.voivode() != 0)
-                .unwrap_or(false),
+            0x130 => self.settlement().map(|s| s.voivode() != 0).unwrap_or(false),
             0x131 => self.player.money > 29,
             0x132 => self.player.money >= 40,
             0x133 => self.player.money >= 50,
@@ -1188,9 +1179,7 @@ impl QuestContext {
                     .map(|t| t.state != 0 || t.timer != 0)
                     .unwrap_or(false)
             }
-            0x148 => {
-                (0x151..=0x157).any(|op| self.exec_op(op))
-            }
+            0x148 => (0x151..=0x157).any(|op| self.exec_op(op)),
             0x149 => self.inventory_contains(9, 0),
             0x14A => self.player.hp_internal >= 1600,
             0x14B => {
@@ -1244,19 +1233,18 @@ impl QuestContext {
             0x15B => self.prepare_ally(3),
             0x15C => self.prepare_ally(2),
             0x15D => {
-                let capacity = crate::character::max_party(
-                    self.player.class,
-                    self.player.charisma_base,
-                ) as usize;
+                let capacity =
+                    crate::character::max_party(self.player.class, self.player.charisma_base)
+                        as usize;
                 capacity <= 1 + self.party.len()
             }
             0x15E => self.npc_in_party(),
-            0x15F => self.npc().map(|e| e.stats.hp_internal > 800).unwrap_or(false),
-            0x160 => self.npc().map(|e| e.stats.level > 3).unwrap_or(false),
-            0x161 => self
+            0x15F => self
                 .npc()
-                .map(|e| e.archetype & 0x38 != 0)
+                .map(|e| e.stats.hp_internal > 800)
                 .unwrap_or(false),
+            0x160 => self.npc().map(|e| e.stats.level > 3).unwrap_or(false),
+            0x161 => self.npc().map(|e| e.archetype & 0x38 != 0).unwrap_or(false),
             0x162 => self.prepare_apprentice(),
             0x163 => self.write_target_timer(1),
             0x164 => self.write_target_timer(4),
@@ -1324,7 +1312,6 @@ impl QuestContext {
         target.timer = value;
         true
     }
-
 }
 
 impl PlayableApp {

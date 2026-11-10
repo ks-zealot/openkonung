@@ -126,8 +126,7 @@ impl PlayableApp {
                 }
             }
         }
-        let authored_groups =
-            crate::population::parse_groups(&self.world.res.save_game).ok();
+        let authored_groups = crate::population::parse_groups(&self.world.res.save_game).ok();
         if let Some(tables) = self.tables.as_mut() {
             for (i, g) in tables.groups.iter_mut().enumerate() {
                 if let Some(authored) = authored_groups.as_ref().and_then(|v| v.get(i)) {
@@ -166,15 +165,14 @@ impl PlayableApp {
         // Runtime NPC `Entity+0xD2` values (class-11 subtype 33 «Кукла»). The
         // `Entity` payload itself is unchanged, so v1..v4 saves still decode;
         // for those the authored `Game.N` bytes are restored instead.
-        let d2_values: Option<Vec<u8>> = if extra.npc_state_d2.len()
-            == crate::population::ENTITY_COUNT
-        {
-            Some(extra.npc_state_d2.clone())
-        } else {
-            crate::population::parse_entities(&self.world.res.save_game)
-                .ok()
-                .map(|v| v.iter().map(|e| e.state_d2).collect())
-        };
+        let d2_values: Option<Vec<u8>> =
+            if extra.npc_state_d2.len() == crate::population::ENTITY_COUNT {
+                Some(extra.npc_state_d2.clone())
+            } else {
+                crate::population::parse_entities(&self.world.res.save_game)
+                    .ok()
+                    .map(|v| v.iter().map(|e| e.state_d2).collect())
+            };
         if let Some(values) = d2_values {
             if let Some(tables) = self.tables.as_mut() {
                 for (e, &v) in tables.entities.iter_mut().zip(values.iter()) {
@@ -184,8 +182,7 @@ impl PlayableApp {
             let tables = self.tables.as_ref();
             for build in self.population_cache.values_mut() {
                 for actor in build.actors.iter_mut() {
-                    if let Some(e) = tables.and_then(|t| t.entities.get(actor.source_entity_id()))
-                    {
+                    if let Some(e) = tables.and_then(|t| t.entities.get(actor.source_entity_id())) {
                         actor.entity.state_d2 = e.state_d2;
                     }
                 }
@@ -201,7 +198,11 @@ impl PlayableApp {
         self.projectiles = save.projectiles;
         self.world.res.set_save_game(&save.item_table);
 
-        for (i, selected) in save.party_selected.into_iter().take(crate::hud::PARTY_CELLS).enumerate()
+        for (i, selected) in save
+            .party_selected
+            .into_iter()
+            .take(crate::hud::PARTY_CELLS)
+            .enumerate()
         {
             self.party_selected[i] = selected;
         }
@@ -313,11 +314,17 @@ impl PlayableApp {
             &entities,
         );
         let world_objects = patch_world_objects(
-            base(crate::constants::game_layout::WORLD_OBJECT_OFF, WORLD_OBJECT_BLOCK_LEN),
+            base(
+                crate::constants::game_layout::WORLD_OBJECT_OFF,
+                WORLD_OBJECT_BLOCK_LEN,
+            ),
             &game.world_object_sources,
         );
         let settlements = patch_settlements(
-            base(crate::constants::game_layout::SETTLEMENT_OFF, SETTLEMENT_BLOCK_LEN),
+            base(
+                crate::constants::game_layout::SETTLEMENT_OFF,
+                SETTLEMENT_BLOCK_LEN,
+            ),
             &game.settlements,
             &game.settlement_trade,
         );
@@ -356,8 +363,7 @@ impl PlayableApp {
             .ok_or_else(|| {
                 format!(
                     "legacy leader entity {} is class {}",
-                    snap.leader_index,
-                    leader.archetype
+                    snap.leader_index, leader.archetype
                 )
             })?;
         let groups = snap.groups();
@@ -461,10 +467,7 @@ impl PlayableApp {
                 growth_countdown: g.growth_countdown,
             })
             .collect();
-        extra.apprentice_start = settlements
-            .iter()
-            .map(|s| s.apprentice_start)
-            .collect();
+        extra.apprentice_start = settlements.iter().map(|s| s.apprentice_start).collect();
 
         let mut party_selected = vec![false; crate::hud::PARTY_CELLS];
         party_selected[0] = true;
@@ -510,7 +513,8 @@ impl PlayableApp {
         if let Some(tables) = self.tables.as_ref() {
             if let Some(loc) = self.world.loc(self.current_map) {
                 let collision = loc.collision.clone();
-                let build = crate::actors::build_population(tables, self.current_map as u8, &collision);
+                let build =
+                    crate::actors::build_population(tables, self.current_map as u8, &collision);
                 self.population_cache.insert(self.current_map, build);
             }
         }
@@ -520,7 +524,10 @@ impl PlayableApp {
 
 /// Write the protagonist's live `PlayerCharacter` fields into its `Entity`
 /// record (the original leader entity is mutated in place).
-fn entity_from_player_save(base: &crate::population::Entity, p: &crate::save::PlayerSave) -> crate::population::Entity {
+fn entity_from_player_save(
+    base: &crate::population::Entity,
+    p: &crate::save::PlayerSave,
+) -> crate::population::Entity {
     let mut e = base.clone();
     e.archetype = p.class.entity_class();
     e.raw_0x12 = p.raw_0x12;
@@ -559,4 +566,3 @@ fn entity_from_player_save(base: &crate::population::Entity, p: &crate::save::Pl
     e.stats.saved_endurance = p.saved_endurance;
     e
 }
-

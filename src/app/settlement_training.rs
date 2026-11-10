@@ -198,11 +198,7 @@ impl PlayableApp {
     /// 16 original frames). Runs for every settlement, not only the current
     /// location (`FUN_0041D048`). Settlements whose target pass set `local_30`
     /// are skipped entirely (`blocked`), including the timer decrement.
-    pub(super) fn tick_settlement_training(
-        &mut self,
-        passes: u32,
-        blocked: &HashSet<usize>,
-    ) {
+    pub(super) fn tick_settlement_training(&mut self, passes: u32, blocked: &HashSet<usize>) {
         if passes == 0 || self.tables.is_none() {
             return;
         }
@@ -273,7 +269,12 @@ impl PlayableApp {
         let runtime: HashMap<usize, (u8, bool)> = self
             .population_cache
             .get(&loc)
-            .map(|p| p.motion.iter().map(|(&id, m)| (id, (m.action, m.dead))).collect())
+            .map(|p| {
+                p.motion
+                    .iter()
+                    .map(|(&id, m)| (id, (m.action, m.dead)))
+                    .collect()
+            })
             .unwrap_or_default();
         let mut changed: Vec<(usize, Trained)> = Vec::new();
         if let Some(tables) = self.tables.as_mut() {
@@ -389,7 +390,10 @@ mod tests {
         assert_eq!(ent.stats.endurance_current, 6, "level-2 cap is 10");
         assert_eq!(ent.stats.strength_base, 17, "derived stat recalculated");
         assert!(ent.stats.invested_xp > 0, "stat cost recorded");
-        assert!(ent.stats.melee_mastery > 100, "mastery moves toward the voivode");
+        assert!(
+            ent.stats.melee_mastery > 100,
+            "mastery moves toward the voivode"
+        );
         assert_eq!(ent.stats.melee_mastery, ent.stats.archery_mastery);
     }
 

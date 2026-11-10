@@ -91,7 +91,10 @@ fn save_roundtrip_preserves_npc_state_d2() {
     }
     let bytes = app.capture_save().encode().expect("encode");
     let decoded = SaveEnvelope::decode(&bytes).expect("decode");
-    assert_eq!(decoded.extra.npc_state_d2.len(), crate::population::ENTITY_COUNT);
+    assert_eq!(
+        decoded.extra.npc_state_d2.len(),
+        crate::population::ENTITY_COUNT
+    );
     assert_eq!(decoded.extra.npc_state_d2[7], 0x13);
     app.apply_save(decoded).expect("apply");
     assert_eq!(
@@ -109,7 +112,10 @@ fn encoded_payload_is_compressed_and_versioned() {
     };
     let bytes = app.capture_save().encode().expect("encode");
     assert_eq!(&bytes[..4], b"OPKS");
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), crate::save::VERSION);
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        crate::save::VERSION
+    );
     assert!(bytes.len() < crate::save::ITEM_TABLE_LEN);
 }
 
@@ -121,8 +127,7 @@ fn v1_payload_migrates_with_default_quest_extras() {
     };
     let envelope = app.capture_save();
     let raw = bincode::serialize(&envelope.game).expect("serialize v1 game");
-    let mut enc =
-        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(&raw).expect("compress");
     let compressed = enc.finish().expect("finish");
     let mut bytes = Vec::new();
@@ -164,8 +169,7 @@ fn v2_payload_decodes_with_zeroed_growth_extras() {
         },
     };
     let raw = bincode::serialize(&legacy).expect("serialize v2 envelope");
-    let mut enc =
-        flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(&raw).expect("compress");
     let compressed = enc.finish().expect("finish");
     let mut bytes = Vec::new();
@@ -261,4 +265,3 @@ fn legacy_slot_names_round_trip() {
     let back = crate::legacy_save::parse_slot_names(&bytes).expect("names");
     assert_eq!(back[0], "???????? ??????");
 }
-

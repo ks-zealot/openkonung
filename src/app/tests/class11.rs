@@ -1,7 +1,7 @@
 //! Class-11 item-use dispatcher (`FUN_00414DE4`), C1/C2.
 
-use super::common::*;
 use super::super::*;
+use super::common::*;
 
 fn find_item(app: &PlayableApp, class: u8, subtype: u8) -> Option<u16> {
     (1..8192u16).find(|&id| app.world.res.item_class_subtype(id) == Some((class, subtype)))
@@ -102,11 +102,7 @@ fn c1_rejects_non_class11_items() {
         return;
     };
     put_in_first_slot(&mut app, id);
-    assert!(!app.use_class11_item(
-        crate::inventory::InventoryOwner::Protagonist,
-        id,
-        None
-    ));
+    assert!(!app.use_class11_item(crate::inventory::InventoryOwner::Protagonist, id, None));
     assert!(app.world.res.item_class(id).is_some());
 }
 
@@ -321,7 +317,10 @@ fn c2_birch_bark_letter_activates_quest_slot_zero() {
     put_in_first_slot(&mut app, letter);
     assert!(use_first_slot(&mut app));
     assert_ne!(app.quest_flags[0] & 0x80, 0);
-    assert_eq!(app.pickup_message.as_deref(), Some("Ты прочитал Берестяную Грамоту"));
+    assert_eq!(
+        app.pickup_message.as_deref(),
+        Some("Ты прочитал Берестяную Грамоту")
+    );
     assert_eq!(app.world.res.item_class(letter), Some(0xFF));
 }
 
@@ -540,7 +539,11 @@ fn c4_resurrection_revives_a_dead_world_actor() {
     assert!(use_first_slot(&mut app));
     let pop = app.population_cache.get(&4).unwrap();
     assert!(!pop.motion.get(&eid).unwrap().dead);
-    let a = pop.actors.iter().find(|a| a.source_entity_id() == eid).unwrap();
+    let a = pop
+        .actors
+        .iter()
+        .find(|a| a.source_entity_id() == eid)
+        .unwrap();
     assert_eq!(a.entity.stats.hp_internal, 1600);
     assert_eq!(a.entity.archetype & 0x80, 0);
     assert_eq!(app.world.res.item_class(revive), Some(0xFF));
@@ -580,7 +583,11 @@ fn c4_magnet_moves_other_group_money_and_items() {
     assert_eq!(app.player.money, money + 50);
     assert!(app.player.inventory.contains(&item));
     let pop = app.population_cache.get(&4).unwrap();
-    let a = pop.actors.iter().find(|a| a.source_entity_id() == eid).unwrap();
+    let a = pop
+        .actors
+        .iter()
+        .find(|a| a.source_entity_id() == eid)
+        .unwrap();
     assert_eq!(a.entity.stats.money, 0);
     assert!(a.entity.inventory.iter().all(|&id| id == 0));
     assert_eq!(app.world.res.item_class(magnet), Some(0xFF));
@@ -677,16 +684,17 @@ fn c4_mirror_reactivates_negative_ground_records() {
         return;
     };
     let index = app.world_object_sources.len();
-    app.world_object_sources.push(crate::world_objects::WorldObjectSource {
-        index,
-        t0: 0,
-        t4: 0,
-        x: 10,
-        y: 10,
-        money: -5,
-        loc: 4,
-        items: [0; crate::world_objects::WORLD_OBJECT_ITEM_SLOTS],
-    });
+    app.world_object_sources
+        .push(crate::world_objects::WorldObjectSource {
+            index,
+            t0: 0,
+            t4: 0,
+            x: 10,
+            y: 10,
+            money: -5,
+            loc: 4,
+            items: [0; crate::world_objects::WORLD_OBJECT_ITEM_SLOTS],
+        });
     app.rebuild_world_objects();
     // `FUN_0043ADF0` keeps buried records in the active pool; `FUN_0042532C`
     // simply never draws them (money < 0).

@@ -32,10 +32,7 @@ impl PlayableApp {
     /// The buffer-rate roll is skipped when the request is inaudible, matching
     /// the original's early return before selecting a buffer.
     pub(super) fn queue_sound_at(&mut self, id: u16, cell: (i32, i32)) {
-        let player = (
-            self.player_x.round() as i32,
-            self.player_y.round() as i32,
-        );
+        let player = (self.player_x.round() as i32, self.player_y.round() as i32);
         let volume = crate::sound::source_volume(cell, player);
         if !crate::sound::audible(volume) {
             return;
@@ -71,13 +68,9 @@ impl PlayableApp {
         cell: Option<(i32, i32)>,
     ) {
         let roll = self.sound_rng.next_u32() % 100;
-        if let Some(id) = crate::sound::events::actor_action(
-            archetype,
-            action,
-            weapon_slot,
-            leader,
-            roll,
-        ) {
+        if let Some(id) =
+            crate::sound::events::actor_action(archetype, action, weapon_slot, leader, roll)
+        {
             self.queue_sound_opt(id, cell);
         }
     }

@@ -961,7 +961,8 @@ pub fn use_item_on(
 /// `FUN_0041DAB0` right-click use of a class-9 item. The item becomes an empty
 /// jar (`subtype 3`) in place. `snapshot` must be taken before applying the
 /// returned operations.
-pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<StatOp>, UseError> {    let (class, subtype) = res.item_class_subtype(id).ok_or(UseError::NotUsable)?;
+pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<StatOp>, UseError> {
+    let (class, subtype) = res.item_class_subtype(id).ok_or(UseError::NotUsable)?;
     if class != 9 {
         return Err(UseError::NotUsable);
     }

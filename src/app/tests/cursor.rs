@@ -231,11 +231,7 @@ fn interactive_flag_is_parsed_from_placement_record() {
     };
     let loc = crate::loc::make_location(4, bytes).expect("Konung.4");
     // Placement 32 in loc 4 carries record +0x22 = 0xFF (interactive).
-    let prop = loc
-        .props
-        .iter()
-        .find(|p| p.ri == 32)
-        .expect("placement 32");
+    let prop = loc.props.iter().find(|p| p.ri == 32).expect("placement 32");
     assert!(prop.interactive);
     assert!(loc.props.iter().any(|p| !p.interactive));
 }

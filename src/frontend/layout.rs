@@ -503,9 +503,7 @@ impl FrontendRes {
 
     /// Slot index under a logical pointer position, if any.
     pub fn save_slot_hit_test(self, x: i32, y: i32) -> Option<usize> {
-        self.save_slot_rects()
-            .iter()
-            .position(|r| r.contains(x, y))
+        self.save_slot_rects().iter().position(|r| r.contains(x, y))
     }
 }
 

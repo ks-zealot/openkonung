@@ -1,4 +1,4 @@
-﻿//! `LIGHTS.RES` / `LIGHTS.N` visual-light data.
+//! `LIGHTS.RES` / `LIGHTS.N` visual-light data.
 //!
 //! `FUN_004392B4` reads `LIGHTS.RES` as:
 //!
@@ -190,9 +190,15 @@ mod tests {
         };
         let lights = LightRes::parse(&bytes).expect("LIGHTS.RES");
         assert_eq!(lights.small.len(), LIGHT_SMALL_COUNT);
-        assert_eq!((lights.large.w, lights.large.h), (LIGHT_LARGE_W, LIGHT_LARGE_H));
+        assert_eq!(
+            (lights.large.w, lights.large.h),
+            (LIGHT_LARGE_W, LIGHT_LARGE_H)
+        );
         assert_eq!(lights.tiles.len(), LIGHT_TILE_COUNT);
-        assert_eq!((lights.tiles[0].w, lights.tiles[0].h), (LIGHT_TILE_W, LIGHT_TILE_H));
+        assert_eq!(
+            (lights.tiles[0].w, lights.tiles[0].h),
+            (LIGHT_TILE_W, LIGHT_TILE_H)
+        );
     }
 
     #[test]

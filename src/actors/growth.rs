@@ -17,15 +17,15 @@ use crate::population::{Entity, GameTables, Group};
 /// `0x45E31E`, indexed by `class - 0x41`: the low 16-bit target interval added
 /// when `FUN_0041BD3C` raises `Group+0x18`.
 pub const GROWTH_TARGET_INTERVAL: [i16; 16] = [
-    0x0E10, 0x1770, 0x2EE0, 0x2328, 0x1770, 0x0E10, 0x1C20, 0x0E10, 0x12C0, 0x1770,
-    0x1518, 0x1518, 0x0E10, 0x0E10, 0x12C0, 0x12C0,
+    0x0E10, 0x1770, 0x2EE0, 0x2328, 0x1770, 0x0E10, 0x1C20, 0x0E10, 0x12C0, 0x1770, 0x1518, 0x1518,
+    0x0E10, 0x0E10, 0x12C0, 0x12C0,
 ];
 
 /// `0x45E216 + class*4` high 16 bits, indexed by `class - 0x41`: the accumulator
 /// increment paid per created member at map entry (`FUN_0043ADF0`).
 pub const GROWTH_CREATE_INTERVAL: [i16; 16] = [
-    0x05A0, 0x0B40, 0x12C0, 0x0E10, 0x0960, 0x0960, 0x0E10, 0x0960, 0x0960, 0x0960,
-    0x0708, 0x0960, 0x0780, 0x0E10, 0x0B40, 0x0E10,
+    0x05A0, 0x0B40, 0x12C0, 0x0E10, 0x0960, 0x0960, 0x0E10, 0x0960, 0x0960, 0x0960, 0x0708, 0x0960,
+    0x0780, 0x0E10, 0x0B40, 0x0E10,
 ];
 
 /// `FUN_0041BD3C` / `FUN_0043ADF0` object-class window. The original compares
@@ -173,7 +173,11 @@ pub fn grow_map(
 /// the additional slots are cleared; `+0xD6`/`+0xD8` come from the random
 /// member; `kind` is `4` for classes `L`/`F`/`U`, and class `L` also gets
 /// `+0x12 = rand % 5 + 1`.
-fn average_member(group: &Group, entities: &[Entity], rng: &mut DeterministicRng) -> Option<Entity> {
+fn average_member(
+    group: &Group,
+    entities: &[Entity],
+    rng: &mut DeterministicRng,
+) -> Option<Entity> {
     let first = group.first_entity as usize;
     let count = group.entity_count as usize;
     if count == 0 || first + count > entities.len() {
@@ -382,7 +386,11 @@ mod tests {
         t.entities[11].visual_index = 0x33;
         let mut rng = DeterministicRng::new(7);
         let created = grow_group(&mut t, 1, &free_collision(), &mut rng);
-        assert_eq!(created.len(), 1, "one 1440-step interval absorbs the budget");
+        assert_eq!(
+            created.len(),
+            1,
+            "one 1440-step interval absorbs the budget"
+        );
         assert_eq!(t.groups[1].entity_count, 3);
         assert_eq!(t.groups[1].growth_timer, 0x05A0 - 1);
         let e = &t.entities[12];
@@ -476,4 +484,3 @@ mod tests {
         assert_eq!(created[0].source_group_id, 2);
     }
 }
-

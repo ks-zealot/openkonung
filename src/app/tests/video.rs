@@ -42,7 +42,10 @@ fn source_zero_world_object_requests_win() {
     let p = video::pending().expect("win pending");
     assert_eq!(p.clip, VideoClip::Win);
     assert_eq!(p.after, VideoAfter::Menu { game_active: false });
-    assert!(app.active_world_objects[0].items == vec![1007], "pickup is deferred");
+    assert!(
+        app.active_world_objects[0].items == vec![1007],
+        "pickup is deferred"
+    );
     video::reset();
 }
 
@@ -70,7 +73,13 @@ fn engaged_settlement_defeat_requests_location_movie() {
         group.first_entity as usize
     };
     {
-        let entity = app.tables.as_mut().unwrap().entities.get_mut(first).unwrap();
+        let entity = app
+            .tables
+            .as_mut()
+            .unwrap()
+            .entities
+            .get_mut(first)
+            .unwrap();
         entity.kind = 6;
         entity.archetype &= 0x7F;
         entity.visual_index = 0;
@@ -96,4 +105,3 @@ fn engaged_settlement_defeat_requests_location_movie() {
     assert_eq!(settlement.money_pool_10, 0);
     video::reset();
 }
-

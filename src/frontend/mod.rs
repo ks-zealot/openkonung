@@ -209,9 +209,7 @@ impl Frontend {
         match self.screen {
             FrontendScreen::MainMenu => self.hovered.map(|h| h as i32).unwrap_or(-1),
             FrontendScreen::NewHero => self.new_hero.hovered_region.map(|h| h as i32).unwrap_or(-1),
-            FrontendScreen::Settings => {
-                self.settings.hovered.map(|h| h as i32).unwrap_or(-1)
-            }
+            FrontendScreen::Settings => self.settings.hovered.map(|h| h as i32).unwrap_or(-1),
             _ => -1,
         }
     }
@@ -275,12 +273,11 @@ impl Frontend {
                 // other regions leave the last shown text untouched.
                 if let Some(region) = region {
                     if description::description_for_region(region).is_some() {
-                        self.new_hero.description_region =
-                            Some(if (25..=32).contains(&region) {
-                                7 + (region - 25) / 2
-                            } else {
-                                region
-                            });
+                        self.new_hero.description_region = Some(if (25..=32).contains(&region) {
+                            7 + (region - 25) / 2
+                        } else {
+                            region
+                        });
                     }
                 }
             }
@@ -409,7 +406,7 @@ impl Frontend {
                         });
                     }
                 } else if region == layout::BOTTOM_CANCEL_REGION {
-                        // Left control ("Отмена", #9/#10) -> back.
+                    // Left control ("Отмена", #9/#10) -> back.
                     self.screen = FrontendScreen::MainMenu;
                     self.hovered = None;
                 }

@@ -800,7 +800,10 @@ mod tests {
         assert!(op_supported(OP_BASE));
         assert!(op_supported(OP_LAST));
         assert!(!op_supported(OP_LAST + 1));
-        assert!(matches!(low_family(0x00), Some(LowFamily::GroupActive { location: 1 })));
+        assert!(matches!(
+            low_family(0x00),
+            Some(LowFamily::GroupActive { location: 1 })
+        ));
         assert!(matches!(
             low_family(0x38),
             Some(LowFamily::GroupNoLiveMember { location: 1 })
@@ -838,7 +841,10 @@ mod tests {
         for &op in &used {
             assert!(op_supported(op), "unsupported shipped opcode {op:#X}");
             if op >= OP_BASE {
-                assert!(script_op(op).is_some(), "missing high catalogue entry {op:#X}");
+                assert!(
+                    script_op(op).is_some(),
+                    "missing high catalogue entry {op:#X}"
+                );
             }
         }
     }

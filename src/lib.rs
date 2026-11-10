@@ -166,4 +166,3 @@ pub extern "C" fn debug_player_y() -> f32 {
         .map(|g| g.player_y as f32)
         .unwrap_or(0.0)
 }
-

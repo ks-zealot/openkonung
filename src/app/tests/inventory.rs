@@ -206,7 +206,9 @@ fn raise_stat_moves_xp_and_increments_current_only() {
     app.player.invested_xp = 0;
     let stat = crate::character::PrimaryStat::Strength;
     let cost = {
-        let sheet = app.growth_sheet(InventoryOwner::Protagonist).expect("sheet");
+        let sheet = app
+            .growth_sheet(InventoryOwner::Protagonist)
+            .expect("sheet");
         crate::character_screen::stat_raise_cost(&sheet, stat)
     };
     assert!(cost > 0, "fresh level-0 warrior can raise strength");

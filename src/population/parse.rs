@@ -270,11 +270,7 @@ pub fn parse_settlement_record(index: usize, data: &[u8]) -> Settlement {
         money_pool_10: i32v(data, 0x10),
         target_base0: data[0],
         target_base1: data[1],
-        apprentice_start: [
-            i32v(data, 0x3FC),
-            i32v(data, 0x400),
-            i32v(data, 0x404),
-        ],
+        apprentice_start: [i32v(data, 0x3FC), i32v(data, 0x400), i32v(data, 0x404)],
         flags_4b2,
         targets,
         waypoints,

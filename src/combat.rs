@@ -15,8 +15,8 @@ use crate::character::PlayerCharacter;
 use crate::item::ItemDb;
 use crate::population::Entity;
 
-pub mod los;
 pub mod loot;
+pub mod los;
 pub mod projectile;
 
 /// Original LCG (`FUN_0043ea46`): `seed = seed*0x41c64e6d + 0x3039`,

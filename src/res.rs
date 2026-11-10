@@ -220,7 +220,8 @@ impl Res {
         let off = 0x2A69A_usize
             .checked_add(id.saturating_mul(0x100))
             .and_then(|o| o.checked_add(0xD7));
-        off.and_then(|o| self.save_game.get(o).copied()).unwrap_or(0)
+        off.and_then(|o| self.save_game.get(o).copied())
+            .unwrap_or(0)
     }
 
     /// Parse the original item templates and bitmap fonts from `konung.res`

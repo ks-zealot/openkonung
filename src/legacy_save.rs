@@ -15,12 +15,13 @@
 //! pool.
 
 use crate::constants::game_layout::{
-    ENTITY_COUNT, ENTITY_STRIDE, GROUP_COUNT, GROUP_STRIDE, SETTLEMENT_COUNT,
-    SETTLEMENT_STRIDE, WAYPOINT_MAX, WAYPOINT_OFF, WAYPOINT_STRIDE, WORLD_OBJECT_COUNT,
-    WORLD_OBJECT_STRIDE,
+    ENTITY_COUNT, ENTITY_STRIDE, GROUP_COUNT, GROUP_STRIDE, SETTLEMENT_COUNT, SETTLEMENT_STRIDE,
+    WAYPOINT_MAX, WAYPOINT_OFF, WAYPOINT_STRIDE, WORLD_OBJECT_COUNT, WORLD_OBJECT_STRIDE,
 };
-use crate::population::{parse_entity_record, parse_group_record, parse_settlement_record,
-    Entity, Group, Settlement, SettlementTrade};
+use crate::population::{
+    parse_entity_record, parse_group_record, parse_settlement_record, Entity, Group, Settlement,
+    SettlementTrade,
+};
 use crate::world_objects::{ActiveWorldObject, WorldObjectSource, WORLD_OBJECT_ITEM_SLOTS};
 
 /// Exact `KONUNG.SA0..9` payload size (`0x0B07A4`).
@@ -61,21 +62,42 @@ pub struct Block {
     pub len: usize,
 }
 
-pub const QUEST_BLOCK: Block = Block { off: QUEST_OFF, len: QUEST_LEN };
-pub const PROJECTILE_BLOCK: Block = Block { off: PROJECTILE_OFF, len: PROJECTILE_LEN };
-pub const ITEM_TABLE_BLOCK: Block = Block { off: ITEM_TABLE_OFF, len: ITEM_TABLE_LEN };
-pub const MARKER_BLOCK: Block = Block { off: MARKER_OFF, len: MARKER_LEN };
-pub const GROUP_BLOCK: Block = Block { off: GROUP_BLOCK_OFF, len: GROUP_BLOCK_LEN };
+pub const QUEST_BLOCK: Block = Block {
+    off: QUEST_OFF,
+    len: QUEST_LEN,
+};
+pub const PROJECTILE_BLOCK: Block = Block {
+    off: PROJECTILE_OFF,
+    len: PROJECTILE_LEN,
+};
+pub const ITEM_TABLE_BLOCK: Block = Block {
+    off: ITEM_TABLE_OFF,
+    len: ITEM_TABLE_LEN,
+};
+pub const MARKER_BLOCK: Block = Block {
+    off: MARKER_OFF,
+    len: MARKER_LEN,
+};
+pub const GROUP_BLOCK: Block = Block {
+    off: GROUP_BLOCK_OFF,
+    len: GROUP_BLOCK_LEN,
+};
 pub const WORLD_OBJECT_BLOCK: Block = Block {
     off: WORLD_OBJECT_BLOCK_OFF,
     len: WORLD_OBJECT_BLOCK_LEN,
 };
-pub const ENTITY_BLOCK: Block = Block { off: ENTITY_BLOCK_OFF, len: ENTITY_BLOCK_LEN };
+pub const ENTITY_BLOCK: Block = Block {
+    off: ENTITY_BLOCK_OFF,
+    len: ENTITY_BLOCK_LEN,
+};
 pub const SETTLEMENT_BLOCK: Block = Block {
     off: SETTLEMENT_BLOCK_OFF,
     len: SETTLEMENT_BLOCK_LEN,
 };
-pub const DISCOVERED_BLOCK: Block = Block { off: DISCOVERED_OFF, len: DISCOVERED_LEN };
+pub const DISCOVERED_BLOCK: Block = Block {
+    off: DISCOVERED_OFF,
+    len: DISCOVERED_LEN,
+};
 
 /// One parsed `KONUNG.SAn` snapshot. Blocks are kept verbatim so unmodelled
 /// bytes survive a parse/write round-trip.
@@ -182,7 +204,11 @@ impl LegacySnapshot {
         put_u32(&mut out, OPT3_OFF, self.opt3);
         put_u32(&mut out, WORLD_TICK_OFF, self.world_tick);
         put_u32(&mut out, LEADER_OFF, self.leader_index);
-        put_u32(&mut out, PROJECTILE_COUNT_OFF, self.projectile_count.min(100));
+        put_u32(
+            &mut out,
+            PROJECTILE_COUNT_OFF,
+            self.projectile_count.min(100),
+        );
         put_u32(&mut out, MARKER_COUNT_OFF, self.marker_count.min(200));
         for (i, v) in self.quest_flags.iter().take(300).enumerate() {
             put_u32(&mut out, QUEST_OFF + i * 4, *v);
@@ -277,7 +303,10 @@ impl LegacySnapshot {
             return None;
         }
         let o = idx * ENTITY_STRIDE;
-        Some(parse_entity_record(idx, &self.entities[o..o + ENTITY_STRIDE]))
+        Some(parse_entity_record(
+            idx,
+            &self.entities[o..o + ENTITY_STRIDE],
+        ))
     }
 }
 
@@ -398,7 +427,11 @@ pub fn patch_world_objects(mut block: Vec<u8>, sources: &[WorldObjectSource]) ->
 /// Rebuild the runtime marker pool (`0x785BB4`, 200 x 0x40) from the active
 /// sources of a `Game.N`-shaped WorldObject block: each accepted record is a
 /// copy with `+0x0E = source index`.
-pub fn build_markers(world_block: &[u8], sources: &[WorldObjectSource], active: &[ActiveWorldObject]) -> Vec<u8> {
+pub fn build_markers(
+    world_block: &[u8],
+    sources: &[WorldObjectSource],
+    active: &[ActiveWorldObject],
+) -> Vec<u8> {
     let mut out = vec![0u8; MARKER_LEN];
     for (i, m) in active.iter().take(200).enumerate() {
         let so = m.source * WORLD_OBJECT_STRIDE;
@@ -473,10 +506,26 @@ pub fn patch_settlements(
             .map(|s| [s.producer(1), s.producer(2), s.producer(3), s.voivode()])
             .unwrap_or([t.prod_role2, t.prod_role3, t.prod_role4, t.prod_role5]);
         let r = &mut block[o..o + SETTLEMENT_STRIDE];
-        put_u16(r, crate::constants::game_layout::TRADE_PROD2_OFF, producers[0]);
-        put_u16(r, crate::constants::game_layout::TRADE_PROD3_OFF, producers[1]);
-        put_u16(r, crate::constants::game_layout::TRADE_PROD4_OFF, producers[2]);
-        put_u16(r, crate::constants::game_layout::TRADE_PROD5_OFF, producers[3]);
+        put_u16(
+            r,
+            crate::constants::game_layout::TRADE_PROD2_OFF,
+            producers[0],
+        );
+        put_u16(
+            r,
+            crate::constants::game_layout::TRADE_PROD3_OFF,
+            producers[1],
+        );
+        put_u16(
+            r,
+            crate::constants::game_layout::TRADE_PROD4_OFF,
+            producers[2],
+        );
+        put_u16(
+            r,
+            crate::constants::game_layout::TRADE_PROD5_OFF,
+            producers[3],
+        );
         put_i32(r, crate::constants::game_layout::TRADE_TIMER2_OFF, t.timer2);
         put_i32(r, crate::constants::game_layout::TRADE_TIMER4_OFF, t.timer4);
         put_i32(r, crate::constants::game_layout::TRADE_TIMER3_OFF, t.timer3);
@@ -523,7 +572,9 @@ pub fn parse_slot_names(bytes: &[u8]) -> Result<[String; SLOT_COUNT], String> {
         let o = i * SLOT_NAME_LEN;
         let rec = &bytes[o..o + SLOT_NAME_LEN];
         let end = rec.iter().position(|&b| b == 0).unwrap_or(SLOT_NAME_LEN);
-        *slot = crate::names::decode_cp866(&rec[..end]).trim_end().to_string();
+        *slot = crate::names::decode_cp866(&rec[..end])
+            .trim_end()
+            .to_string();
     }
     Ok(out)
 }
@@ -622,10 +673,12 @@ mod tests {
         assert_eq!(WORLD_OBJECT_BLOCK_LEN, 0x7D00);
         assert_eq!(ENTITY_BLOCK_LEN, 0x7D000);
         assert_eq!(SETTLEMENT_BLOCK_LEN, 0x5E24);
-        assert_eq!(GAME_SIZE, SETTLEMENT_OFF + SETTLEMENT_COUNT * SETTLEMENT_STRIDE);
+        assert_eq!(
+            GAME_SIZE,
+            SETTLEMENT_OFF + SETTLEMENT_COUNT * SETTLEMENT_STRIDE
+        );
         assert_eq!(ENTITY_OFF, 0x2A69A);
         assert_eq!(GROUP_OFF, 0x20000);
         assert_eq!(WORLD_OBJECT_OFF, 0x21900);
     }
 }
-

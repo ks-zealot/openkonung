@@ -222,8 +222,7 @@ impl PlayableApp {
         let Some(target) = target else {
             return false;
         };
-        if target == used
-            || self.world.res.item_class_subtype(target) != Some((11, other_subtype))
+        if target == used || self.world.res.item_class_subtype(target) != Some((11, other_subtype))
         {
             return false;
         }
@@ -396,8 +395,8 @@ impl PlayableApp {
                     .iter()
                     .filter_map(|a| {
                         let m = pop.motion.get(&a.source_entity_id());
-                        let dead = m.map(|m| m.dead).unwrap_or(false)
-                            || a.entity.archetype & 0x80 != 0;
+                        let dead =
+                            m.map(|m| m.dead).unwrap_or(false) || a.entity.archetype & 0x80 != 0;
                         if !dead {
                             return None;
                         }
@@ -708,12 +707,7 @@ impl PlayableApp {
         true
     }
 
-    fn scatter_goal(
-        &self,
-        cell: (i32, i32),
-        collision: &[u16],
-        edge: u8,
-    ) -> Option<(i32, i32)> {
+    fn scatter_goal(&self, cell: (i32, i32), collision: &[u16], edge: u8) -> Option<(i32, i32)> {
         let mut dx = match edge {
             0 => -WANDER_RADIUS_X * 2,
             1 => WANDER_RADIUS_X * 2,
@@ -753,10 +747,7 @@ impl PlayableApp {
         if self.current_map != loc {
             return true;
         }
-        let here = (
-            self.player_x.round() as i32,
-            self.player_y.round() as i32,
-        );
+        let here = (self.player_x.round() as i32, self.player_y.round() as i32);
         if here != cell {
             return true;
         }
@@ -851,18 +842,13 @@ impl PlayableApp {
             if instance.flags & 1 == 0 {
                 continue;
             }
-            if self
-                .world
-                .res
-                .set_item_flags(id, instance.flags & !1)
-            {
+            if self.world.res.set_item_flags(id, instance.flags & !1) {
                 identified = identified.saturating_add(1);
             }
         }
         identified
     }
 }
-
 
 /// `FUN_00410010` amulet-part pair → result subtype (0x28 full amulet).
 fn amulet_result(used: u8, target: u8) -> Option<u8> {
@@ -901,4 +887,3 @@ fn key_destination(subtype: u8) -> Option<(u32, (i32, i32), u32, i32, i32, i32)>
         _ => None,
     }
 }
-

@@ -92,7 +92,8 @@ impl PlayableApp {
     }
 
     /// Test-only: place the protagonist on a runtime cell and settle the camera.
-    pub fn debug_set_player_cell(&mut self, x: i32, y: i32) {        self.player_x = x as f64;
+    pub fn debug_set_player_cell(&mut self, x: i32, y: i32) {
+        self.player_x = x as f64;
         self.player_y = y as f64;
         self.player_render_x = self.player_x;
         self.player_render_y = self.player_y;
@@ -339,10 +340,18 @@ impl PlayableApp {
             );
         }
         if !moving && !self.player_active && self.player_attack_ranged {
-            return (crate::anim::ACT_RANGED, self.player_ranged_frame as usize, battle);
+            return (
+                crate::anim::ACT_RANGED,
+                self.player_ranged_frame as usize,
+                battle,
+            );
         }
         if !moving && !self.player_active && self.player_attack_target.is_some() {
-            return (crate::anim::ACT_MELEE, self.player_attack_frame as usize, battle);
+            return (
+                crate::anim::ACT_MELEE,
+                self.player_attack_frame as usize,
+                battle,
+            );
         }
         let action = if moving {
             crate::anim::walk_action(battle)

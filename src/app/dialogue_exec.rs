@@ -188,7 +188,8 @@ impl PlayableApp {
         motion.walk_frames = walk_frames;
         motion.idle_frames = idle_frames;
         motion.action = crate::anim::idle_action(battle) as u8;
-        self.party.push(crate::actors::PartyMember { entity, motion });
+        self.party
+            .push(crate::actors::PartyMember { entity, motion });
 
         // Remove the NPC from the world population (it left its location group).
         let loc = self.current_map;
@@ -222,4 +223,3 @@ impl PlayableApp {
         self.population_cache.remove(&loc);
     }
 }
-

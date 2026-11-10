@@ -11,7 +11,7 @@
 //!   `0x456A1C`/`0x450EBC`; the result is `(location << 8) | 0x103`.
 
 use crate::hud::layout;
-use crate::res::{blit, blit_sub, Img, Image, Res};
+use crate::res::{blit, blit_sub, Image, Img, Res};
 
 pub mod data;
 
@@ -120,13 +120,7 @@ fn copy_span(src: &Image, row: usize, x: usize, w: usize, dst: &mut [u8]) {
 
 /// Tile the original `INTR[5]` stone background across an interface viewport
 /// (`FUN_00430430`).
-pub fn draw_stone(
-    frame: &mut [u8],
-    fw: usize,
-    fh: usize,
-    res: &mut Res,
-    vp: crate::hud::Rect,
-) {
+pub fn draw_stone(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, vp: crate::hud::Rect) {
     if let Some(tile) = res.intr_sprite(5) {
         let mut ty = 0;
         while ty < vp.h {
@@ -202,16 +196,7 @@ pub fn draw(
     }
     if let Some((_, img)) = cache.as_ref() {
         let (dx, dy) = overlay_offset(logical_w);
-        blit(
-            frame,
-            fw,
-            fh,
-            &img.data,
-            img.w,
-            img.h,
-            vp.x + dx,
-            vp.y + dy,
-        );
+        blit(frame, fw, fh, &img.data, img.w, img.h, vp.x + dx, vp.y + dy);
     }
 }
 

@@ -67,7 +67,6 @@ pub const MAP_PARCHMENT: usize = 4;
 pub const MAP_STONE_TILE: usize = 5;
 pub const MAP_OVERLAY: usize = 179;
 
-
 /// Semantic role of one occupied INTR index (verified where noted; the rest are
 /// descriptive classifications, `Unclassified`/`SmallUi` where evidence is thin).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

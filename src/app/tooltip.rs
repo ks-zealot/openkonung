@@ -129,11 +129,7 @@ pub fn draw_item_tooltip(
     let line_h = 13;
     let pad = 6;
     let title_w = font.measure(&title);
-    let body_w = details
-        .iter()
-        .map(|l| font.measure(l))
-        .max()
-        .unwrap_or(0);
+    let body_w = details.iter().map(|l| font.measure(l)).max().unwrap_or(0);
     let w = title_w.max(body_w) + pad * 2;
     let h = line_h * (1 + details.len() as i32) + pad * 2;
     let (cx, cy, cw, ch) = clip;
@@ -153,7 +149,15 @@ pub fn draw_item_tooltip(
     fill_rect(frame, fw, fh, x, y + h - 1, w, 1, [96, 112, 96, 255]);
     fill_rect(frame, fw, fh, x, y, 1, h, [96, 112, 96, 255]);
     fill_rect(frame, fw, fh, x + w - 1, y, 1, h, [96, 112, 96, 255]);
-    font.draw(frame, fw, fh, &title, x + pad, y + pad, Some([255, 235, 120]));
+    font.draw(
+        frame,
+        fw,
+        fh,
+        &title,
+        x + pad,
+        y + pad,
+        Some([255, 235, 120]),
+    );
     for (i, line) in details.iter().enumerate() {
         font.draw(
             frame,

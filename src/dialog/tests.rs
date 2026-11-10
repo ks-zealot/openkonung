@@ -185,7 +185,8 @@ fn opens_shipped_dialogue() {
     };
     let q = QuestData::parse(&data).unwrap();
     let fonts = crate::font::Fonts::empty();
-    let d = DialogState::start(&q, &fonts, 277, 140, 800, &mut |_| true).expect("dialogue 140 opens");
+    let d =
+        DialogState::start(&q, &fonts, 277, 140, 800, &mut |_| true).expect("dialogue 140 opens");
     let prompt = d.prompt_lines.join(" ");
     assert!(prompt.contains("Князь"), "unexpected prompt: {prompt}");
     assert!(!d.options.is_empty(), "expected at least one option");

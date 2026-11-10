@@ -43,10 +43,7 @@ fn claimable(
 
 fn inside(rect: &crate::population::Rect, cell: (i32, i32)) -> bool {
     let (x, y) = cell;
-    rect.x1 as i32 <= x
-        && x <= rect.x2 as i32
-        && rect.y1 as i32 <= y
-        && y <= rect.y2 as i32
+    rect.x1 as i32 <= x && x <= rect.x2 as i32 && rect.y1 as i32 <= y && y <= rect.y2 as i32
 }
 
 impl PlayableApp {
@@ -90,10 +87,7 @@ impl PlayableApp {
         let hostile = settlement.flags_4b2 & 1 != 0;
 
         let mut claimed = false;
-        let leader_cell = (
-            self.player_x.round() as i32,
-            self.player_y.round() as i32,
-        );
+        let leader_cell = (self.player_x.round() as i32, self.player_y.round() as i32);
         if inside(&rect, leader_cell)
             && (hostile
                 || claimable(
@@ -268,11 +262,7 @@ impl PlayableApp {
                     .motion
                     .get(&id)
                     .map(|m| (m.action, m.dead, m.death_frames))
-                    .unwrap_or((
-                        actor.entity.kind,
-                        matches!(actor.entity.kind, 3 | 9),
-                        0,
-                    ));
+                    .unwrap_or((actor.entity.kind, matches!(actor.entity.kind, 3 | 9), 0));
                 let battle = crate::anim::battle_from_flags(actor.entity.flags_b);
                 let death = dead || matches!(action, 3 | 9);
                 // Preserve the current death row (3/9); otherwise use the

@@ -28,16 +28,9 @@ impl PlayableApp {
         let loc = self.current_map;
         let mut party_cells = Vec::new();
         if !self.player.dead {
-            party_cells.push((
-                self.player_x.round() as i32,
-                self.player_y.round() as i32,
-            ));
+            party_cells.push((self.player_x.round() as i32, self.player_y.round() as i32));
         }
-        party_cells.extend(
-            self.party
-                .iter()
-                .map(|m| m.motion.cell),
-        );
+        party_cells.extend(self.party.iter().map(|m| m.motion.cell));
 
         let Some(tables) = self.tables.as_mut() else {
             return;
@@ -69,10 +62,7 @@ impl PlayableApp {
             .map(|p| p.motion.iter().map(|(&id, m)| (id, m.cell)).collect())
             .unwrap_or_default();
         for (index, rect, members) in group_infos {
-            if party_cells
-                .iter()
-                .any(|&(x, y)| rect_contains(&rect, x, y))
-            {
+            if party_cells.iter().any(|&(x, y)| rect_contains(&rect, x, y)) {
                 if let Some(g) = groups.get_mut(index) {
                     // `FUN_00412C30`: target group = leader[+5] (party group 0).
                     g.target_group = 0;
@@ -146,15 +136,7 @@ impl PlayableApp {
                             && g.class_1e & 0xC0 != 0
                             && (g.activity_1d == 1 || g.activity_1d == 0x20)
                     })
-                    .map(|g| {
-                        (
-                            g.index,
-                            g.target_group,
-                            g.activity_1d,
-                            g.rect_a,
-                            g.class_1e,
-                        )
-                    })
+                    .map(|g| (g.index, g.target_group, g.activity_1d, g.rect_a, g.class_1e))
                     .collect()
             })
             .unwrap_or_default();
@@ -180,10 +162,7 @@ impl PlayableApp {
             .actors
             .iter()
             .filter_map(|a| {
-                if a.entity.archetype & 0x80 != 0
-                    || a.entity.kind == 9
-                    || a.entity.kind == 3
-                {
+                if a.entity.archetype & 0x80 != 0 || a.entity.kind == 9 || a.entity.kind == 3 {
                     return None;
                 }
                 let m = pop.motion.get(&a.entity.index)?;
@@ -226,10 +205,7 @@ impl PlayableApp {
                 .iter()
                 .filter(|a| {
                     a.source_group_id == group_id
-                        && !pop
-                            .motion
-                            .get(&a.entity.index)
-                            .is_some_and(|m| m.dead)
+                        && !pop.motion.get(&a.entity.index).is_some_and(|m| m.dead)
                 })
                 .map(|a| a.entity.index)
                 .collect();
@@ -282,10 +258,8 @@ impl PlayableApp {
                         0x44 | 0x57 => Self::adjacent_enemy(cell, &candidates),
                         // Shared branch: `FUN_0041FF68`; no unengaged
                         // intermediate in the original.
-                        0x41 | 0x4D | 0x4F => {
-                            Self::shared_target(&engaged, &candidates)
-                                .or_else(|| Self::nearest_enemy(cell, &candidates))
-                        }
+                        0x41 | 0x4D | 0x4F => Self::shared_target(&engaged, &candidates)
+                            .or_else(|| Self::nearest_enemy(cell, &candidates)),
                         // `FUN_00420190` nearest-unengaged, then `FUN_00420098`.
                         0x43 | 0x45 | 0x46 | 0x4C | 0x55 => {
                             Self::nearest_unengaged(cell, &candidates, &engaged)
@@ -357,9 +331,9 @@ impl PlayableApp {
                     m.ranged_order = false;
                     m.attack_frames = 0;
                 }
-                let idle = crate::anim::idle_action(crate::anim::battle_from_flags(
-                    a.entity.flags_b,
-                )) as u8;
+                let idle =
+                    crate::anim::idle_action(crate::anim::battle_from_flags(a.entity.flags_b))
+                        as u8;
                 if m.action != idle {
                     m.action = idle;
                     m.frame = 0;
@@ -431,14 +405,13 @@ impl PlayableApp {
             return None;
         }
         let subtype = world.res.item_class_subtype(entity.equipment[0])?.1;
-        world
-            .res
-            .item_db
-            .as_ref()
-            .map(|db| db.probe_range(subtype))
+        world.res.item_db.as_ref().map(|db| db.probe_range(subtype))
     }
 
-    fn shared_target(engaged: &HashSet<CombatTarget>, enemies: &[EnemyRef]) -> Option<CombatTarget> {
+    fn shared_target(
+        engaged: &HashSet<CombatTarget>,
+        enemies: &[EnemyRef],
+    ) -> Option<CombatTarget> {
         enemies
             .iter()
             .find(|e| engaged.contains(&e.target))

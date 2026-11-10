@@ -297,10 +297,7 @@ impl ResourcePack {
                 return Err(PackError::new("empty video payload"));
             }
             if !video_names.insert(v.name.as_str()) {
-                return Err(PackError::new(format!(
-                    "duplicate video '{}'",
-                    v.name
-                )));
+                return Err(PackError::new(format!("duplicate video '{}'", v.name)));
             }
         }
 

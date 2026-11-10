@@ -272,10 +272,8 @@ pub fn blit_sub(
                 let sa = a as u32;
                 let inv = 255 - sa;
                 dst[di] = ((src[si] as u32 * sa + dst[di] as u32 * inv) / 255) as u8;
-                dst[di + 1] =
-                    ((src[si + 1] as u32 * sa + dst[di + 1] as u32 * inv) / 255) as u8;
-                dst[di + 2] =
-                    ((src[si + 2] as u32 * sa + dst[di + 2] as u32 * inv) / 255) as u8;
+                dst[di + 1] = ((src[si + 1] as u32 * sa + dst[di + 1] as u32 * inv) / 255) as u8;
+                dst[di + 2] = ((src[si + 2] as u32 * sa + dst[di + 2] as u32 * inv) / 255) as u8;
                 dst[di + 3] = 255;
             }
         }

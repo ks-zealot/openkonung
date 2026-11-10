@@ -119,8 +119,14 @@ fn needed_raise_matches_tier_cost_gated_by_available_xp() {
 #[test]
 fn level_caps_hide_raise_costs() {
     // `0x45B0AB`: at level 1 the normal cap is 7 and the specialized cap is 19.
-    assert_eq!(stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Dexterity, 1), 7);
-    assert_eq!(stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Strength, 1), 19);
+    assert_eq!(
+        stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Dexterity, 1),
+        7
+    );
+    assert_eq!(
+        stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Strength, 1),
+        19
+    );
     // DEX 10 is already above the level-1 cap -> the cost is hidden.
     assert_eq!(
         needed_raise(CharacterClass::Warrior, PrimaryStat::Dexterity, 10, 1, 100),
@@ -137,7 +143,10 @@ fn level_caps_hide_raise_costs() {
         0
     );
     // Level 0 has no practical cap.
-    assert_eq!(stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Dexterity, 0), 120);
+    assert_eq!(
+        stat_growth_cap(CharacterClass::Warrior, PrimaryStat::Dexterity, 0),
+        120
+    );
 }
 
 #[test]
@@ -269,4 +278,3 @@ fn paper_doll_positions_match_original_dgroup() {
         assert_eq!(paper_doll_position(logical_w), expected);
     }
 }
-

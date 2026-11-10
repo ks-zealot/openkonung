@@ -125,7 +125,8 @@ impl PlayableApp {
     }
 
     /// Diagnostic: kill the protagonist to exercise the death row.
-    pub fn combat_debug_kill_player(&mut self) -> u32 {        self.kill_combatant(CombatTarget::Player, 1, 0);
+    pub fn combat_debug_kill_player(&mut self) -> u32 {
+        self.kill_combatant(CombatTarget::Player, 1, 0);
         self.player.dead as u32
     }
 
@@ -485,7 +486,11 @@ impl PlayableApp {
             (rect.y1 as i32 + rect.y2 as i32) / 2,
         );
         let Some(player_cell) = std::iter::once(center)
-            .chain(crate::coords::neighbors(center.0, center.1).iter().map(|&(_, x, y)| (x, y)))
+            .chain(
+                crate::coords::neighbors(center.0, center.1)
+                    .iter()
+                    .map(|&(_, x, y)| (x, y)),
+            )
             .find(|&(x, y)| crate::actors::is_free(collision, x, y))
         else {
             return 0;
@@ -571,7 +576,11 @@ impl PlayableApp {
     }
 
     pub fn set_group_activity(&mut self, group_id: usize, activity: u8) -> u32 {
-        if let Some(g) = self.tables.as_mut().and_then(|t| t.groups.get_mut(group_id)) {
+        if let Some(g) = self
+            .tables
+            .as_mut()
+            .and_then(|t| t.groups.get_mut(group_id))
+        {
             g.activity_1d = activity;
             1
         } else {

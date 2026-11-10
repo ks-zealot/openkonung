@@ -1,8 +1,8 @@
 //! Unit tests for the [`crate::app`] module.
 
-mod common;
 mod class11;
 mod combat_ai;
+mod common;
 mod cursor;
 mod inventory;
 mod map;

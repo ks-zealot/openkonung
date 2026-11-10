@@ -167,12 +167,7 @@ impl Frontend {
         // `FUN_0042EA6C`: tile the 100x100 stone panel (`NEWH#1`) over the whole
         // viewport, then draw the transparent `NEWH#0` artwork on top. The old
         // black fill showed through the ~38% transparent pixels.
-        tile_image(
-            &mut self.frame,
-            fw,
-            fh,
-            &self.newh.images[NEWH_AUX_100],
-        );
+        tile_image(&mut self.frame, fw, fh, &self.newh.images[NEWH_AUX_100]);
         draw_image(
             &mut self.frame,
             fw,

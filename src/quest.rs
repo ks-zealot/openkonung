@@ -443,9 +443,7 @@ impl QuestData {
     /// (`FUN_00434BB8` / read by `FUN_00434FE8`). Slots whose file byte already
     /// has `0x80` set start "active".
     pub fn initial_flags(&self) -> Vec<u32> {
-        (0..FLAG_SLOTS)
-            .map(|i| self.u32(B7_OFF + i * 4))
-            .collect()
+        (0..FLAG_SLOTS).map(|i| self.u32(B7_OFF + i * 4)).collect()
     }
 }
 

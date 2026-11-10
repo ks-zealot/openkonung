@@ -1,8 +1,8 @@
 //! Quest opcode execution tests (money, items, settlements, save extras).
 
-use super::common::build_party_app;
 use super::super::dialogue_ops::QuestContext;
 use super::super::*;
+use super::common::build_party_app;
 
 const NPC: usize = 539;
 
@@ -226,12 +226,7 @@ fn settlement_settle_ops_move_the_npc_and_party_specialist_into_the_village() {
         eprintln!("skipping: game data not present");
         return;
     };
-    let group_before = app
-        .tables
-        .as_ref()
-        .unwrap()
-        .groups[23]
-        .entity_count;
+    let group_before = app.tables.as_ref().unwrap().groups[23].entity_count;
     app.recruit_companion(NPC);
     assert_eq!(app.party.len(), 1);
     assert!(run(&mut app, 0x14C));
@@ -263,10 +258,19 @@ fn settlement_settle_ops_move_the_npc_and_party_specialist_into_the_village() {
         settled.dialogue_id, 100,
         "voivode waypoint dialogue id is authored as +1"
     );
-    assert_eq!(settled.archetype & 0x38, 0, "role bits are cleared on stationing");
+    assert_eq!(
+        settled.archetype & 0x38,
+        0,
+        "role bits are cleared on stationing"
+    );
     assert_eq!(settled.flags_b & 0x04, 0, "battle stance is cleared");
     assert_eq!(
-        app.settlements.iter().find(|s| s.loc_id == 4).unwrap().waypoints[4].owner as usize,
+        app.settlements
+            .iter()
+            .find(|s| s.loc_id == 4)
+            .unwrap()
+            .waypoints[4]
+            .owner as usize,
         dest
     );
 }
@@ -295,10 +299,7 @@ fn elder_settlement_copies_waypoint0_dialogue_and_clears_role_bits() {
     assert_eq!(settled.dialogue_id, 140, "elder waypoint dialogue id");
     assert_eq!(settled.flags_a, 0, "0x14C elder slot clears flags_a");
     assert_eq!(settled.archetype & 0x38, 0, "role bits are cleared");
-    assert_eq!(
-        app.settlements[si].waypoints[0].owner as usize,
-        dest
-    );
+    assert_eq!(app.settlements[si].waypoints[0].owner as usize, dest);
 }
 
 #[test]
@@ -409,26 +410,14 @@ fn party_gear_repair_caps_and_refills_durability() {
             npc.stats.smithing = 10;
         }
     }
-    let Some(over) = app
-        .world
-        .res
-        .alloc_item_instance(2, 0, 0, 0, 200.0, 0, 0)
-    else {
+    let Some(over) = app.world.res.alloc_item_instance(2, 0, 0, 0, 200.0, 0, 0) else {
         eprintln!("skipping: no free item instance");
         return;
     };
-    let Some(under) = app
-        .world
-        .res
-        .alloc_item_instance(2, 0, 0, 0, 50.0, 0, 0)
-    else {
+    let Some(under) = app.world.res.alloc_item_instance(2, 0, 0, 0, 50.0, 0, 0) else {
         return;
     };
-    let Some(quest) = app
-        .world
-        .res
-        .alloc_item_instance(9, 0, 0, 0, 200.0, 0, 0)
-    else {
+    let Some(quest) = app.world.res.alloc_item_instance(9, 0, 0, 0, 200.0, 0, 0) else {
         return;
     };
     app.world.res.set_item_quality(over, 50.0);

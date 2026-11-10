@@ -152,7 +152,11 @@ pub fn save_slot_named(slot: u32) -> bool {
     if slot >= 10 {
         return false;
     }
-    unsafe { (&*std::ptr::addr_of!(SAVE_NAMES)).get(slot).is_some_and(|s| !s.is_empty()) }
+    unsafe {
+        (&*std::ptr::addr_of!(SAVE_NAMES))
+            .get(slot)
+            .is_some_and(|s| !s.is_empty())
+    }
 }
 
 /// Called by the frontend when a save slot is clicked.
@@ -304,7 +308,11 @@ pub extern "C" fn legacy_names_build(ptr: *const u8, len: u32) -> u32 {
         Err(_) => return 0,
     };
     let mut names: [String; crate::legacy_save::SLOT_COUNT] = Default::default();
-    for (i, part) in text.split('\0').take(crate::legacy_save::SLOT_COUNT).enumerate() {
+    for (i, part) in text
+        .split('\0')
+        .take(crate::legacy_save::SLOT_COUNT)
+        .enumerate()
+    {
         names[i] = part.to_string();
     }
     let out = crate::legacy_save::write_slot_names(&names);

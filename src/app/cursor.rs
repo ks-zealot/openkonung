@@ -290,11 +290,7 @@ impl PlayableApp {
     /// bit `0x80` are skipped.
     pub(super) fn selected_party_in_battle(&self) -> bool {
         if self.party_selected.first().copied().unwrap_or(false)
-            && unit_can_act(
-                self.player.entity_class(),
-                self.player.dead,
-                0,
-            )
+            && unit_can_act(self.player.entity_class(), self.player.dead, 0)
             && self.player.flags_b & crate::anim::FLAG_BATTLE != 0
         {
             return true;
@@ -318,11 +314,7 @@ impl PlayableApp {
     /// Deliberately looser than the firing gate (no quantity/class/range test).
     pub(super) fn cursor_ranged_ready(&self) -> bool {
         if self.party_selected.first().copied().unwrap_or(false)
-            && unit_can_act(
-                self.player.entity_class(),
-                self.player.dead,
-                0,
-            )
+            && unit_can_act(self.player.entity_class(), self.player.dead, 0)
             && self.player.flags_b & crate::anim::FLAG_BATTLE != 0
             && self.player.raw_0x12 == 1
             && self.player.equipment[1] != 0
@@ -382,7 +374,13 @@ impl PlayableApp {
             .res
             .intr
             .as_ref()
-            .and_then(|a| a.dimensions(if on { crate::intr::AUTO_ON } else { crate::intr::AUTO_OFF }))
+            .and_then(|a| {
+                a.dimensions(if on {
+                    crate::intr::AUTO_ON
+                } else {
+                    crate::intr::AUTO_OFF
+                })
+            })
             .unwrap_or((60, 24));
         (l.auto_pos.0, l.auto_pos.1, w as i32, h as i32)
     }

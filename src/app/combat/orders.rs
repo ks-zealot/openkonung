@@ -235,15 +235,12 @@ impl PlayableApp {
         let CombatTarget::World(id) = defender else {
             return;
         };
-        let group = self
-            .population_cache
-            .get(&self.current_map)
-            .and_then(|p| {
-                p.actors
-                    .iter()
-                    .find(|a| a.entity.index == id)
-                    .map(|a| a.source_group_id)
-            });
+        let group = self.population_cache.get(&self.current_map).and_then(|p| {
+            p.actors
+                .iter()
+                .find(|a| a.entity.index == id)
+                .map(|a| a.source_group_id)
+        });
         if let Some(group) = group {
             self.wake_group(group, attacker);
         }

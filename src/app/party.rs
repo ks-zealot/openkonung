@@ -49,7 +49,8 @@ impl PlayableApp {
 
     /// Stance toggle without its own click sound (used by `party_engage`, which
     /// already queues the single `FUN_00421458` click).
-    pub(super) fn toggle_selected_battle_stance_silent(&mut self) {        let leader_selected = self.party_selected.get(0).copied().unwrap_or(false);
+    pub(super) fn toggle_selected_battle_stance_silent(&mut self) {
+        let leader_selected = self.party_selected.get(0).copied().unwrap_or(false);
         let first_battle = if leader_selected {
             crate::anim::battle_from_flags(self.player.flags_b)
         } else {
@@ -176,9 +177,7 @@ impl PlayableApp {
                 crate::anim::attack_action(true)
             } else if m.motion.walking {
                 crate::anim::walk_action(true)
-            } else if row == crate::anim::ACT_BATTLE_DEATH
-                || row == crate::anim::ACT_PEACE_DEATH
-            {
+            } else if row == crate::anim::ACT_BATTLE_DEATH || row == crate::anim::ACT_PEACE_DEATH {
                 row
             } else {
                 crate::anim::idle_action(true)
@@ -275,4 +274,3 @@ impl PlayableApp {
         rejected
     }
 }
-

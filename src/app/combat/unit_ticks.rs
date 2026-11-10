@@ -111,10 +111,7 @@ impl PlayableApp {
                     crate::anim::ACT_RANGED as u8,
                     self.player.raw_0x12,
                     true,
-                    Some((
-                        self.player_x.round() as i32,
-                        self.player_y.round() as i32,
-                    )),
+                    Some((self.player_x.round() as i32, self.player_y.round() as i32)),
                 );
             }
             self.player_ranged_frame = self.player_ranged_frame.saturating_add(1);
@@ -153,10 +150,7 @@ impl PlayableApp {
                     crate::anim::ACT_MELEE as u8,
                     self.player.raw_0x12,
                     true,
-                    Some((
-                        self.player_x.round() as i32,
-                        self.player_y.round() as i32,
-                    )),
+                    Some((self.player_x.round() as i32, self.player_y.round() as i32)),
                 );
             }
             self.player_attack_frame = self.player_attack_frame.saturating_add(1);
@@ -234,10 +228,7 @@ impl PlayableApp {
             }
             // `FUN_0041EB48`: retaliate against an adjacent attacker while the
             // companion is idle (no manual order).
-            if m.motion.combat_target.is_none()
-                && !m.motion.walking
-                && m.motion.path.is_empty()
-            {
+            if m.motion.combat_target.is_none() && !m.motion.walking && m.motion.path.is_empty() {
                 if let Some(id) = party_retaliate.get(i).copied().flatten() {
                     m.entity.flags_b |= crate::anim::FLAG_BATTLE;
                     m.motion.combat_target = Some(CombatTarget::World(id));
@@ -460,7 +451,9 @@ impl PlayableApp {
             let target_dead = match target {
                 CombatTarget::Player => player_dead,
                 CombatTarget::Party(j) => party_dead.get(j).copied().unwrap_or(true),
-                CombatTarget::World(id) => world_state.get(&id).map(|&(_, dead)| dead).unwrap_or(true),
+                CombatTarget::World(id) => {
+                    world_state.get(&id).map(|&(_, dead)| dead).unwrap_or(true)
+                }
                 CombatTarget::Prop(_) => false,
             };
             if target_dead {
@@ -629,4 +622,3 @@ impl PlayableApp {
         }
     }
 }
-

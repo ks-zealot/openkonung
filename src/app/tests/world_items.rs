@@ -297,10 +297,7 @@ fn e1_buried_spot_needs_the_shovel_to_be_collected() {
         "FUN_00421B50: a buried spot is skipped without FUN_00433A8C(0x19)"
     );
     assert_eq!(app.player.money, money);
-    assert!(app
-        .active_world_objects
-        .iter()
-        .any(|o| o.cell() == cell));
+    assert!(app.active_world_objects.iter().any(|o| o.cell() == cell));
 
     let shovel = app
         .world
@@ -313,10 +310,7 @@ fn e1_buried_spot_needs_the_shovel_to_be_collected() {
     app.try_pickup_here();
     assert!(app.player.inventory.contains(&item), "shovel digs it up");
     assert_eq!(app.player.money, money + 100, "FUN_0043EAA2 is abs(money)");
-    assert!(!app
-        .active_world_objects
-        .iter()
-        .any(|o| o.cell() == cell));
+    assert!(!app.active_world_objects.iter().any(|o| o.cell() == cell));
     assert_eq!(
         app.world_object_sources[source].loc, 0,
         "an emptied non-herb record is permanently removed (FUN_0041093C)"
@@ -358,11 +352,7 @@ fn e1_copper_mirror_reveals_a_buried_spot() {
         .expect("free mirror instance");
     let slot = free_inventory_slot(&app);
     app.player.inventory[slot] = mirror;
-    assert!(app.use_class11_item(
-        crate::inventory::InventoryOwner::Protagonist,
-        mirror,
-        None
-    ));
+    assert!(app.use_class11_item(crate::inventory::InventoryOwner::Protagonist, mirror, None));
     assert_eq!(app.world_object_sources[source].money, 100);
     assert!(app
         .active_world_objects

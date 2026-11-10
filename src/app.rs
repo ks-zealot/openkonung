@@ -1,4 +1,4 @@
-﻿//! OpenKonung live-game state machine: [`PlayableApp`] and its subsystem modules.
+//! OpenKonung live-game state machine: [`PlayableApp`] and its subsystem modules.
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,6 +17,7 @@ use crate::render::{scale_image, LayerCounts, World, WorldSprite};
 use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
 use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 
+mod buttons;
 mod camera;
 mod class11;
 mod combat;
@@ -25,7 +26,6 @@ mod debug_overlay;
 mod dialogue_exec;
 mod dialogue_ops;
 mod graph;
-mod buttons;
 mod hover;
 mod input;
 mod inventory;
@@ -55,6 +55,10 @@ use self::portals::*;
 pub use crate::constants::render::VIRTUAL_H;
 pub use crate::constants::render::VIRTUAL_W;
 
+pub use crate::constants::keys::KEY_1;
+pub use crate::constants::keys::KEY_2;
+pub use crate::constants::keys::KEY_3;
+pub use crate::constants::keys::KEY_A;
 pub use crate::constants::keys::KEY_BACKSPACE;
 pub use crate::constants::keys::KEY_C;
 pub use crate::constants::keys::KEY_D;
@@ -72,10 +76,6 @@ pub use crate::constants::keys::KEY_SPACE;
 pub use crate::constants::keys::KEY_T;
 pub use crate::constants::keys::KEY_TAB;
 pub use crate::constants::keys::KEY_V;
-pub use crate::constants::keys::KEY_1;
-pub use crate::constants::keys::KEY_2;
-pub use crate::constants::keys::KEY_3;
-pub use crate::constants::keys::KEY_A;
 
 pub struct TextItem {
     pub x: i32,

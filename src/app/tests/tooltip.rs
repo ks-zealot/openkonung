@@ -25,7 +25,9 @@ fn real_item_detail_lines_include_verified_properties() {
         "missing weight line: {lines:?}"
     );
     assert!(
-        lines.iter().any(|l| l.starts_with("Цена:") || l.contains("Цена:")),
+        lines
+            .iter()
+            .any(|l| l.starts_with("Цена:") || l.contains("Цена:")),
         "missing price line: {lines:?}"
     );
 }

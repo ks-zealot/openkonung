@@ -394,10 +394,8 @@ impl SaveEnvelope {
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
         let raw = bincode::serialize(self).map_err(|e| format!("save encode: {e}"))?;
-        let mut enc = flate2::write::DeflateEncoder::new(
-            Vec::new(),
-            flate2::Compression::default(),
-        );
+        let mut enc =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
         enc.write_all(&raw)
             .map_err(|e| format!("save compress: {e}"))?;
         let compressed = enc.finish().map_err(|e| format!("save compress: {e}"))?;
@@ -584,7 +582,6 @@ impl SaveGame {
         }
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -597,6 +594,3 @@ mod tests {
         assert!(SaveEnvelope::decode(b"NOTASAVE0000000000").is_err());
     }
 }
-
-
-

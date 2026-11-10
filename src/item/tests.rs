@@ -65,7 +65,9 @@ fn modifier_and_stat_name_tables_match_the_original() {
 
 #[test]
 fn hover_detail_builds_the_original_single_line() {
-    let Some((db, game)) = db_and_game() else { return };
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
     // Dragomir's starting knife (Game.1 instance 1).
     let inst = ItemDb::decode_instance(&game, 1).unwrap();
     let text = db.hover_detail(&inst).unwrap();
@@ -76,7 +78,8 @@ fn hover_detail_builds_the_original_single_line() {
 }
 
 #[test]
-fn real_starting_item_mapping() {    let Some((db, game)) = db_and_game() else {
+fn real_starting_item_mapping() {
+    let Some((db, game)) = db_and_game() else {
         eprintln!("skipping: konung.res / Game.1 not present");
         return;
     };

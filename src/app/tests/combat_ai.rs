@@ -1,8 +1,8 @@
 //! Group-activity / autonomous target-acquisition tests (`FUN_00412C30`,
 //! `FUN_00412E00`, `FUN_004245B4`).
 
-use super::common::*;
 use super::super::*;
+use super::common::*;
 use crate::combat::CombatTarget;
 use crate::population::{Entity, EntityStats, GameTables, Group, Rect};
 
@@ -160,7 +160,13 @@ fn citizen_combat_target_is_not_reset_by_wander_pass() {
     app.wake_group(1, CombatTarget::Player);
     app.update_world_ai();
     {
-        let m = app.population_cache.get_mut(&1).unwrap().motion.get_mut(&10).unwrap();
+        let m = app
+            .population_cache
+            .get_mut(&1)
+            .unwrap()
+            .motion
+            .get_mut(&10)
+            .unwrap();
         assert_eq!(m.combat_target, Some(CombatTarget::Player));
         m.action = crate::anim::ACT_MELEE as u8;
         m.frame = 3;
@@ -216,7 +222,11 @@ fn ranged_world_actor_switches_to_action_row_four() {
     };
     {
         let pop = app.population_cache.get_mut(&1).unwrap();
-        let a = pop.actors.iter_mut().find(|a| a.entity.index == 10).unwrap();
+        let a = pop
+            .actors
+            .iter_mut()
+            .find(|a| a.entity.index == 10)
+            .unwrap();
         a.entity.equipment[1] = 23;
         a.entity.special_equipment = 27;
         a.entity.raw_0x12 = 1;
@@ -236,7 +246,8 @@ fn ranged_world_actor_switches_to_action_row_four() {
 }
 
 #[test]
-fn mo_walk_completion_seeds_entity_0x12_delay() {    let Some(mut app) = synthetic_app(entity(10, 0, 0x4D, 1, 15, 15), 0x4D) else {
+fn mo_walk_completion_seeds_entity_0x12_delay() {
+    let Some(mut app) = synthetic_app(entity(10, 0, 0x4D, 1, 15, 15), 0x4D) else {
         return;
     };
     app.player_x = 25.0;

@@ -111,15 +111,11 @@ impl World {
     /// the remake hands them to the live game and reclaims them here whenever a
     /// game is discarded (game over / New Game), so a later start never needs
     /// the browser to re-upload the resources.
-    pub fn into_loader_parts(
-        self,
-    ) -> ((Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), Vec<(u32, Vec<u8>)>) {
+    pub fn into_loader_parts(self) -> ((Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>), Vec<(u32, Vec<u8>)>) {
         let World { res, locs, .. } = self;
         (
             res.into_parts(),
-            locs.into_iter()
-                .map(|loc| (loc.loc_id, loc.data))
-                .collect(),
+            locs.into_iter().map(|loc| (loc.loc_id, loc.data)).collect(),
         )
     }
 

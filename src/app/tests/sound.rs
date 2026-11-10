@@ -78,17 +78,13 @@ fn ambient_ids_stay_inside_the_location_banks() {
     assert!(!app.sounds.is_empty(), "ambient bank never queued a clip");
 }
 
-
 #[test]
 fn positioned_sound_uses_the_original_pan_and_volume() {
     let Some(mut app) = build_test_app() else {
         eprintln!("skipping: original resources not present");
         return;
     };
-    let player = (
-        app.player_x.round() as i32,
-        app.player_y.round() as i32,
-    );
+    let player = (app.player_x.round() as i32, app.player_y.round() as i32);
     app.sounds.clear();
     // Same column, two rows away: projection distance 32 -> volume -200, pan 0.
     app.queue_sound_at(crate::sound::events::DODGE, (player.0 + 2, player.1));
@@ -113,11 +109,11 @@ fn inaudible_requests_are_dropped() {
     };
     // Projected distance for a 200x100 cell gap far exceeds 1600 px.
     app.sounds.clear();
-    let player = (
-        app.player_x.round() as i32,
-        app.player_y.round() as i32,
+    let player = (app.player_x.round() as i32, app.player_y.round() as i32);
+    app.queue_sound_at(
+        crate::sound::events::DODGE,
+        (player.0 + 200, player.1 + 100),
     );
-    app.queue_sound_at(crate::sound::events::DODGE, (player.0 + 200, player.1 + 100));
     assert!(app.sounds.is_empty());
 }
 
