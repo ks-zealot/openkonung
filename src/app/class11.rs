@@ -2,13 +2,22 @@
 //!
 //! The original dispatches class-11 items by the instance subtype byte
 //! (`item+0x03`) and applies one of ~50 effects (books, orbs, keys, quest
-//! artifacts, the shovel, …). The full catalogue is recovered in
+//! artifacts, the shovel, ...). The full catalogue is recovered in
 //! `CLASS11_ITEMS.md`.
 //!
 //! **C1:** subtype 0 (lost map, `use_map_item`).
 //! **C2:** books/skill scrolls, identify, XP, wine, birch-bark letter, torch,
 //! charisma and the relics state byte.
-//! Later packages fill C3 (item manipulation) and C4 (world effects).
+//! **C3:** item manipulation - the duplicator, the sword parts and the amulet
+//! combinations, including held-item-on-target routing.
+//! **C4:** world effects - resurrection, magnet, orb/key teleports, the
+//! skeleton lamp, whistle/pipe scatter and the copper mirror.
+//!
+//! Every successful use plays sound `10` from the dispatcher tail (subtype 0
+//! queues it from `use_map_item` instead); the disposable subtypes are consumed
+//! by writing class `0xFF` into the instance and compacting the owner's
+//! containers, while the reusable ones (torch, shovel, orbs, keys, whistle and
+//! the duplicator) leave the instance alone.
 //!
 //! Subtype 24 («Лопата») arms the dig cursor (`_DAT_0081D660 = 7`) and is not
 //! consumed; carrying it is what allows buried WorldObject records (negative
@@ -514,6 +523,12 @@ impl PlayableApp {
         true
     }
 
+    /// First free cell for a revived actor: current cell, else anywhere in its
+    /// authored spawn rectangle, else a ring scan out to 10 cells.
+    ///
+    /// A cell is free when the Konung.N collision word is free and no live
+    /// actor stands on it. `None` means the actor cannot be placed and is left
+    /// dead rather than stacked on another body.
     fn revive_cell(
         &self,
         rect: crate::population::Rect,
@@ -707,6 +722,13 @@ impl PlayableApp {
         true
     }
 
+    /// Walk one edge of the group's wander rectangle from `cell` looking for a
+    /// free goal cell.
+    ///
+    /// `edge` is `rand() % 4`: `0`/`1` scan the left/right columns top-to-bottom
+    /// and `2`/`3` scan the top/bottom rows left-to-right, using the
+    /// `_DAT_0081D6E0`/`_DAT_0081D6A4` radii (20/9 cells at 800x600). The scan
+    /// stops after one full side, so a fully blocked edge yields `None`.
     fn scatter_goal(&self, cell: (i32, i32), collision: &[u16], edge: u8) -> Option<(i32, i32)> {
         let mut dx = match edge {
             0 => -WANDER_RADIUS_X * 2,
@@ -775,6 +797,8 @@ impl PlayableApp {
         true
     }
 
+    /// `Group+0x1B` (location id) of `group_id`, or `0` when the table is
+    /// absent (the skeleton lamp exempts location `0x53`).
     fn group_loc(&self, group_id: usize) -> u8 {
         self.tables
             .as_ref()
@@ -783,10 +807,16 @@ impl PlayableApp {
             .unwrap_or(0)
     }
 
+    /// Show a class-11 result message in the timed pickup-message slot.
+    ///
+    /// The original prints these through the same small-font status line as
+    /// the WorldObject pickup messages, so they share its lifetime.
     fn class11_message(&mut self, text: &str) {
         self.set_pickup_message(text);
     }
 
+    /// Apply stat operations to the inventory owner that used the item: the
+    /// protagonist or one party companion (`_DAT_0081D560`).
     fn apply_owner_ops(&mut self, owner: InventoryOwner, ops: &[StatOp]) {
         match owner {
             InventoryOwner::Protagonist => apply_player_ops(&mut self.player, ops),
@@ -798,6 +828,8 @@ impl PlayableApp {
         }
     }
 
+    /// `Entity+0x03 & 0x02` (AUTO) for the owner: the original per-unit flag
+    /// that makes XP grants auto-spend through `FUN_0041079C`.
     fn owner_auto_enabled(&self, owner: InventoryOwner) -> bool {
         match owner {
             InventoryOwner::Protagonist => self.player.auto_enabled(),

@@ -26,21 +26,31 @@
 pub const FLAG_BATTLE: u8 = 0x04;
 
 /// Human/object logical action rows.
+/// Battle idle row (`Entity+0x00 = 0`); `FUN_00414A34` with `+3 & 4` set.
 pub const ACT_BATTLE_IDLE: usize = 0;
+/// Battle walk row (`1`); `FUN_004142D4` with `+3 & 4` set.
 pub const ACT_BATTLE_WALK: usize = 1;
+/// Battle attack row (`2`).
 pub const ACT_BATTLE_ATTACK: usize = 2;
+/// Battle death row (`3`); the final frame is held.
 pub const ACT_BATTLE_DEATH: usize = 3;
 /// Ranged/special attack row used by the archery path (`FUN_004123BC` case 4).
 pub const ACT_RANGED: usize = 4;
+/// Alias of [`ACT_RANGED`]: special action `4`, not mode-paired.
 pub const ACT_SPECIAL_4: usize = 4;
 /// Melee attack row used by `FUN_0041EB48` (protagonist) and
 /// `FUN_004123BC` case 5 (NPC/monster). Damage resolves on this row's last
 /// frame; rows `2`/`8` only animate and fall back to idle.
 pub const ACT_MELEE: usize = 5;
+/// Alias of [`ACT_MELEE`]: special action `5`, not mode-paired.
 pub const ACT_SPECIAL_5: usize = 5;
+/// Peaceful idle row (`6`); `FUN_00414A34` with `+3 & 4` clear.
 pub const ACT_PEACE_IDLE: usize = 6;
+/// Peaceful walk row (`7`).
 pub const ACT_PEACE_WALK: usize = 7;
+/// Peaceful attack row (`8`).
 pub const ACT_PEACE_ATTACK: usize = 8;
+/// Peaceful death row (`9`).
 pub const ACT_PEACE_DEATH: usize = 9;
 
 /// Idle/stand action for the current stance.

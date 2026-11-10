@@ -1,4 +1,27 @@
-//! `input` subsystem of [`crate::app`] (split from `app.rs`).
+//! `input` subsystem of [`crate::app`]: pointer and keyboard -> original
+//! commands.
+//!
+//! Ports the dispatch of the original WndProc mouse/keyboard handlers. The
+//! browser sends *device* coordinates; the first step is always
+//! [`PlayableApp::window_to_virtual`], which rejects points in the letterbox
+//! bands. Then, exactly like `FUN_0042260C`:
+//!
+//! - **left button** (`_DAT_0081D5B0 & 1`) = UI commands + party move. It runs
+//!   the HUD hit tests (`FUN_004381C8`), the inventory cursor model
+//!   (`FUN_0041E450`), party selection (`FUN_00424D8C`) and finally the world
+//!   move command (command 0, storing `Entity+0x0C/+0x0E` on every selected
+//!   unit). It never opens a dialogue.
+//! - **right button** (`_DAT_0081D5B0 & 2`) = item use, dialogue
+//!   (`FUN_00435290`), attack order or interact-and-move.
+//! - **middle button** = camera pan (`drag`), which switches camera follow off.
+//!
+//! Every modal screen is consumed here before the world sees the click, so
+//! there is no click-through: character screen (mode 3), map (mode 5),
+//! quest log (mode 2), dialogue (mode 1) and exchange (mode 7).
+//!
+//! Keys arrive as physical virtual-key codes (see `www/keymap.js`), so a
+//! Cyrillic layout still reaches the same arms; the mappings to the original
+//! handlers are documented on [`PlayableApp::key_down`].
 
 use super::*;
 
@@ -39,6 +62,18 @@ impl PlayableApp {
         self.ctrl_down = down;
     }
 
+    /// Handle a mouse-button press at host-canvas coordinates `(x, y)`.
+    ///
+    /// `button` uses the DOM numbering: `1` left, `2` middle, `3` right.
+    /// Dispatches in the original's precedence order: modal screens swallow the
+    /// click first (world map, quest log, exchange, dialogue, character
+    /// screen), then the AUTO button and the seven-icon HUD strip, then party
+    /// portraits and the inventory strip, and only then the world - where the
+    /// left button moves/drops/selects a graph node, the right button
+    /// interacts, and the middle button starts a camera pan.
+    ///
+    /// `Entity+0x03` bit `0x40` (the pickup flag) is cleared here for a plain
+    /// left move, so walking over a ground marker never collects it.
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) {
         // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
         if let Some(v) = self.window_to_virtual(x, y) {
@@ -329,6 +364,12 @@ impl PlayableApp {
         self.world_move_command(x, y);
     }
 
+    /// The move half of a world click: convert to a grid cell, store it on the
+    /// selected units and, if an interaction flag is already set and the hero
+    /// is standing on that cell, resolve the pickup immediately.
+    ///
+    /// Also clears the dig cursor (`_DAT_0081D660 == 7`) because
+    /// `FUN_0042260C` consumes it on the next world click.
     fn world_move_command(&mut self, x: f64, y: f64) {
         // `FUN_0042260C`: the first world click consumes `_DAT_0081D660 == 7`.
         self.dig_armed = false;
@@ -404,6 +445,13 @@ impl PlayableApp {
         self.dialog_click_option(index);
     }
 
+    /// Handle a mouse-button release.
+    ///
+    /// A left release ends a held-item drag by dropping the item at the cursor
+    /// (ground drop, equip, member transfer or craft, whichever the destination
+    /// accepts) and clears the press bookkeeping; a middle release ends the
+    /// camera pan. An open trade window swallows the release so a drag started
+    /// outside it cannot complete.
     pub fn pointer_up(&mut self, button: u32) {
         if self.trade.is_some() {
             if button == 1 {
@@ -425,6 +473,13 @@ impl PlayableApp {
         }
     }
 
+    /// Track the pointer: update the game-drawn cursor position, the dialogue
+    /// option highlight, the held-item drag threshold and the pan, then refresh
+    /// the HUD hover slot.
+    ///
+    /// A drag (middle button, or a lifted item moved more than 4 device pixels)
+    /// consumes the move, so the world hover and camera-follow are untouched
+    /// until the button is released.
     pub fn pointer_move(&mut self, x: f64, y: f64) {
         // The game-drawn cursor follows the pointer (`_DAT_0081D5C0/_D5C4`).
         if let Some(v) = self.window_to_virtual(x, y) {
@@ -491,6 +546,13 @@ impl PlayableApp {
         });
     }
 
+    /// Mouse wheel: zoom the transition graph, or scroll the visible inventory
+    /// strip by one slot.
+    ///
+    /// The strip only scrolls while the pointer hovers a slot, and the offset is
+    /// clamped to `INVENTORY_SLOTS - visible_slots` so the window never runs off
+    /// the end of the 32-slot inventory. An open trade window swallows the
+    /// wheel.
     pub fn wheel(&mut self, delta: f64) {
         if self.trade.is_some() {
             return;
@@ -509,6 +571,22 @@ impl PlayableApp {
         }
     }
 
+    /// Handle a key press by physical virtual-key code.
+    ///
+    /// Order mirrors the original: an open exchange only accepts Escape (it
+    /// cancels and returns the offers), an open dialogue only accepts Escape
+    /// (it closes); the world map and quest log swallow every key except their
+    /// own close key. The remaining arms map to the recovered handlers:
+    /// `Escape` = close window / return to the menu, `M` = `FUN_0042CBD0(4)`
+    /// world map, `Q` = `FUN_004242BC` quest log, `Space`/`Tab` =
+    /// `FUN_00421554` stance, `A` = `FUN_00421458` engage (Shift+A selects all),
+    /// `1`/`2`/`3` = `FUN_004216DC` weapon slots 2/0/1, `F` = `FUN_0042246C`
+    /// halt, `C`/`I` = `FUN_00424330` character screen, `V` camera follow,
+    /// `Home` re-centre, `H`/`Backspace` the transition-graph viewer, and
+    /// `D`/`P`/`L`/`T`/`R` are remake diagnostics (ids/overlays/cache).
+    ///
+    /// No arm mutates the world through `mode_graph`, so gameplay commands are
+    /// ignored while the graph screen is up.
     pub fn key_down(&mut self, code: u32) {
         // Exchange captures the keyboard: Escape cancels/returns the offers.
         if self.trade.is_some() {

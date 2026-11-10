@@ -4,6 +4,18 @@
 //! `save_snapshot()`, reads `save_snapshot_ptr/len`, base64-encodes the bytes
 //! and stores them under a slot key. Loading reverses the process and calls
 //! `load_snapshot(ptr, len)`.
+//!
+//! Two formats are supported:
+//!
+//! * The remake's versioned `OPKS` envelope (`bincode` + deflate) - the native
+//!   snapshot, carrying the whole runtime state.
+//! * The original `KONUNG.SAn` (offset `0xB07A4`) and `KONUNG.SAV` (500-byte
+//!   CP866 name table) - imported/exported for interoperability with the 1999
+//!   save files; the projectile pool has no recovered field map and exports
+//!   empty.
+//!
+//! All pointers here are host-owned inputs except the retained output buffers,
+//! which live in statics and are never freed by the caller.
 
 use crate::character::CharacterBuild;
 use crate::save::SaveEnvelope;
@@ -35,6 +47,12 @@ pub extern "C" fn save_snapshot() -> u32 {
 }
 
 /// Pointer to the retained snapshot bytes (valid until the next save).
+///
+/// # Memory contract
+///
+/// Borrowed from the retained save buffer; never free it. Call
+/// [`save_snapshot`] first and check its 1/0 result; the pointer stays valid
+/// until the next [`save_snapshot`] call. Pair with [`save_snapshot_len`].
 #[no_mangle]
 pub extern "C" fn save_snapshot_ptr() -> *const u8 {
     unsafe { (*std::ptr::addr_of!(SAVE_BUF)).as_ptr() }
@@ -60,6 +78,12 @@ pub extern "C" fn save_default_name() -> u32 {
 }
 
 /// Pointer to the retained default save name (UTF-8).
+///
+/// # Memory contract
+///
+/// Borrowed from the retained name buffer; never free it. Call
+/// [`save_default_name`] first and check its 1/0 result. Pair with
+/// [`save_default_name_len`].
 #[no_mangle]
 pub extern "C" fn save_default_name_ptr() -> *const u8 {
     unsafe { (*std::ptr::addr_of!(NAME_BUF)).as_ptr() }
@@ -73,6 +97,16 @@ pub extern "C" fn save_default_name_len() -> u32 {
 
 /// Decode and apply a snapshot. Builds a base game first when none is live.
 /// Returns 1 on success.
+///
+/// # Memory contract
+///
+/// - `ptr` is **borrowed for the duration of the call only** (unlike the
+///   `load_*` uploads it is not freed here); the bytes are decoded immediately,
+///   so a host `alloc` buffer must be released by the caller afterwards.
+/// - A null `ptr` or `len == 0` returns 0 without decoding.
+/// - Returns 1 when the payload decoded and `apply_save` succeeded (the runtime
+///   is then in game mode); 0 when decoding failed, no base game could be
+///   started, or the snapshot was rejected.
 #[no_mangle]
 pub extern "C" fn load_snapshot(ptr: *const u8, len: u32) -> u32 {
     if ptr.is_null() || len == 0 {
@@ -111,6 +145,13 @@ pub extern "C" fn load_snapshot(ptr: *const u8, len: u32) -> u32 {
 }
 
 /// Submit one UTF-8 slot name from the browser storage layer.
+///
+/// # Memory contract
+///
+/// - `ptr` is read for `len` bytes and not retained; the name is copied into the
+///   wasm-side table, so the caller keeps ownership of the buffer.
+/// - Out-of-range slots (`>= 10`), null `ptr`, `len == 0` and invalid UTF-8 are
+///   silently ignored (no return value).
 #[no_mangle]
 pub extern "C" fn set_save_name(slot: u32, ptr: *const u8, len: u32) {
     let slot = slot as usize;
@@ -219,12 +260,27 @@ pub extern "C" fn legacy_export_size() -> u32 {
     len
 }
 
+/// Start of the retained legacy `KONUNG.SAn` payload built by
+/// [`legacy_export_size`].
+///
+/// # Memory contract
+///
+/// Borrowed from the retained export buffer; never free it. Call
+/// [`legacy_export_size`] first - before it, or when it returned 0, the buffer
+/// may be empty and the pointer must not be read.
 #[no_mangle]
 pub extern "C" fn legacy_export_ptr() -> *const u8 {
     unsafe { (*std::ptr::addr_of!(LEGACY_FILE)).as_ptr() }
 }
 
 /// Import an original snapshot into the live game. Returns 1 on success.
+///
+/// # Memory contract
+///
+/// - `ptr` is borrowed for the call only and never freed here; the caller keeps
+///   ownership. Null or `len == 0` returns 0.
+/// - Returns 1 when the `KONUNG.SAn` payload parsed and was applied (the runtime
+///   is then in game mode); 0 otherwise.
 #[no_mangle]
 pub extern "C" fn legacy_import(ptr: *const u8, len: u32) -> u32 {
     if ptr.is_null() || len == 0 {
@@ -264,6 +320,14 @@ pub extern "C" fn legacy_import(ptr: *const u8, len: u32) -> u32 {
 }
 
 /// Parse a 500-byte `KONUNG.SAV` table into NUL-separated UTF-8. Returns 1.
+///
+/// # Memory contract
+///
+/// - `ptr` is borrowed for the call only; the decoded text is copied into the
+///   retained buffer (read it with [`legacy_names_text_ptr`]/
+///   [`legacy_names_text_len`]), so the caller keeps ownership of the input.
+/// - Null or `len == 0` returns 0; a malformed table also returns 0 and leaves
+///   the previous text in place.
 #[no_mangle]
 pub extern "C" fn legacy_names_parse(ptr: *const u8, len: u32) -> u32 {
     if ptr.is_null() || len == 0 {
@@ -285,11 +349,20 @@ pub extern "C" fn legacy_names_parse(ptr: *const u8, len: u32) -> u32 {
     }
 }
 
+/// Start of the UTF-8, NUL-separated slot-name text produced by the last
+/// [`legacy_names_parse`].
+///
+/// # Memory contract
+///
+/// Borrowed from the retained text buffer; never free it. Null/empty is not
+/// implied - call [`legacy_names_parse`] first and check its return code. Pair
+/// with [`legacy_names_text_len`].
 #[no_mangle]
 pub extern "C" fn legacy_names_text_ptr() -> *const u8 {
     unsafe { (*std::ptr::addr_of!(LEGACY_TEXT)).as_ptr() }
 }
 
+/// Byte length of the retained slot-name text, or 0 when none was parsed.
 #[no_mangle]
 pub extern "C" fn legacy_names_text_len() -> u32 {
     unsafe { (*std::ptr::addr_of!(LEGACY_TEXT)).len() as u32 }
@@ -297,6 +370,14 @@ pub extern "C" fn legacy_names_text_len() -> u32 {
 
 /// Encode NUL-separated UTF-8 slot names into a 500-byte `KONUNG.SAV` payload.
 /// Returns the byte length, or 0 on a malformed request.
+///
+/// # Memory contract
+///
+/// - `ptr` is borrowed for the call and never freed here. Null, `len == 0` or
+///   invalid UTF-8 returns 0.
+/// - On success the 500 payload bytes live in the retained export buffer and are
+///   read with [`legacy_export_ptr`]; the return value is the byte length the
+///   caller should read (0 means "nothing was built").
 #[no_mangle]
 pub extern "C" fn legacy_names_build(ptr: *const u8, len: u32) -> u32 {
     if ptr.is_null() || len == 0 {

@@ -6,10 +6,17 @@ use super::super::cursor::{
 
 use super::common::*;
 
+/// Return the default cursor state (no Shift/Ctrl, no settlement, no ready archer).
 fn default_state() -> CursorState {
     CursorState::default()
 }
 
+/// `FUN_00428740`'s branch precedence is reproduced: base id, prop, party, actor, ground.
+///
+/// A base id other than 4 (an item in hand) always wins; then the interactive
+/// prop branch (with the settlement + ready-archer arrow), the own-party branch
+/// (neutral, Ctrl -> talk), the other-actor branch (battle -> attack, Shift/leader
+/// battle suppress talk), and finally the flagged-ground / occupied / free cases.
 #[test]
 fn select_cursor_matches_original_precedence() {
     // Base id != 4 always wins (item in hand), even over actors/props.
@@ -138,6 +145,7 @@ fn select_cursor_matches_original_precedence() {
     assert_eq!(select_cursor(4, &both, &default_state()), 5);
 }
 
+/// A flagged ground object cell selects the hand (7), plain ground the neutral frame (4), an occupied cell 3.
 #[test]
 fn hand_cursor_over_ground_world_object_cell() {
     let Some(mut app) = build_movement_app() else {
@@ -169,6 +177,7 @@ fn hand_cursor_over_ground_world_object_cell() {
     app.world.locs[0].collision[idx] = 0;
 }
 
+/// An item in hand replaces the hover frame with the class cursor from `FUN_00424E0C`.
 #[test]
 fn held_item_selects_class_cursor_and_disables_hover() {
     let Some(mut app) = build_party_app() else {
@@ -195,6 +204,7 @@ fn held_item_selects_class_cursor_and_disables_hover() {
     assert_eq!(app.debug_cursor_frame(), 4);
 }
 
+/// Authored `Game.1` herb markers on location 4 give the hand cursor at their own cell.
 #[test]
 fn hand_over_authored_herb_marker() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -222,6 +232,7 @@ fn hand_over_authored_herb_marker() {
     );
 }
 
+/// Placement record `+0x22 = 0xFF` sets `Prop::interactive`, and other records stay non-interactive.
 #[test]
 fn interactive_flag_is_parsed_from_placement_record() {
     let dir = install_dir();
@@ -236,6 +247,10 @@ fn interactive_flag_is_parsed_from_placement_record() {
     assert!(loc.props.iter().any(|p| !p.interactive));
 }
 
+/// The stance/archer cursor predicates require a selected unit and a complete bow + plain-ammo set.
+///
+/// Deslecting the leader removes both contributions; the cursor's archer gate is
+/// deliberately looser than the firing gate (bow slot, bow id, ammo id, plain ammo).
 #[test]
 fn selected_stance_and_ranged_ready_predicates() {
     let Some(mut app) = build_party_app_with_free_location() else {

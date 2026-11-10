@@ -11,6 +11,21 @@
 //!
 //! CRC-32 is verified for every entry. Size and entry-count limits are enforced
 //! against malicious/broken archives.
+//!
+//! Structures read (all little-endian; field offsets used below):
+//!
+//! ```text
+//! end of central directory  0x06054B50, 22 bytes + comment
+//!                           +4 disk, +8 entries on disk, +10 entries,
+//!                           +12 directory size, +16 directory offset
+//! central directory entry   0x02014B50, 46 bytes + name/extra/comment
+//!                           +8 flags, +10 method, +16 crc-32,
+//!                           +20 compressed size, +24 uncompressed size,
+//!                           +28 name len, +30 extra len, +32 comment len,
+//!                           +42 local header offset
+//! local file header         0x04034B50, 30 bytes + name/extra
+//!                           +26 name len, +28 extra len
+//! ```
 
 use std::io::Read;
 
@@ -22,10 +37,12 @@ const LOCAL_SIG: u32 = 0x0403_4b50;
 const EOCD_MIN_SIZE: usize = 22;
 const MAX_COMMENT: usize = 65_535;
 
+/// Build a [`PackError`] from a reason string (no prefix; `Display` adds it).
 fn err(message: impl Into<String>) -> PackError {
     PackError::new(message)
 }
 
+/// Little-endian `u16` at `o`, or `None` when fewer than two bytes remain.
 fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
     if o + 2 > b.len() {
         return None;
@@ -33,6 +50,7 @@ fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
     Some((b[o] as u16) | ((b[o + 1] as u16) << 8))
 }
 
+/// Little-endian `u32` at `o`, or `None` when fewer than four bytes remain.
 fn rd_u32(b: &[u8], o: usize) -> Option<u32> {
     if o + 4 > b.len() {
         return None;
@@ -45,6 +63,12 @@ fn rd_u32(b: &[u8], o: usize) -> Option<u32> {
     )
 }
 
+/// Locate the end-of-central-directory record by scanning backwards.
+///
+/// The signature `0x06054B50` is only accepted when its declared comment length
+/// still fits inside the archive, and the scan cannot retreat further than
+/// `22 + 65535` bytes from the end (the largest legal EOCD), so a buffer full of
+/// signature-like bytes is rejected instead of searched forever.
 fn find_eocd(zip: &[u8]) -> Result<usize, PackError> {
     if zip.len() < EOCD_MIN_SIZE {
         return Err(err("archive too small"));
@@ -137,6 +161,13 @@ pub fn read_entry_limited(zip: &[u8], wanted: &str, max_size: usize) -> Result<V
     Err(err(format!("entry '{wanted}' not found")))
 }
 
+/// Read the local header of the matched entry and return its verified payload.
+///
+/// Checks the local signature, that the local name equals `wanted` (so a
+/// central directory cannot redirect to another entry), and the data bounds.
+/// Method `0` requires `compressed == uncompressed`; method `8` inflates through
+/// a `take(uncompressed + 1)` limiter so a lying size field cannot balloon in
+/// memory. The CRC-32 of the result must equal the central-directory value.
 fn read_local(
     zip: &[u8],
     wanted: &str,
@@ -252,6 +283,7 @@ pub fn write_archive_file(
 mod tests {
     use super::*;
 
+    /// Both a DEFLATE entry and a STORE entry round-trip byte-exactly.
     #[test]
     fn roundtrips_stored_and_deflated_entries() {
         let payload = b"hello openkonung".repeat(100);
@@ -266,6 +298,7 @@ mod tests {
         assert_eq!(read_entry(&zip, "pack.json").unwrap(), stored);
     }
 
+    /// An absent entry name is an error, never an empty payload.
     #[test]
     fn rejects_missing_entry() {
         let zip = write_archive_bytes(&[("a", b"x", true)]).unwrap();
@@ -273,6 +306,7 @@ mod tests {
         assert!(e.message.contains("not found"), "{}", e.message);
     }
 
+    /// A corrupted payload byte is caught by the CRC-32 (or the size check).
     #[test]
     fn rejects_corrupt_crc() {
         let payload = b"hello openkonung".repeat(100);
@@ -287,12 +321,14 @@ mod tests {
         assert!(read_entry(&zip, "bundle.bin").is_err());
     }
 
+    /// Truncating the archive removes the EOCD and is rejected.
     #[test]
     fn rejects_truncated_archive() {
         let zip = write_archive_bytes(&[("bundle.bin", b"payload", true)]).unwrap();
         assert!(read_entry(&zip[..zip.len() / 2], "bundle.bin").is_err());
     }
 
+    /// The declared uncompressed size is checked before any inflation happens.
     #[test]
     fn enforces_size_limit() {
         let zip = write_archive_bytes(&[("bundle.bin", b"0123456789", false)]).unwrap();

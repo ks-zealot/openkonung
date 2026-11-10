@@ -6,6 +6,9 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: the per-unit attack cycles for the leader, the party and the world
+//! actors.
 
 use std::collections::HashSet;
 
@@ -15,6 +18,11 @@ use crate::combat::CombatTarget;
 use crate::coords::direction_from_cells;
 
 impl PlayableApp {
+    /// Frame count of the protagonist's melee row for the current facing and
+    /// stance (`Entity+0xD7` equivalent), read from the GRAPH tables.
+    ///
+    /// Falls back to `1` when the visual family cannot be resolved, so an attack
+    /// always resolves on a frame boundary.
     fn player_attack_frames(&self) -> u8 {
         self.world
             .res
@@ -44,6 +52,18 @@ impl PlayableApp {
         })
     }
 
+    /// One logic tick of the protagonist's attack cycle.
+    ///
+    /// * idle with an adjacent attacker -> `FUN_0041EB48` retaliation, which
+    ///   auto-acquires the enemy and enters battle stance;
+    /// * ranged order -> action row `4`, one arrow spawned on frame
+    ///   `count - 6` of every cycle;
+    /// * melee order -> face the adjacent target, play the melee row and resolve
+    ///   the hit on its last frame (`FUN_004123BC` case 5);
+    /// * not adjacent -> walk to the nearest free neighbour of the target.
+    ///
+    /// A manual order writes no move destination, so the walk branch only runs
+    /// while the leader is idle.
     pub(in crate::app) fn update_player_combat(&mut self) {
         if self.player.dead {
             return;
@@ -177,6 +197,13 @@ impl PlayableApp {
         }
     }
 
+    /// One logic tick of every recruited companion's attack cycle.
+    ///
+    /// The same rules as the protagonist, applied to all members in one pass: the
+    /// target cell is resolved from the live population, `FUN_0041EB48`
+    /// retaliation applies to idle members, and the resulting attacks, arrow
+    /// spawns and action sounds are queued so they can be applied after the
+    /// mutable party borrow ends.
     pub(super) fn update_party_combat(&mut self) {
         if self.party.is_empty() {
             return;
@@ -375,6 +402,14 @@ impl PlayableApp {
         }
     }
 
+    /// One logic tick of world-actor combat.
+    ///
+    /// A humanoid holding a bow plus ammo switches to the ranged row as soon as it
+    /// owns a target (`FUN_00412E00`); otherwise the unit faces the target, plays
+    /// the melee row and resolves on its last frame, or walks to a free
+    /// neighbour. `archetype 0x4D/0x4F` units spend their authored M/O delay in
+    /// `Entity+0x12` between cycles and re-roll it from the `Entity+0xD7`
+    /// ceiling, exactly like the original walk case.
     pub(in crate::app) fn update_world_combat(&mut self) {
         let loc = self.current_map;
         let player_cell = (self.player_x.round() as i32, self.player_y.round() as i32);

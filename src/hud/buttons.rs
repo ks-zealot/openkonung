@@ -4,19 +4,37 @@
 //! Seven INTR sprites are composited into the empty lower-left panel by
 //! `FUN_0042CA44`: a weapon plaque (slot 0) and six buttons. The tables in
 //! [`super::buttons_data`] are generated from `konung.res` and are exact.
+//!
+//! Slots 0 and 1 are state-dependent (`Entity+0x12` weapon slot and
+//! `Entity+0x03 & 4` stance); slots 2..=6 are fixed icons. A click is resolved
+//! by [`button_at`] into one of the command codes below, which the app turns
+//! back into the original handler call.
 
 use super::buttons_data::{ICON_HITS_640, ICON_HITS_800, ICON_POS};
 
 /// Number of entries in the original `0x81CF68` icon array.
 pub const HUD_ICON_COUNT: usize = 7;
 
-/// Left-button command codes produced by the original command compiler.
+/// Command code of the weapon plaque: cycles the active weapon slot
+/// `Entity+0x12` (`FUN_004216DC(-1)`).
 pub const CODE_WEAPON: u8 = 1;
+
+/// Command code of the stance toggle (`FUN_00421554`, flips `Entity+0x03 & 4`).
 pub const CODE_STANCE: u8 = 2;
+
+/// Command code of the world map (`FUN_0042CBD0(4)`, interface mode 5).
 pub const CODE_MAP: u8 = 3;
+
+/// Command code of the party halt order (`FUN_0042246C`).
 pub const CODE_HALT: u8 = 4;
+
+/// Command code of the party engage order (`FUN_00421458`).
 pub const CODE_ENGAGE: u8 = 5;
+
+/// Command code of the quest log (`FUN_004242BC`, interface mode 2).
 pub const CODE_QUEST: u8 = 6;
+
+/// Command code of the character screen (`FUN_00424330`, interface mode 3).
 pub const CODE_CHARACTER: u8 = 7;
 
 /// `INTR` sprite for the active weapon plaque (`Entity+0x12`: 0 axe, 1 bow,

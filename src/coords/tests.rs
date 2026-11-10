@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// `DIR_EVEN`/`DIR_ODD` are the `0x480110`/`0x48010C` tables verbatim.
 #[test]
 fn direction_tables_match_original_bytes() {
     assert_eq!(
@@ -32,6 +33,7 @@ fn direction_tables_match_original_bytes() {
     );
 }
 
+/// Direction 1 steps left on an even `x` and up-left on an odd `x`.
 #[test]
 fn step_by_direction_is_parity_dependent() {
     // Even x: dir 1 steps straight left; odd x: dir 1 steps up-left.
@@ -42,6 +44,7 @@ fn step_by_direction_is_parity_dependent() {
     assert_eq!(step_by_direction(5, 10, 0), (5, 9));
 }
 
+/// Odd direction codes cost 10, even codes cost 14.
 #[test]
 fn direction_cost_matches_astar_families() {
     assert_eq!(direction_cost(1), 10);
@@ -54,6 +57,8 @@ fn direction_cost_matches_astar_families() {
     assert_eq!(direction_cost(6), 14);
 }
 
+/// `direction_from_cells` maps the four cardinals to 0/2/4/6 and the
+/// staggered diagonals to 3/5/7.
 #[test]
 fn direction_from_cells_cardinal_and_diagonal() {
     assert_eq!(direction_from_cells(0, 0, 0, 5), 0); // target −y
@@ -64,6 +69,7 @@ fn direction_from_cells_cardinal_and_diagonal() {
     assert_eq!(direction_from_cells(20, 0, 0, 20), 7); // +x,−y
 }
 
+/// `entity_to_local_px` reproduces `FUN_00438A78` exact cases.
 #[test]
 fn entity_projection_exact_cases() {
     assert_eq!(entity_to_local_px(0, 0), (58, 16));
@@ -74,6 +80,7 @@ fn entity_projection_exact_cases() {
     assert_eq!(entity_to_local_px(6, 9), (9 * 58 + 58, 6 * 16 + 16));
 }
 
+/// The f64 projection equals the integer one for every integer input.
 #[test]
 fn continuous_matches_integer_projection() {
     for x in -3..330 {
@@ -85,6 +92,7 @@ fn continuous_matches_integer_projection() {
     }
 }
 
+/// Projecting every one of the 320x160 cells and inverting gives the cell back.
 #[test]
 fn exhaustive_round_trip_all_cells() {
     for x in 0..RUNTIME_W {
@@ -100,6 +108,7 @@ fn exhaustive_round_trip_all_cells() {
     }
 }
 
+/// The continuous inverse round-trips to within `1e-6`.
 #[test]
 fn continuous_round_trip() {
     for &x in &[0.0f64, 0.5, 1.0, 1.25, 12.75, 100.0, 268.0] {
@@ -112,6 +121,7 @@ fn continuous_round_trip() {
     }
 }
 
+/// `local_px_to_entity` clamps far off-grid pixels to `0..=319` / `0..=159`.
 #[test]
 fn inverse_clamps_to_runtime_bounds() {
     assert_eq!(local_px_to_entity(-10_000, -10_000), (0, 0));

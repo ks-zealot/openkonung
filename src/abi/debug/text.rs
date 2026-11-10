@@ -1,4 +1,11 @@
 //! Text overlay queue.
+//!
+//! The game/frontend does not rasterise its own UI strings for the browser in
+//! every case: some labels are handed to the shell as positioned `TextItem`
+//! entries so it can render them with a real font. [`text_count`] reports the
+//! queue length; the remaining accessors read item `i`. All of them return
+//! neutral defaults for an out-of-range index, so the shell can iterate without
+//! a bounds check of its own.
 
 use super::super::*;
 
@@ -6,11 +13,13 @@ use super::super::*;
 // Text overlay queue (rendered by the browser with real fonts)
 // --------------------------------------------------------------------------
 
+/// Number of queued overlay strings for the active frontend/game.
 #[no_mangle]
 pub extern "C" fn text_count() -> u32 {
     texts().map(|t| t.len() as u32).unwrap_or(0)
 }
 
+/// Logical screen x of string `i`, or 0 when out of range.
 #[no_mangle]
 pub extern "C" fn text_x(i: u32) -> i32 {
     texts()
@@ -19,6 +28,7 @@ pub extern "C" fn text_x(i: u32) -> i32 {
         .unwrap_or(0)
 }
 
+/// Logical screen y of string `i`, or 0 when out of range.
 #[no_mangle]
 pub extern "C" fn text_y(i: u32) -> i32 {
     texts()
@@ -27,6 +37,8 @@ pub extern "C" fn text_y(i: u32) -> i32 {
         .unwrap_or(0)
 }
 
+/// Packed `0xRRGGBB` colour of string `i`, or white (`0xFFFFFF`) when out of
+/// range.
 #[no_mangle]
 pub extern "C" fn text_rgb(i: u32) -> u32 {
     texts()
@@ -35,6 +47,8 @@ pub extern "C" fn text_rgb(i: u32) -> u32 {
         .unwrap_or(0xFFFFFF)
 }
 
+/// Font scale factor of string `i` (1.0 = original size), or 1.0 when out of
+/// range.
 #[no_mangle]
 pub extern "C" fn text_scale(i: u32) -> f32 {
     texts()
@@ -43,6 +57,13 @@ pub extern "C" fn text_scale(i: u32) -> f32 {
         .unwrap_or(1.0)
 }
 
+/// Start of string `i`'s UTF-8 bytes, or null when out of range.
+///
+/// # Memory contract
+///
+/// Borrowed from the active runtime's text queue; never free it. The queue is
+/// cleared and rebuilt on every draw, so the pointer is only valid for the
+/// current frame. Not NUL terminated - always use [`text_len`].
 #[no_mangle]
 pub extern "C" fn text_ptr(i: u32) -> *const u8 {
     texts()
@@ -51,6 +72,7 @@ pub extern "C" fn text_ptr(i: u32) -> *const u8 {
         .unwrap_or(std::ptr::null())
 }
 
+/// Byte length of string `i`, or 0 when out of range.
 #[no_mangle]
 pub extern "C" fn text_len(i: u32) -> u32 {
     texts()

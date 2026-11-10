@@ -28,18 +28,33 @@ pub const COLLISION_SOLID_MASK: u16 = 0xC0;
 pub const MAX_COMBAT_TICKS_PER_FRAME: i64 = 10;
 
 /// Diagnostic combat staging values (used by the headless smoke tests).
+/// Target `hp_internal` (`120`) staged by the melee smoke.
 pub const COMBAT_TEST_TARGET_HP: u16 = 120;
+/// Target money staged on the melee-smoke corpse.
 pub const COMBAT_TEST_TARGET_MONEY: i32 = 7;
+/// Target poison value (`Entity+0x52`) staged for the stinger drop.
 pub const COMBAT_TEST_VENOM: u16 = 2;
+/// `Game.1` item instance id of the short bow used by the ranged smoke.
 pub const RANGED_TEST_BOW_ITEM: u16 = 23;
+/// `Game.1` item instance id of the arrow stack used by the ranged smoke.
 pub const RANGED_TEST_AMMO_ITEM: u16 = 27;
+/// Arrow quantity (instance `+0x04`) staged in the shooter's `+0xCC` slot.
 pub const RANGED_TEST_AMMO_QUANTITY: u32 = 30;
+/// Remaining bow durability staged so a few shots do not break the bow.
 pub const RANGED_TEST_BOW_DURABILITY: f32 = 56.0;
+/// Target `hp_internal` staged for the ranged smoke.
 pub const RANGED_TEST_TARGET_HP: u16 = 3000;
+/// Target `strength_base` staged for the ranged smoke.
 pub const RANGED_TEST_TARGET_STRENGTH: u16 = 100;
+/// Target `endurance_base` staged for the ranged smoke.
 pub const RANGED_TEST_TARGET_ENDURANCE: u16 = 10;
+/// Nearest cell distance (`FUN_0043881C`) the ranged smoke keeps the target at.
 pub const RANGED_TEST_MIN_DISTANCE: i32 = 4;
+/// Farthest cell distance the ranged smoke keeps the target at.
 pub const RANGED_TEST_MAX_DISTANCE: i32 = 10;
+/// Victim's own arrow stack (instance 102) the corpse plan must copy.
 pub const RANGED_TEST_TARGET_ARROW_ITEM: u16 = 102;
+/// Dexterity that makes the `dex*0.5` dodge roll always succeed.
 pub const RANGED_TEST_DODGE_DEXTERITY: u16 = 2000;
+/// Cell radius searched for a settlement prop target in the prop smoke.
 pub const PROP_TEST_SEARCH_RADIUS: i32 = 10;

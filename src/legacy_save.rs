@@ -28,72 +28,110 @@ use crate::world_objects::{ActiveWorldObject, WorldObjectSource, WORLD_OBJECT_IT
 pub const SNAPSHOT_LEN: usize = 0x0B07A4;
 /// `KONUNG.SAV`: ten slots A- 50 bytes.
 pub const SLOT_NAMES_LEN: usize = 500;
+/// Bytes per `KONUNG.SAV` slot name (CP866, NUL-terminated).
 pub const SLOT_NAME_LEN: usize = 50;
+/// `KONUNG.SAV` slot count (10 names of 50 CP866 bytes).
 pub const SLOT_COUNT: usize = 10;
 
+/// `+0x000000` option flag 2, `_DAT_0081D5EC` (day/night cycle).
 pub const OPT2_OFF: usize = 0x000000;
+/// `+0x000004` option flag 3, `_DAT_0081D604` (light effects).
 pub const OPT3_OFF: usize = 0x000004;
+/// `+0x000008` world/frame tick counter, `_DAT_0081D640`.
 pub const WORLD_TICK_OFF: usize = 0x000008;
+/// `+0x00000C` leader `Entity` index.
 pub const LEADER_OFF: usize = 0x00000C;
+/// `+0x000010` active projectile count (max 100).
 pub const PROJECTILE_COUNT_OFF: usize = 0x000010;
+/// `+0x000014` active ground-marker count (max 200).
 pub const MARKER_COUNT_OFF: usize = 0x000014;
+/// `+0x000018` `B7` quest-flag block, 300 u32 slots.
 pub const QUEST_OFF: usize = 0x000018;
+/// `B7` block length (`0x4B0` = 300 x 4).
 pub const QUEST_LEN: usize = 0x4B0;
+/// `+0x0004C8` projectile pool (100 x `0x20`).
 pub const PROJECTILE_OFF: usize = 0x0004C8;
+/// Projectile pool length (`0xC80`).
 pub const PROJECTILE_LEN: usize = 0xC80;
+/// `+0x001148` item-instance table (8192 x 16 bytes).
 pub const ITEM_TABLE_OFF: usize = 0x001148;
+/// Item-instance table length (`0x20000`).
 pub const ITEM_TABLE_LEN: usize = 0x20000;
+/// `+0x021148` runtime ground-marker pool (200 x `0x40`).
 pub const MARKER_OFF: usize = 0x021148;
+/// Marker pool length (`0x3200`).
 pub const MARKER_LEN: usize = 0x3200;
+/// `+0x024348` `Group[200]` block.
 pub const GROUP_BLOCK_OFF: usize = 0x024348;
+/// `Group` block length (`200 x 0x20`).
 pub const GROUP_BLOCK_LEN: usize = GROUP_COUNT * GROUP_STRIDE;
+/// `+0x025C48` `WorldObject` source block.
 pub const WORLD_OBJECT_BLOCK_OFF: usize = 0x025C48;
+/// `WorldObject` block length (`500 x 0x40`).
 pub const WORLD_OBJECT_BLOCK_LEN: usize = WORLD_OBJECT_COUNT * WORLD_OBJECT_STRIDE;
+/// `+0x02D948` `Entity[2000]` block.
 pub const ENTITY_BLOCK_OFF: usize = 0x02D948;
+/// `Entity` block length (`2000 x 0x100`).
 pub const ENTITY_BLOCK_LEN: usize = ENTITY_COUNT * ENTITY_STRIDE;
+/// `+0x0AA948` `Settlement[20]` block.
 pub const SETTLEMENT_BLOCK_OFF: usize = 0x0AA948;
+/// Settlement block length (`20 x 0x4B5`).
 pub const SETTLEMENT_BLOCK_LEN: usize = SETTLEMENT_COUNT * SETTLEMENT_STRIDE;
+/// `+0x0B076C` discovered world-map mask (`0x81CF80`).
 pub const DISCOVERED_OFF: usize = 0x0B076C;
+/// Discovered mask length (56 bytes).
 pub const DISCOVERED_LEN: usize = 0x38;
 
+/// One byte range of the flat snapshot: file offset and length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Block {
+    /// Byte offset from the start of the snapshot file.
     pub off: usize,
+    /// Byte length of the block.
     pub len: usize,
 }
 
+/// The `B7` quest-flag block meaning [`QUEST_OFF`]/[`QUEST_LEN`].
 pub const QUEST_BLOCK: Block = Block {
     off: QUEST_OFF,
     len: QUEST_LEN,
 };
+/// The projectile pool block.
 pub const PROJECTILE_BLOCK: Block = Block {
     off: PROJECTILE_OFF,
     len: PROJECTILE_LEN,
 };
+/// The 16-byte item-instance table block.
 pub const ITEM_TABLE_BLOCK: Block = Block {
     off: ITEM_TABLE_OFF,
     len: ITEM_TABLE_LEN,
 };
+/// The active ground-marker pool block.
 pub const MARKER_BLOCK: Block = Block {
     off: MARKER_OFF,
     len: MARKER_LEN,
 };
+/// The `Group[200]` block.
 pub const GROUP_BLOCK: Block = Block {
     off: GROUP_BLOCK_OFF,
     len: GROUP_BLOCK_LEN,
 };
+/// The `WorldObject` source block.
 pub const WORLD_OBJECT_BLOCK: Block = Block {
     off: WORLD_OBJECT_BLOCK_OFF,
     len: WORLD_OBJECT_BLOCK_LEN,
 };
+/// The `Entity[2000]` block.
 pub const ENTITY_BLOCK: Block = Block {
     off: ENTITY_BLOCK_OFF,
     len: ENTITY_BLOCK_LEN,
 };
+/// The `Settlement[20]` block (trade/stock fields included).
 pub const SETTLEMENT_BLOCK: Block = Block {
     off: SETTLEMENT_BLOCK_OFF,
     len: SETTLEMENT_BLOCK_LEN,
 };
+/// The discovered world-map mask block.
 pub const DISCOVERED_BLOCK: Block = Block {
     off: DISCOVERED_OFF,
     len: DISCOVERED_LEN,
@@ -103,39 +141,61 @@ pub const DISCOVERED_BLOCK: Block = Block {
 /// bytes survive a parse/write round-trip.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LegacySnapshot {
+    /// `+0x000000` option flag 2 (`_DAT_0081D5EC`, day/night cycle).
     pub opt2: u32,
+    /// `+0x000004` option flag 3 (`_DAT_0081D604`, light effects).
     pub opt3: u32,
+    /// `+0x000008` world/frame tick counter (`_DAT_0081D640`).
     pub world_tick: u32,
+    /// `+0x00000C` leader `Entity` index.
     pub leader_index: u32,
+    /// `+0x000010` active projectile count.
     pub projectile_count: u32,
+    /// `+0x000014` active ground-marker count.
     pub marker_count: u32,
+    /// `+0x000018` `B7` quest slots (300 u32, `+0x02` journal line included).
     pub quest_flags: Vec<u32>,
+    /// `+0x0004C8` projectile pool bytes (100 x `0x20`; no field map, exported
+    /// empty).
     pub projectiles: Vec<u8>,
+    /// `+0x001148` 8192 x 16-byte item-instance table.
     pub item_table: Vec<u8>,
+    /// `+0x021148` active ground-marker pool (200 x `0x40`).
     pub markers: Vec<u8>,
+    /// `+0x024348` `Group[200]` block.
     pub groups: Vec<u8>,
+    /// `+0x025C48` `WorldObject[500]` source block.
     pub world_objects: Vec<u8>,
+    /// `+0x02D948` `Entity[2000]` block.
     pub entities: Vec<u8>,
+    /// `+0x0AA948` `Settlement[20]` block.
     pub settlements: Vec<u8>,
+    /// `+0x0B076C` discovered world-map mask (56 bytes).
     pub discovered: Vec<u8>,
 }
 
+/// Read a little-endian `u32` at `o` (panics when out of range; all callers
+/// index a validated snapshot).
 fn u32_at(b: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
 }
 
+/// Write a little-endian `u16` at `o`.
 fn put_u16(b: &mut [u8], o: usize, v: u16) {
     b[o..o + 2].copy_from_slice(&v.to_le_bytes());
 }
 
+/// Write a little-endian `i16` at `o`.
 fn put_i16(b: &mut [u8], o: usize, v: i16) {
     b[o..o + 2].copy_from_slice(&v.to_le_bytes());
 }
 
+/// Write a little-endian `u32` at `o`.
 fn put_u32(b: &mut [u8], o: usize, v: u32) {
     b[o..o + 4].copy_from_slice(&v.to_le_bytes());
 }
 
+/// Write a little-endian `i32` at `o`.
 fn put_i32(b: &mut [u8], o: usize, v: i32) {
     b[o..o + 4].copy_from_slice(&v.to_le_bytes());
 }
@@ -198,6 +258,9 @@ impl LegacySnapshot {
         })
     }
 
+    /// Serialize the flat `0x0B07A4` layout. Count words are clamped to the
+    /// original pool sizes (100 projectiles, 200 markers) and short blocks are
+    /// copied only as far as they fit.
     pub fn write(&self) -> Vec<u8> {
         let mut out = vec![0u8; SNAPSHOT_LEN];
         put_u32(&mut out, OPT2_OFF, self.opt2);
@@ -249,6 +312,7 @@ impl LegacySnapshot {
             .collect()
     }
 
+    /// Parse the settlement block into `Settlement[20]` (runtime layout).
     pub fn settlements(&self) -> Vec<Settlement> {
         (0..SETTLEMENT_COUNT)
             .map(|i| {
@@ -297,6 +361,8 @@ impl LegacySnapshot {
         out
     }
 
+    /// Decode `+0x00000C` as the protagonist's `Entity` record; `None` when the
+    /// stored index is outside the 2000-entry table.
     pub fn leader(&self) -> Option<Entity> {
         let idx = self.leader_index as usize;
         if idx >= ENTITY_COUNT {
@@ -600,6 +666,8 @@ mod tests {
         ENTITY_OFF, GAME_SIZE, GROUP_OFF, SETTLEMENT_OFF, WORLD_OBJECT_OFF,
     };
 
+    /// All-zero snapshot with a few distinct fields set so a round-trip is
+    /// observable.
     fn synthetic() -> LegacySnapshot {
         let mut s = LegacySnapshot::empty();
         s.world_tick = 12345;
@@ -614,6 +682,7 @@ mod tests {
         s
     }
 
+    /// `write` then `parse` reproduces the snapshot and the exact bytes.
     #[test]
     fn snapshot_round_trips_byte_exactly() {
         let s = synthetic();
@@ -624,11 +693,14 @@ mod tests {
         assert_eq!(p.write(), bytes);
     }
 
+    /// A snapshot shorter than `SNAPSHOT_LEN` is rejected, never half-parsed.
     #[test]
     fn truncated_snapshot_is_rejected() {
         assert!(LegacySnapshot::parse(&[0u8; 32]).is_err());
     }
 
+    /// The leader lookup decodes an entity and the marker pool decodes its
+    /// source index.
     #[test]
     fn leader_and_blocks_decode() {
         let p = synthetic();
@@ -640,6 +712,8 @@ mod tests {
         assert_eq!(markers[0].source, 5);
     }
 
+    /// A `KONUNG.SAV` table round-trips Cyrillic CP866 names; empty slots decode
+    /// as empty strings.
     #[test]
     fn slot_names_round_trip_cp866() {
         let mut names: [String; SLOT_COUNT] = Default::default();
@@ -653,6 +727,8 @@ mod tests {
         assert_eq!(back[1], "");
     }
 
+    /// Patching a decoded block back from the parsed models is byte-identical,
+    /// so every modelled field maps to its original offset.
     #[test]
     fn blocks_patch_round_trips_models() {
         let p = synthetic();
@@ -667,6 +743,8 @@ mod tests {
         assert_eq!(st, p.settlements);
     }
 
+    /// The snapshot block sizes and `Game.N` table offsets agree with the
+    /// recovered `Game.N` layout.
     #[test]
     fn world_object_block_offsets_match_game_n() {
         assert_eq!(GROUP_BLOCK_LEN, 0x1900);

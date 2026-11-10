@@ -4,18 +4,23 @@ use super::*;
 use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter, PrimaryStat};
 use crate::hero::hero;
 
+/// The window occupies `(140,0,642,460)` at 800x600 and `(112,0,528,376)` at
+/// 640x480.
 #[test]
 fn window_rect_matches_executable() {
     assert_eq!(window_rect(800), (140, 0, 642, 460));
     assert_eq!(window_rect(640), (112, 0, 528, 376));
 }
 
+/// `0x81D644` is `1` for 800x600 and `0` for anything at or below 640.
 #[test]
 fn resolution_selector_matches_bit() {
     assert_eq!(resolution_selector(800), 1);
     assert_eq!(resolution_selector(640), 0);
 }
 
+/// The main-slot table keeps the recovered bases, including the shared 0/2
+/// position and the last slot at (328,103)/(280,70).
 #[test]
 fn main_bases_match_verified_tables() {
     assert_eq!(main_base(1, 0), (182, 103));
@@ -25,6 +30,8 @@ fn main_bases_match_verified_tables() {
     assert_eq!(main_base(0, 5), (280, 70));
 }
 
+/// The additional-slot centers and the special-slot origin keep the recovered
+/// per-resolution values.
 #[test]
 fn additional_and_special_match_verified_tables() {
     assert_eq!(additional_center(1, 0), (232, 74));
@@ -34,6 +41,8 @@ fn additional_and_special_match_verified_tables() {
     assert_eq!(special_base(0), (245, 199));
 }
 
+/// With `raw_0x12 == 2` and both slots empty, the knife in storage slot 2
+/// draws on the shared 0/2 position instead of slot 0.
 #[test]
 fn starting_knife_draws_in_storage_slot_two() {
     // Shipped starting equipment: item instance 1 (Нож) is in storage slot 2.
@@ -43,6 +52,8 @@ fn starting_knife_draws_in_storage_slot_two() {
     assert!(!main_slot_drawn(&eq, 2, 1));
 }
 
+/// Exactly one of slots 0 and 2 is drawn: slot 0 wins unless `raw_0x12 == 2`
+/// and slot 2 is occupied.
 #[test]
 fn overlap_branch_prefers_slot_zero() {
     // Both 0 and 2 occupied, raw_0x12 != 2 -> slot 0 wins, slot 2 hidden.
@@ -54,6 +65,7 @@ fn overlap_branch_prefers_slot_zero() {
     assert!(main_slot_drawn(&eq, 2, 2));
 }
 
+/// All-empty equipment draws no main slot at all.
 #[test]
 fn empty_equipment_draws_nothing() {
     let eq = [0u16; 6];
@@ -62,6 +74,8 @@ fn empty_equipment_draws_nothing() {
     }
 }
 
+/// A warrior protagonist with item instance 1 (Нож) in storage slot 2, matching
+/// the shipped `Game.1` starting equipment, at full health.
 fn player() -> PlayerCharacter {
     let mut p = PlayerCharacter::from_build(
         *hero(0).unwrap(),
@@ -72,6 +86,8 @@ fn player() -> PlayerCharacter {
     p
 }
 
+/// The value and secondary anchor tables keep the recovered `0x465C54` /
+/// `0x465B34` records for both resolutions.
 #[test]
 fn value_anchors_match_recovered_tables() {
     // Spot-check the recovered `0x465C54` / `0x465B34` records.
@@ -89,6 +105,7 @@ fn value_anchors_match_recovered_tables() {
     assert_eq!(TABLE2_800[4], (716, 203));
 }
 
+/// The raise column shows the tier cost only when the player can pay it in full.
 #[test]
 fn needed_raise_matches_tier_cost_gated_by_available_xp() {
     // Warrior STR=15 is specialized -> next cost is 5, and the level-1
@@ -116,6 +133,8 @@ fn needed_raise_matches_tier_cost_gated_by_available_xp() {
     );
 }
 
+/// Reaching the `0x45B0AB` level cap for a stat hides its raise cost even with
+/// unlimited experience; level 0 has no practical cap.
 #[test]
 fn level_caps_hide_raise_costs() {
     // `0x45B0AB`: at level 1 the normal cap is 7 and the specialized cap is 19.
@@ -149,6 +168,8 @@ fn level_caps_hide_raise_costs() {
     );
 }
 
+/// The icon-only level-up row requires every per-level stat minimum, and level
+/// `0xD` is refused outright.
 #[test]
 fn raise_anything_requires_level_minimums() {
     // Warrior level 1 minima: DEX 5, CHA 5, STR 16, END 5.
@@ -160,6 +181,8 @@ fn raise_anything_requires_level_minimums() {
     assert!(!can_raise_any(CharacterClass::Warrior, 0xD, 99, 99, 99, 99));
 }
 
+/// Hero 0 reports portrait group 1 and status 5, the reference case the
+/// portrait selector was verified against.
 #[test]
 fn draw_uses_intr2_and_does_not_panic() {
     // Synthetic 8x8 white background as INTR[2] via a minimal archive is
@@ -169,6 +192,7 @@ fn draw_uses_intr2_and_does_not_panic() {
     assert_eq!(p.portrait_status(), 5);
 }
 
+/// The paper doll lands at (470,127) / (570,160), the `0x46035C` table values.
 #[test]
 fn paper_doll_positions_match_executable_tables() {
     // konung.res DGROUP 0x46035C/0x460360, stride 0x10.
@@ -176,6 +200,8 @@ fn paper_doll_positions_match_executable_tables() {
     assert_eq!(paper_doll_position(800), (570, 160));
 }
 
+/// `draw` blits the fetched paper-doll pixels unchanged at its origin (skipped
+/// when the original resources are absent).
 #[test]
 fn draw_blits_paper_doll_pixels() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -258,6 +284,8 @@ fn draw_blits_paper_doll_pixels() {
     );
 }
 
+/// The hard-coded doll origins equal the values read straight out of the
+/// original `konung.res` DGROUP for both selectors.
 #[test]
 fn paper_doll_positions_match_original_dgroup() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");

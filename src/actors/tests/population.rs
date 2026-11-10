@@ -4,6 +4,8 @@ use super::super::*;
 
 use super::common::*;
 
+/// Reserved group 0 and groups with `Group+0x1E == 0` are counted but contribute
+/// no actors; only the active group's range is enumerated.
 #[test]
 fn skips_group_zero_and_inactive_groups() {
     let groups = vec![
@@ -26,6 +28,8 @@ fn skips_group_zero_and_inactive_groups() {
     assert_eq!(b.actors[0].source_entity_id(), 2);
 }
 
+/// The enumerated slice is `first_entity .. first_entity + entity_count`, never
+/// `capacity`, `count_18` or one actor per group.
 #[test]
 fn enumerates_first_plus_count_not_capacity_nor_one_per_group() {
     let mut g = group(
@@ -53,6 +57,8 @@ fn enumerates_first_plus_count_not_capacity_nor_one_per_group() {
     assert_eq!(ids, vec![10, 11, 12]);
 }
 
+/// A `(0,0)` Entity keeps its authored cell and gets a runtime cell inside
+/// rectangle A, accepted on the first attempt when the table is free.
 #[test]
 fn zero_position_is_runtime_placed_and_source_unchanged() {
     let rect = Rect {
@@ -85,6 +91,8 @@ fn zero_position_is_runtime_placed_and_source_unchanged() {
     }
 }
 
+/// Two builds of the same location and table produce identical cells (no thread
+/// or time randomness).
 #[test]
 fn deterministic_repeatability_per_location() {
     let rect = Rect {
@@ -103,6 +111,7 @@ fn deterministic_repeatability_per_location() {
     assert_eq!(coords(&a), coords(&b));
 }
 
+/// The renderer family is chosen by `archetype & 0x40`, never by `kind`.
 #[test]
 fn family_is_selected_by_archetype_bit_not_kind() {
     assert_eq!(visual_family(0x52), VisualFamily::Object);
@@ -111,6 +120,8 @@ fn family_is_selected_by_archetype_bit_not_kind() {
     assert_eq!(visual_family(0x3F), VisualFamily::Human);
 }
 
+/// Depth sorting uses the `FUN_00438A78` projection (`y*58 + (2-(x&1))*29`,
+/// `x*16 + 16`) and keeps the smaller y first.
 #[test]
 fn projected_sort_key_uses_entity_projection() {
     let a = RuntimeActor {
@@ -138,6 +149,8 @@ fn projected_sort_key_uses_entity_projection() {
     assert_eq!(actors[1].entity.x, 200);
 }
 
+/// A group range that runs past the Entity table is counted in
+/// `invalid_ranges` and enumerates nothing.
 #[test]
 fn invalid_range_is_counted_not_silently_dropped() {
     let groups = vec![group(1, 1999, 5, 1, 65, Rect::default())];
@@ -148,6 +161,8 @@ fn invalid_range_is_counted_not_silently_dropped() {
     assert_eq!(b.enumerated_entities, 0);
 }
 
+/// [`wanders`] matches the `FUN_00415FC8` gate: `flags_a & 0x40`, no `0x80`
+/// archetype bit, and an action row other than the death rows `3`/`9`.
 #[test]
 fn wanders_classification_matches_dispatch_gate() {
     let mut e = entity(0, 6, 0x05, 10, 10);
@@ -165,6 +180,8 @@ fn wanders_classification_matches_dispatch_gate() {
     assert!(wanders(&e));
 }
 
+/// Wander targets are strictly inside rectangle A (never on its border) and
+/// always on a free cell.
 #[test]
 fn wander_target_stays_strictly_inside_rect_and_free() {
     // Rect large enough for the original 800x600 radii (x=20, y=9 => offsets up
@@ -185,6 +202,8 @@ fn wander_target_stays_strictly_inside_rect_and_free() {
     }
 }
 
+/// When every interior cell is blocked, `wander_target` returns `None` instead
+/// of falling back to a fixed point.
 #[test]
 fn wander_target_none_when_rect_blocked() {
     let rect = Rect {
@@ -201,6 +220,8 @@ fn wander_target_none_when_rect_blocked() {
     assert!(wander_target(&rect, (20, 20), &mut rng, &blocked).is_none());
 }
 
+/// Only `flags_a & 0x40` citizens move; an entity without the wander flag stays
+/// on its spawn cell.
 #[test]
 fn update_population_moves_only_wanderers() {
     let rect = Rect {
@@ -227,6 +248,8 @@ fn update_population_moves_only_wanderers() {
     assert!(rect_contains(&rect, b.motion[&0].cell));
 }
 
+/// Object/enemy groups (class `0x41`) never wander and hold idle frame 0 even
+/// though their entities carry `flags_a = 0x40`.
 #[test]
 fn object_group_mobs_hold_position() {
     // Group class `0x41` (bit 0x40) selects the object/enemy AI `FUN_00412e00`,
@@ -254,6 +277,7 @@ fn object_group_mobs_hold_position() {
     assert_eq!(b.motion[&0].frame, 0, "idle frame must be held");
 }
 
+/// Citizen groups (class `0x81`) wander and stay inside rectangle A.
 #[test]
 fn citizen_group_wanders() {
     // Group class `0x81` (bit 0x80, no 0x40) selects `FUN_004168a4`.
@@ -279,6 +303,8 @@ fn citizen_group_wanders() {
     assert!(rect_contains(&rect, b.motion[&0].cell));
 }
 
+/// A home-waypoint owner stands on its waypoint in the idle action row and holds
+/// frame 0 instead of looping an idle animation.
 #[test]
 fn idle_wanderer_holds_its_frame_not_loops() {
     use crate::population::{Settlement, Waypoint};
@@ -324,6 +350,8 @@ fn idle_wanderer_holds_its_frame_not_loops() {
     assert_eq!(m.action, crate::anim::idle_action(false) as u8);
 }
 
+/// A route's first cell is committed at segment start: the stored cell advances
+/// while `render_cell` keeps the pre-step cell.
 #[test]
 fn actor_commits_the_first_step_at_segment_start() {
     // A wandering citizen: the first cell of every route is committed at the

@@ -2,6 +2,7 @@
 
 use super::common::*;
 
+/// The detail block of Dragomir's knife carries its name plus the weight and price lines.
 #[test]
 fn real_item_detail_lines_include_verified_properties() {
     let Some(mut app) = build_party_app() else {
@@ -32,6 +33,7 @@ fn real_item_detail_lines_include_verified_properties() {
     );
 }
 
+/// Hovering the character-screen equipment rectangle resolves the equipped item id.
 #[test]
 fn character_hover_resolves_equipment_slot() {
     let Some(mut app) = build_party_app() else {

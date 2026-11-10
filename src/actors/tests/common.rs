@@ -4,13 +4,16 @@ use super::super::*;
 
 use crate::population::{Entity, EntityStats, Group};
 
-/// the production wander path relies on `wander_target`'s strict-interior rule.
+/// Inclusive containment test for spawn rectangle A, the bound the production
+/// wander path must respect (wander targets are strictly interior).
 pub(super) fn rect_contains(rect: &Rect, c: (i32, i32)) -> bool {
     let (x1, x2) = (rect.x1 as i32, rect.x2 as i32);
     let (y1, y2) = (rect.y1 as i32, rect.y2 as i32);
     c.0 >= x1 && c.0 <= x2 && c.1 >= y1 && c.1 <= y2
 }
 
+/// Active `Game.N` group fixture: `first..first+count` entities in location
+/// `loc`, class `class`, bounded by `rect_a`.
 pub(super) fn group(
     index: usize,
     first: u16,
@@ -37,6 +40,7 @@ pub(super) fn group(
     }
 }
 
+/// Entity fixture: authored cell `(x,y)`, facing 3, no flags, empty gear.
 pub(super) fn entity(index: usize, kind: u8, archetype: u8, x: u16, y: u16) -> Entity {
     Entity {
         index,
@@ -63,10 +67,12 @@ pub(super) fn entity(index: usize, kind: u8, archetype: u8, x: u16, y: u16) -> E
     }
 }
 
+/// Wrap the fixtures as parsed `Game.N` tables.
 pub(super) fn tables(groups: Vec<Group>, entities: Vec<Entity>) -> GameTables {
     GameTables { groups, entities }
 }
 
+/// An all-free 320x160 collision table.
 pub(super) fn free_collision() -> Vec<u16> {
     vec![0u16; 320 * 160]
 }

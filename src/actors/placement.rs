@@ -1,18 +1,34 @@
 //! `placement` subsystem of [`crate::actors`] (split from `actors.rs`).
+//!
+//! Runtime placement of `(0,0)` Entity records and the deterministic RNG that
+//! makes it reproducible per location. A candidate is drawn from the group's
+//! first spawn rectangle (A) as `center` plus a signed random delta, accepted
+//! only when the collision cell's low 12 bits are clear, and re-drawn at most
+//! 100 times. There is no centre fallback: after 100 rejections the entity is
+//! reported as failed placement and is not rendered.
+//!
+//! This module also holds [`PopulationBuild`], the per-location result that the
+//! renderer and the AI consume.
 
 use super::*;
 
 /// A generated candidate in the Group spawn-rectangle domain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RawSpawnCoord {
+    /// Runtime grid column (`0..=319`) before the collision test.
     pub x: i32,
+    /// Runtime grid row (`0..=159`) before the collision test.
     pub y: i32,
 }
 
 /// Runtime placement failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlacementError {
-    NoCandidateAfterAttempts { attempts: u8 },
+    /// Every one of the original 100 attempts hit a blocked cell.
+    NoCandidateAfterAttempts {
+        /// Number of attempts performed (always [`MAX_ATTEMPTS`]).
+        attempts: u8,
+    },
 }
 
 /// Deterministic RNG (xorshift64). No thread/browser randomness is used, so
@@ -23,10 +39,13 @@ pub struct DeterministicRng {
 }
 
 impl DeterministicRng {
+    /// Create a stream from `seed`; the low bit is forced set so the state can
+    /// never be zero (xorshift would then stay stuck at zero).
     pub fn new(seed: u64) -> Self {
         DeterministicRng { state: seed | 1 }
     }
 
+    /// Next 32 random bits: one xorshift64 step, high half returned.
     pub fn next_u32(&mut self) -> u32 {
         let mut x = self.state;
         x ^= x << 13;
@@ -38,6 +57,7 @@ impl DeterministicRng {
 }
 
 impl Default for DeterministicRng {
+    /// The fixed state-1 stream, used before a location RNG is installed.
     fn default() -> Self {
         DeterministicRng { state: 1 }
     }
@@ -64,6 +84,9 @@ pub fn spawn_center_half(rect: &Rect) -> (i32, i32, i32, i32) {
     )
 }
 
+/// Signed random offset for one axis: `0` when the half-extent is below 2,
+/// otherwise `rand % half` with a random sign, so candidates never reach the
+/// rectangle border on that axis.
 pub fn axis_delta(half: i32, rng: &mut DeterministicRng) -> i32 {
     if half < 2 {
         return 0;
@@ -99,6 +122,10 @@ pub fn validate_spawn_candidate(x: i32, y: i32, collision: &[u16]) -> bool {
 
 /// Placement loop with an injected acceptance predicate. Keeps the original
 /// maximum of 100 attempts and never falls back to the rectangle center.
+///
+/// Returns the accepted candidate plus the 1-based attempt number, or
+/// [`PlacementError::NoCandidateAfterAttempts`] after exactly `MAX_ATTEMPTS`
+/// rejections.
 pub fn place_with<F: FnMut(RawSpawnCoord) -> bool>(
     group: &Group,
     rng: &mut DeterministicRng,
@@ -133,9 +160,13 @@ pub fn place_entity(
 /// A `(0,0)` entity that could not be placed after [`MAX_ATTEMPTS`] attempts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FailedPlacement {
+    /// `Group` index that enumerated the entity.
     pub source_group_id: usize,
+    /// Entity table index that could not be placed.
     pub source_entity_id: usize,
+    /// Spawn rectangle A the candidates were drawn from.
     pub spawn_rect: Rect,
+    /// Attempts performed (always the 100-attempt cap).
     pub attempts: u8,
 }
 
@@ -148,14 +179,20 @@ pub struct PopulationBuild {
     pub failed: Vec<FailedPlacement>,
     /// Every group whose `location_id` matches, including group 0 / inactive.
     pub matching_groups: usize,
+    /// Matching groups skipped because they are the reserved group 0.
     pub reserved_group_zero: usize,
+    /// Matching groups skipped because `Group+0x1E == 0` (inactive class).
     pub inactive_groups: usize,
+    /// Matching groups skipped because `first_entity + entity_count` fell outside
+    /// the Entity table.
     pub invalid_ranges: usize,
     /// Entities iterated in valid `first_entity..+entity_count` ranges.
     pub enumerated_entities: usize,
     /// `(0,0)` records attempted (== placed + failed).
     pub runtime_candidates: usize,
+    /// `(0,0)` records that got a valid runtime cell.
     pub runtime_placed: usize,
+    /// `(0,0)` records rejected 100 times (see [`PopulationBuild::failed`]).
     pub runtime_failed: usize,
     /// Live movement state keyed by source Entity id.
     pub motion: HashMap<usize, ActorMotion>,
@@ -259,10 +296,12 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
 }
 
 impl PopulationBuild {
+    /// Number of actors drawn at their authored (`Game.N`) cell.
     pub fn persisted_position_actors(&self) -> usize {
         self.actors.iter().filter(|a| !a.is_runtime()).count()
     }
 
+    /// Number of actors whose cell was assigned by the placement pass.
     pub fn runtime_positioned(&self) -> usize {
         self.actors.iter().filter(|a| a.is_runtime()).count()
     }

@@ -6,6 +6,10 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: the diagnostic staging and report helpers used by the headless
+//! combat, ranged and mob-AI smoke tests (`tools/combat_smoke.mjs`,
+//! `tools/ranged_smoke.mjs`, `tools/mob_ai_smoke.mjs`).
 
 use super::super::*;
 use crate::combat::{self, CombatStats, CombatTarget};
@@ -567,6 +571,9 @@ impl PlayableApp {
         }
     }
 
+    /// Diagnostic: current `Group+0x1D` activity byte of a group.
+    ///
+    /// Reports 0 when the group table is not loaded or the index is invalid.
     pub fn group_activity(&self, group_id: usize) -> u32 {
         self.tables
             .as_ref()
@@ -575,6 +582,12 @@ impl PlayableApp {
             .unwrap_or(0)
     }
 
+    /// Diagnostic: force a group's `+0x1D` activity byte.
+    ///
+    /// # Returns
+    ///
+    /// 1 on success, 0 when the group table is not loaded or the index is
+    /// invalid.
     pub fn set_group_activity(&mut self, group_id: usize, activity: u8) -> u32 {
         if let Some(g) = self
             .tables
@@ -587,6 +600,8 @@ impl PlayableApp {
             0
         }
     }
+    /// Diagnostic: source group id of a world actor, or -1 when the actor is not
+    /// in the current map's population.
     pub fn world_group_id(&self, id: usize) -> i32 {
         self.population_cache
             .get(&self.current_map)

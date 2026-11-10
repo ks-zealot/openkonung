@@ -66,6 +66,7 @@ pub fn buffer_rate(id: u16, roll: u32) -> u32 {
 mod tests {
     use super::*;
 
+    /// Horizontal pan moves 62.5 units per row and rounds halves to even.
     #[test]
     fn pan_uses_sixty_two_and_a_half_per_cell() {
         assert_eq!(source_pan(10, 10), 0);
@@ -75,6 +76,8 @@ mod tests {
         assert_eq!(source_pan(10, 20), -625);
     }
 
+    /// Volume starts at full on the player's own cell and clamps to `-10000`
+    /// beyond 1600 projected pixels.
     #[test]
     fn volume_falls_off_to_minus_ten_thousand() {
         // Same cell -> distance 0 -> full volume.
@@ -86,6 +89,8 @@ mod tests {
         assert_eq!(source_volume((0, 0), (300, 150)), -10000);
     }
 
+    /// The falloff uses truncating integer division, matching the original's
+    /// integer expression rather than an exact linear ramp.
     #[test]
     fn volume_matches_the_integer_division_exactly() {
         // Two rows apart: the vertical projection step is 16 px, so dist 32 ->
@@ -95,6 +100,7 @@ mod tests {
         assert_eq!(source_volume((0, 0), (1, 0)), -206);
     }
 
+    /// The drop threshold is inclusive at `-4000`.
     #[test]
     fn audible_threshold_is_minus_four_thousand() {
         assert!(audible(-4000));
@@ -102,6 +108,8 @@ mod tests {
         assert!(audible(0));
     }
 
+    /// Short ids keep buffer 0 except `2,3,6,7,8`; every other id follows the
+    /// `rand()%3` bank.
     #[test]
     fn buffer_selection_matches_the_original_id_rules() {
         // Small ids keep buffer 0 regardless of the roll.

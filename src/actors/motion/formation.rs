@@ -1,4 +1,11 @@
 //! Party follow formation and commands.
+//!
+//! Recruited companions belong to the original reserved group 0, so the
+//! per-frame dispatcher `FUN_00421B50` routes them through the inline AI
+//! `FUN_0041ECC8` -> `FUN_0041F3C8`: one cell per walk cycle toward a free cell
+//! beside the leader, only when the original `FUN_0043881C` distance reaches
+//! [`FOLLOW_DISTANCE`]. An explicit world click overrides this by commanding the
+//! same destination to every selected unit.
 
 use super::super::*;
 

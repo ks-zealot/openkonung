@@ -4,6 +4,7 @@ use super::super::*;
 
 use super::common::*;
 
+/// Count the UI-click events currently queued for the next frame.
 fn ui_clicks(app: &PlayableApp) -> usize {
     app.sounds
         .iter()
@@ -11,6 +12,7 @@ fn ui_clicks(app: &PlayableApp) -> usize {
         .count()
 }
 
+/// Every HUD button code queues exactly one UI click.
 #[test]
 fn hud_commands_queue_exactly_one_click() {
     let Some(mut app) = build_test_app() else {
@@ -32,6 +34,7 @@ fn hud_commands_queue_exactly_one_click() {
     }
 }
 
+/// `C` opens the character screen and queues one UI click; Escape closes it.
 #[test]
 fn character_screen_key_queues_one_click() {
     let Some(mut app) = build_test_app() else {
@@ -47,6 +50,7 @@ fn character_screen_key_queues_one_click() {
     assert!(!app.character_screen);
 }
 
+/// The stance key still plays its click when no unit is selected.
 #[test]
 fn stance_tab_queues_one_click_even_without_selection() {
     let Some(mut app) = build_test_app() else {
@@ -59,6 +63,7 @@ fn stance_tab_queues_one_click_even_without_selection() {
     assert_eq!(ui_clicks(&app), 1);
 }
 
+/// Ambient picks stay inside the 8-clip bank of the current location and never fall silent.
 #[test]
 fn ambient_ids_stay_inside_the_location_banks() {
     let Some(mut app) = build_test_app() else {
@@ -78,6 +83,10 @@ fn ambient_ids_stay_inside_the_location_banks() {
     assert!(!app.sounds.is_empty(), "ambient bank never queued a clip");
 }
 
+/// Pan is 62.5 per projected cell row and volume -100 per 16 px of distance.
+///
+/// Two rows away (32 px) therefore give volume -200 and pan 0; one row of row
+/// offset gives pan 62 after rounding.
 #[test]
 fn positioned_sound_uses_the_original_pan_and_volume() {
     let Some(mut app) = build_test_app() else {
@@ -101,6 +110,7 @@ fn positioned_sound_uses_the_original_pan_and_volume() {
     assert_eq!(app.sounds[0].pan, 62);
 }
 
+/// A request whose volume would fall below the `-4000` cut-off is not queued.
 #[test]
 fn inaudible_requests_are_dropped() {
     let Some(mut app) = build_test_app() else {
@@ -117,6 +127,7 @@ fn inaudible_requests_are_dropped() {
     assert!(app.sounds.is_empty());
 }
 
+/// A centred, non-positional sound keeps volume 0 and pan 0.
 #[test]
 fn centred_sounds_keep_full_volume() {
     let Some(mut app) = build_test_app() else {

@@ -1,4 +1,11 @@
 //! `layout` subsystem of [`crate::hud`] (split from `hud.rs`).
+//!
+//! Every rectangle the HUD compositor needs for one logical resolution: the
+//! inventory strip, its slot grid and end caps, the 2x5 party panel, and the
+//! interface viewport that the window screens (map, quest log, dialogue, trade)
+//! tile and clip inside. All values are pixels in logical framebuffer space,
+//! i.e. already specific to the 640x480 / 800x600 variant - there is no runtime
+//! scaling pass.
 
 /// Party panel columns (measured from `INTR[3]`).
 pub const PARTY_COLS: usize = 2;
@@ -16,11 +23,19 @@ pub const HUD_SPRITE: usize = 3;
 pub const INVENTORY_SLOT_SPRITE: usize = 17;
 
 /// An axis-aligned rectangle in logical framebuffer coordinates.
+///
+/// `x`/`y` are inclusive, `w`/`h` are extents, so [`Rect::right`] and
+/// [`Rect::bottom`] are exclusive - the same convention as the original blit
+/// clipper and the hit tests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
+    /// Left edge, inclusive.
     pub x: i32,
+    /// Top edge, inclusive.
     pub y: i32,
+    /// Width in px.
     pub w: i32,
+    /// Height in px.
     pub h: i32,
 }
 
@@ -31,8 +46,11 @@ pub struct Rect {
 /// (`0x466012`/`0x466014` high words: 4/8 @640, 6/10 @800).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HpBar {
+    /// Full bar height in px, i.e. the height at health 1600.
     pub height: i32,
+    /// Bar left offset from the portrait origin.
     pub dx: i32,
+    /// Bar top offset from the portrait origin.
     pub dy: i32,
 }
 
@@ -76,9 +94,13 @@ pub fn slot_step(slot_width: u16) -> i32 {
 /// Resolved HUD geometry for one logical resolution.
 #[derive(Clone, Debug)]
 pub struct HudLayout {
+    /// Framebuffer width this layout was built for (`640` or `800`).
     pub logical_w: i32,
+    /// Matching framebuffer height (`480` or `600`).
     pub logical_h: i32,
+    /// `INTR` index of the whole-screen overlay (`INTR[3]`).
     pub hud_id: usize,
+    /// `INTR` index of the empty inventory-slot background (`INTR[17]`).
     pub slot_id: usize,
     /// Inventory strip region `(left, strip_bottom)`, in logical coordinates.
     pub inventory_region: Rect,
@@ -213,6 +235,11 @@ pub fn layout_640() -> HudLayout {
     }
 }
 
+/// Build the row-major 2x5 party cell grid from measured column x positions,
+/// row y positions and the shared cell size (from `INTR[3]`).
+///
+/// `cell = row * PARTY_COLS + col`, so index 0 is the top-left portrait - the
+/// order the party group uses and the order clicks are mapped back to.
 pub fn build_party_cells(
     col_x: &[i32; PARTY_COLS],
     row_y: &[i32; PARTY_ROWS],
@@ -254,14 +281,18 @@ pub fn inventory_slot_rect(layout: &HudLayout, slot: usize, slot_w: u16) -> Opti
 }
 
 impl Rect {
+    /// Exclusive right edge (`x + w`); a pixel at this column is outside.
     pub fn right(&self) -> i32 {
         self.x + self.w
     }
 
+    /// Exclusive bottom edge (`y + h`).
     pub fn bottom(&self) -> i32 {
         self.y + self.h
     }
 
+    /// Point-in-rectangle test with the same half-open convention the original
+    /// hit tests use (`x1`/`y1` exclusive).
     pub fn contains(&self, px: i32, py: i32) -> bool {
         px >= self.x && px < self.right() && py >= self.y && py < self.bottom()
     }

@@ -4,6 +4,8 @@ use super::super::*;
 
 use super::common::*;
 
+/// Every direction code returned by [`find_path`] steps onto a free cell and
+/// never crosses a blocking wall, and the replay ends exactly on the goal.
 #[test]
 fn find_path_routes_around_obstacles() {
     let mut c = free_collision();
@@ -34,6 +36,8 @@ fn find_path_routes_around_obstacles() {
     assert_eq!(cell, goal);
 }
 
+/// A blocked destination is not an "acceptable point", so no route is produced
+/// (the original aborts the move command).
 #[test]
 fn find_path_rejects_blocked_goal() {
     // The destination must be an "acceptable" (passable) point; the original
@@ -44,6 +48,8 @@ fn find_path_rejects_blocked_goal() {
     assert!(find_path(&c, &occ, (0, 0), (10, 0), (0, 0, 20, 20)).is_none());
 }
 
+/// The blocked-goal exception applies only when the marker equals the ordered
+/// target id and is neither 0 nor the all-ones `0xFFF`.
 #[test]
 fn find_path_accepts_entity_six_exception_only() {
     let mut c = free_collision();
@@ -58,6 +64,8 @@ fn find_path_accepts_entity_six_exception_only() {
     );
 }
 
+/// A pure column or row walk uses one constant direction code, so the sprite
+/// keeps a single facing instead of zigzagging.
 #[test]
 fn dup_column_and_row_walks_keep_constant_direction() {
     let c = free_collision();

@@ -4,6 +4,7 @@ use super::super::*;
 
 use super::common::*;
 
+/// A fresh game has no discovered world-map location and both windows closed.
 #[test]
 fn new_game_starts_with_no_discovered_locations() {
     let Some(app) = build_test_app() else {
@@ -15,6 +16,7 @@ fn new_game_starts_with_no_discovered_locations() {
     assert!(!app.quest_log_open);
 }
 
+/// A class-11 subtype-0 map item reveals exactly one non-reserved location and is consumed.
 #[test]
 fn map_item_reveals_exactly_one_allowed_location_and_is_consumed() {
     let Some(mut app) = build_test_app() else {
@@ -46,6 +48,10 @@ fn map_item_reveals_exactly_one_allowed_location_and_is_consumed() {
     assert_eq!(app.world.res.item_class_subtype(id), Some((0xFF, 0)));
 }
 
+/// `hud::button_at` reproduces the `0x457740`/`0x45437C` row/run tables at both widths.
+///
+/// The sampled points hit codes 1..7 (weapon plaque, stance, map, halt, engage,
+/// quest log, character screen) for the 800 and 640 layouts.
 #[test]
 fn hud_buttons_match_the_original_hit_table() {
     // 800: exact row runs from `0x457740`/`0x45437C`.
@@ -66,6 +72,7 @@ fn hud_buttons_match_the_original_hit_table() {
     assert_eq!(crate::hud::button_at(80, 470, 640), Some(7));
 }
 
+/// `M` toggles the map, the compass icon closes it, and the book icon toggles the quest log.
 #[test]
 fn map_and_quest_toggle_from_keys_and_icons() {
     let Some(mut app) = build_test_app() else {
@@ -90,6 +97,7 @@ fn map_and_quest_toggle_from_keys_and_icons() {
     assert!(!app.quest_log_open);
 }
 
+/// The weapon plaque cycles to the next occupied slot and an open map swallows world clicks.
 #[test]
 fn map_consumes_world_clicks_and_weapon_button_cycles_slots() {
     let Some(mut app) = build_test_app() else {

@@ -12,6 +12,29 @@
 //!
 //! Bottom control roles are verified from `FUN_0042EA6C` / case 2:
 //! **left** (region 20, #11/#12) = Ok; **right** (region 21, #9/#10) = Cancel.
+//!
+//! # Region map
+//!
+//! ```text
+//! 0..2    hero identity portraits (draw and hit rects are the portrait boxes)
+//! 3..6    class boxes, one per CharacterClass (region = Entity+0x04 + 1):
+//!         3 Merchant / 4 Hunter / 5 Chief / 6 Warrior
+//! 7..10   numeric rows: charisma / strength / dexterity / endurance
+//! 11..12  numeric rows: max load / max party
+//! 13..14  numeric rows: smithing / building (original click handlers are no-ops)
+//! 15..16  combat selector boxes (Fencing / Marksmanship)
+//! 17..19  civil selector boxes (Identification / Trade / Healing)
+//! 20..21  bottom controls (Ok on the left / Cancel on the right)
+//! 22      zero-size point: origin of the 160x160 paper doll
+//! 23      big description panel (`0x46331C` records)
+//! 24      top free-points box (Entity+0x38, the "PARAMETERS" header)
+//! 25..32  primary-stat steppers, (minus, plus) per stat CHA/STR/DEX/END
+//! ```
+//!
+//! Every region has one `NEWH_DRAW_*` placement rect and one `NEWH_HIT_*`
+//! interactive rect; images are drawn at the draw rect and hit-tested against
+//! the hit rect (they differ for the wide label rows). The module only owns the
+//! *selection state*: the painters live in `super::screens`.
 
 use crate::character::{CharacterBuild, CharacterClass, CombatSpecialization};
 
@@ -203,10 +226,13 @@ pub fn region_status(region: usize) -> RegionStatus {
 }
 
 impl NewHeroState {
+    /// True when the region selects a hero identity (`NEWH_HIT` regions 0/1/2).
     pub fn is_hero_region(region: usize) -> bool {
         HERO_REGIONS.contains(&region)
     }
 
+    /// Hero identity index `0..=2` for one of the three portrait regions, or
+    /// `None` for any other region.
     pub fn hero_index_for_region(region: usize) -> Option<usize> {
         HERO_REGIONS.iter().position(|&r| r == region)
     }

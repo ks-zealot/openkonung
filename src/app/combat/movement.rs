@@ -6,6 +6,9 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: the shared walk/route helpers the AI passes call while they hold a
+//! mutable population borrow.
 
 use std::collections::HashSet;
 
@@ -13,6 +16,17 @@ use super::super::*;
 use crate::actors::ActorMotion;
 
 impl PlayableApp {
+    /// Advance one walk-animation frame and, at the cycle boundary, commit the
+    /// next queued cell.
+    ///
+    /// `FUN_004123BC` steps one cell per completed cycle, so the frame counter
+    /// wraps at `walk_frames` and `crate::actors::begin_actor_segment` then
+    /// commits the next direction of the `Entity+0x13` queue. Without a queued
+    /// direction the actor stops and parks its sprite on the committed cell.
+    ///
+    /// # Returns
+    ///
+    /// Whether the actor is still walking after the advance.
     pub(super) fn advance_motion_walk(
         m: &mut ActorMotion,
         collision: &[u16],
@@ -40,6 +54,12 @@ impl PlayableApp {
         m.walking
     }
 
+    /// Route an actor to `goal` and start its first walk segment.
+    ///
+    /// Mirrors `FUN_004142D4` -> `FUN_0043DA1F`: the goal is stored in
+    /// `ActorMotion::target` even when the route fails, but only a successful
+    /// non-empty route starts a walk. A blocked or unreachable goal leaves the
+    /// actor idle on its current cell.
     pub(crate) fn start_motion_walk(
         m: &mut ActorMotion,
         collision: &[u16],

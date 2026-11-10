@@ -196,6 +196,8 @@ impl<'a> SlotsMut<'a> {
             .map(ItemLocation::Inventory)
     }
 
+    /// Remove the first occurrence of `id` from any container, in the
+    /// [`Self::find`] order. Returns whether it was present.
     pub fn remove_id(&mut self, id: u16) -> bool {
         let Some(loc) = self.find(id) else {
             return false;
@@ -236,7 +238,8 @@ pub struct OwnerSnapshot {
     /// `Entity+0x52` venom value copied into corpse-loot stingers; `0` for the
     /// protagonist save block, which carries no such field.
     pub raw_0x52: u16,
-    /// `Entity+0x12` raw byte (active weapon slot / armour-slot selector).
+    /// `Entity+0x12` raw byte: active weapon slot, also read by the character
+    /// screen's overlapping-slot (storage 0/2) branch.
     pub raw_0x12: u8,
     /// `Entity+0x03` flags (`0x04` battle stance, `0x80` dead).
     pub flags_b: u8,
@@ -1000,7 +1003,7 @@ pub enum StatOp {
 pub enum UseError {
     /// The instance is missing, not class 9, or the subtype has no use case.
     NotUsable,
-    /// The item needs a target item (subtype 7 «Масло»).
+    /// The item needs a target item (subtype 7, oil).
     NeedsTarget,
     /// A temporary effect is already active (`Entity+0xCE != 0`).
     Blocked,

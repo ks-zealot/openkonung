@@ -2,9 +2,11 @@
 
 use super::*;
 
+/// Append a little-endian `u16` to a test archive buffer.
 fn put_u16(v: &mut Vec<u8>, x: u16) {
     v.extend_from_slice(&x.to_le_bytes());
 }
+/// Append a little-endian `u32` to a test archive buffer.
 fn put_u32(v: &mut Vec<u8>, x: u32) {
     v.extend_from_slice(&x.to_le_bytes());
 }
@@ -64,6 +66,8 @@ fn graph() -> Vec<u8> {
     g
 }
 
+/// All 512 slots are indexed and an unused slot (`0xFFFFFFFF` both words) reads
+/// as `None`.
 #[test]
 fn parses_all_slots_and_marks_unused() {
     let r0 = record(1, 1, &[vec![0x01, 0x00, 0x00]]);
@@ -78,6 +82,7 @@ fn parses_all_slots_and_marks_unused() {
     assert!(arch.entry(INTR_SLOTS - 1).is_none());
 }
 
+/// A data offset of `0` relative to the data region is a valid sprite.
 #[test]
 fn zero_data_offset_is_valid() {
     let a = archive(&[record(1, 1, &[vec![0x00]])], &[0]);
@@ -86,6 +91,7 @@ fn zero_data_offset_is_valid() {
     assert!(arch.dimensions(0).is_some());
 }
 
+/// Literal tokens take palette colours and skip tokens leave alpha `0`.
 #[test]
 fn decodes_colors_and_transparency() {
     // width 3: skip 1, then two literal pixels of palette colour index 0.
@@ -99,6 +105,8 @@ fn decodes_colors_and_transparency() {
     assert_eq!(&im.data[8..12], &[0, 0, 255, 255]);
 }
 
+/// Each entry's own `palette_offset` colours its sprite, so identical records
+/// differ when the palettes differ.
 #[test]
 fn per_entry_palette_is_used() {
     let rows = vec![vec![0x01, 0x00, 0x00]];
@@ -112,6 +120,7 @@ fn per_entry_palette_is_used() {
     assert_ne!(c0.data, c1.data);
 }
 
+/// A magic other than `00 00 00 01` is rejected.
 #[test]
 fn rejects_bad_magic() {
     let mut a = archive(&[record(1, 1, &[vec![0x00]])], &[0]);
@@ -120,6 +129,8 @@ fn rejects_bad_magic() {
     assert!(e.message.contains("bad magic"), "{e}");
 }
 
+/// An archive shorter than the 8-byte header plus the 0x1000 index table is
+/// rejected.
 #[test]
 fn rejects_truncated_index_or_file() {
     let a = archive(&[record(1, 1, &[vec![0x00]])], &[0]);
@@ -127,6 +138,7 @@ fn rejects_truncated_index_or_file() {
     assert!(e.message.contains("file too small"), "{e}");
 }
 
+/// A GRAPH buffer too small to hold the 256 palettes is rejected.
 #[test]
 fn rejects_short_graph() {
     let a = archive(&[record(1, 1, &[vec![0x00]])], &[0]);
@@ -134,6 +146,7 @@ fn rejects_short_graph() {
     assert!(e.message.contains("GRAPH.RES too small"), "{e}");
 }
 
+/// A literal run wider than the record width fails validation at load time.
 #[test]
 fn rejects_literal_run_past_width() {
     let rows = vec![vec![0x02, 0x00, 0x00, 0x00]]; // literal 2 in width 1
@@ -142,6 +155,7 @@ fn rejects_literal_run_past_width() {
     assert!(e.message.contains("past width"), "{e}");
 }
 
+/// A transparent run wider than the record width fails validation at load time.
 #[test]
 fn rejects_transparent_run_past_width() {
     let rows = vec![vec![0x82, 0x00]]; // skip 2 in width 1
@@ -150,6 +164,7 @@ fn rejects_transparent_run_past_width() {
     assert!(e.message.contains("past width"), "{e}");
 }
 
+/// A row without its `0x00` end-of-row token is rejected.
 #[test]
 fn rejects_missing_eol() {
     let rows = vec![vec![0x01, 0x00]]; // one literal, no EOL
@@ -158,6 +173,7 @@ fn rejects_missing_eol() {
     assert!(e.message.contains("end-of-row"), "{e}");
 }
 
+/// Bytes after the end-of-row token are rejected rather than ignored.
 #[test]
 fn rejects_trailing_after_eol() {
     let rows = vec![vec![0x01, 0x00, 0x00, 0xFF]]; // literal + EOL + junk
@@ -166,6 +182,8 @@ fn rejects_trailing_after_eol() {
     assert!(e.message.contains("trailing"), "{e}");
 }
 
+/// A file cut inside the sprite data is rejected because the header still
+/// claims the full region.
 #[test]
 fn rejects_truncated_record() {
     let rows = vec![vec![0x01, 0x00, 0x00]];
@@ -180,6 +198,7 @@ fn rejects_truncated_record() {
     );
 }
 
+/// A palette offset at or past the GRAPH palette region is rejected.
 #[test]
 fn rejects_out_of_range_palette() {
     let a = archive(
@@ -193,6 +212,7 @@ fn rejects_out_of_range_palette() {
     );
 }
 
+/// A palette offset that is not a multiple of 512 is rejected.
 #[test]
 fn rejects_unaligned_palette() {
     let a = archive(&[record(1, 1, &[vec![0x00]])], &[0x100]);
@@ -200,6 +220,7 @@ fn rejects_unaligned_palette() {
     assert!(e.message.contains("multiple"), "{e}");
 }
 
+/// Unused, past-the-table and `usize::MAX` ids all decode to `None`.
 #[test]
 fn get_returns_none_for_bad_ids() {
     let a = archive(&[record(1, 1, &[vec![0x00]])], &[0]);
@@ -209,6 +230,8 @@ fn get_returns_none_for_bad_ids() {
     assert!(arch.get(usize::MAX).is_none());
 }
 
+/// Every catalogued HUD/portrait/icon range maps to its documented role, and
+/// unoccupied ids stay `Unclassified`.
 #[test]
 fn catalog_roles_for_known_indices() {
     assert_eq!(role_of(HUD), IntrRole::HudOverlay);
@@ -232,6 +255,7 @@ fn catalog_roles_for_known_indices() {
     assert_eq!(role_of(511), IntrRole::Unclassified);
 }
 
+/// The AUTO button pair is `169` (off) / `170` (on).
 #[test]
 fn auto_button_selects_by_state() {
     assert_eq!(AUTO_OFF, 169);
@@ -243,10 +267,13 @@ fn auto_button_selects_by_state() {
 
 // --- real-resource regression (only when the original assets are present) ---
 
+/// Directory holding the original shipped game files.
 fn install_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
+/// Load one INTR variant against `GRAPH.RES`, or `None` when either file is
+/// missing.
 fn load_variant(name: &str) -> Option<(IntrArchive, Vec<u8>)> {
     let dir = install_dir();
     let intr = std::fs::read(dir.join(name)).ok()?;
@@ -255,10 +282,13 @@ fn load_variant(name: &str) -> Option<(IntrArchive, Vec<u8>)> {
     Some((arch, intr))
 }
 
+/// Decoded dimensions of an occupied index (panics when it is unused).
 fn dim(arch: &IntrArchive, id: usize) -> (u16, u16) {
     arch.dimensions(id).expect("dimension")
 }
 
+/// The 800-wide archive has all 275 indices occupied with the documented
+/// dimensions (`INTR[3]` is the full 800x600 HUD overlay).
 #[test]
 fn intr800_real_archive() {
     let Some((mut arch, _)) = load_variant("INTR800R.RES") else {
@@ -283,6 +313,8 @@ fn intr800_real_archive() {
     assert_eq!(im.data.len(), 800 * 600 * 4);
 }
 
+/// The 640-wide archive carries the same 275 indices at the smaller interface
+/// dimensions.
 #[test]
 fn intr640_real_archive() {
     let Some((arch, _)) = load_variant("INTR640R.RES") else {
@@ -297,6 +329,8 @@ fn intr640_real_archive() {
     assert_eq!(dim(&arch, 17), (70, 70));
 }
 
+/// Both resolution variants share the same index occupancy and per-entry
+/// palette offsets.
 #[test]
 fn variants_share_index_and_palette_table() {
     let (a, _) = match load_variant("INTR800R.RES") {
@@ -321,6 +355,8 @@ fn variants_share_index_and_palette_table() {
     }
 }
 
+/// The slot frame is fully opaque while HUD frames and icons carry both
+/// transparent and opaque pixels.
 #[test]
 fn reference_sprites_have_expected_transparency() {
     let Some((mut arch, _)) = load_variant("INTR800R.RES") else {

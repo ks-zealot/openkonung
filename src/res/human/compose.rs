@@ -2,9 +2,14 @@
 
 use super::super::*;
 
+/// One composited GRAPH layer: a decoded frame plus its anchor offsets relative
+/// to the actor's draw origin.
 pub(super) struct HumanLayer {
+    /// Decoded RGBA frame.
     pub(super) im: Image,
+    /// X anchor offset in screen pixels.
     pub(super) x: i32,
+    /// Y anchor offset in screen pixels.
     pub(super) y: i32,
 }
 
@@ -133,6 +138,12 @@ impl Res {
         (layers, body_x, body_y)
     }
 
+    /// Flatten the body and equipped-overlay layers into one sprite.
+    ///
+    /// The canvas is the union bounding box of every layer, drawing each in
+    /// plan order with the straight "over" operator. Returns
+    /// `(image, min_x, min_y, frame_count)` where the offsets are the canvas
+    /// origin relative to the actor anchor.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compose_human(
         &self,

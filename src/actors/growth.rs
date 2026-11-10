@@ -259,10 +259,13 @@ mod tests {
     use super::*;
     use crate::population::Rect;
 
+    /// An all-free 320x160 collision table for placement tests.
     fn free_collision() -> Vec<u16> {
         vec![0u16; 320 * 160]
     }
 
+    /// Class-`class` growth group at index 1 with a 9x9 rectangle A and two
+    /// existing, one target and five capacity slots.
     fn group(class: u8) -> Group {
         Group {
             index: 1,
@@ -284,6 +287,8 @@ mod tests {
         }
     }
 
+    /// Entity fixture with distinct base/current stat halves so averaging is
+    /// observable, authored at cell `(2,2)`.
     fn member(index: usize, level: u8, money: i32) -> Entity {
         Entity {
             index,
@@ -326,6 +331,7 @@ mod tests {
     }
 
     /// Game.N layout: reserved group 0 at index 0, the fixture group at 1.
+    /// 40 entity rows so two extra members can be appended.
     fn tables(g: Group) -> GameTables {
         let mut entities = Vec::new();
         for i in 0..40 {
@@ -337,6 +343,8 @@ mod tests {
         }
     }
 
+    /// Only object classes (`0x41..=0x50`) tick the target countdown; a citizen
+    /// class leaves both the target and the countdown untouched.
     #[test]
     fn growth_target_rises_only_for_object_classes() {
         let mut g = group(0x41);
@@ -357,6 +365,8 @@ mod tests {
         assert_eq!(citizen.growth_countdown, 0);
     }
 
+    /// The accumulator only moves down while the live count is below the target
+    /// count: at target it is untouched, and one above decrements by one.
     #[test]
     fn growth_timer_advances_only_below_target() {
         let mut g = group(0x41);
@@ -371,6 +381,9 @@ mod tests {
         assert_eq!(g.growth_timer, before - 1);
     }
 
+    /// One created member consumes exactly the class interval, inherits the
+    /// truncated average of the base stats (not the current halves), starts at
+    /// `0x640` HP with empty gear and is placed on the grid.
     #[test]
     fn grow_group_consumes_one_interval_and_averages_fields() {
         let mut g = group(0x41);
@@ -413,6 +426,8 @@ mod tests {
         assert!(e.x < 320 && e.y < 160, "member was placed");
     }
 
+    /// A large negative accumulator still creates only up to the target count,
+    /// and the leftover budget is clamped to zero.
     #[test]
     fn grow_group_stops_at_target_count() {
         let mut g = group(0x41);
@@ -427,6 +442,8 @@ mod tests {
         assert_eq!(t.groups[1].growth_timer, 0);
     }
 
+    /// A non-negative accumulator (the original `Group+0x02 < 0` test) creates
+    /// nothing.
     #[test]
     fn grow_group_requires_negative_accumulator() {
         let mut g = group(0x41);
@@ -437,6 +454,8 @@ mod tests {
         assert_eq!(t.groups[1].entity_count, 2);
     }
 
+    /// Citizen classes (`0x80` set) are outside the growth window, so the pass
+    /// leaves the group and its accumulator untouched.
     #[test]
     fn grow_group_ignores_citizen_classes() {
         let mut g = group(0x81);
@@ -447,6 +466,8 @@ mod tests {
         assert_eq!(t.groups[1].growth_timer, -1);
     }
 
+    /// A blocked rectangle aborts the pass without counting the member, and the
+    /// accumulator is clamped to 0 so the budget is not carried forward.
     #[test]
     fn grow_group_aborts_when_placement_fails() {
         let mut g = group(0x41);
@@ -460,6 +481,8 @@ mod tests {
         assert_eq!(t.groups[1].growth_timer, 0, "failed pass clamps the budget");
     }
 
+    /// The original `local_2c` quirk: the first eligible group of the location is
+    /// skipped and only later eligible groups grow.
     #[test]
     fn grow_map_skips_the_first_eligible_group() {
         let mut a = group(0x41);

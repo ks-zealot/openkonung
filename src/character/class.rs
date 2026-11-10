@@ -1,30 +1,47 @@
 //! `class` subsystem of [`crate::character`] (split from `character.rs`).
+//!
+//! Maps a class to its `Entity+0x04` value, its four primary-stat preset and
+//! its specialized stat, and carries the recovered DGROUP tables: the XP cost
+//! tiers (`0x45AFB0`), the per-class growth caps/minima (`0x45B0AB`), the
+//! specialized-stat bytes (`0x45AE28`) and the class-name base (`0x45ADC0`).
 
 /// Character class. Controls `Entity+0x04` and the stat preset. Independent of
 /// the selected hero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CharacterClass {
+    /// Class 5 (`Entity+0x04 = 5`, the Warrior); strength-specialized.
     Warrior,
+    /// Class 3 (`Entity+0x04 = 3`, the Hunter); dexterity-specialized.
     Hunter,
+    /// Class 2 (`Entity+0x04 = 2`, the Merchant); endurance-specialized.
     Merchant,
+    /// Class 4 (`Entity+0x04 = 4`, the Chief); charisma-specialized.
     Chief,
 }
 
 /// The four primary stat values a class preset initializes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClassPreset {
+    /// `Entity+0x54` dexterity.
     pub dexterity: u16,
+    /// `Entity+0x58` charisma.
     pub charisma: u16,
+    /// `Entity+0x5E` strength.
     pub strength: u16,
+    /// `Entity+0x62` endurance.
     pub endurance: u16,
 }
 
 /// The four primary stats (display order: Харизма, Сила, Ловкость, Выносливость).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrimaryStat {
+    /// Charisma (`Entity+0x58`).
     Charisma,
+    /// Strength (`Entity+0x5E`).
     Strength,
+    /// Dexterity (`Entity+0x54`).
     Dexterity,
+    /// Endurance (`Entity+0x62`).
     Endurance,
 }
 
@@ -35,7 +52,9 @@ pub enum PrimaryStat {
 /// handlers #15 VA 0x4371EE / #16 VA 0x43725C).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CombatSpecialization {
+    /// Fencing: melee 100, archery 0, building 1, smithing 10.
     Fencing,
+    /// Marksmanship: melee 0, archery 100, building 2, smithing 5.
     Marksmanship,
 }
 
@@ -45,8 +64,11 @@ pub enum CombatSpecialization {
 /// handlers #17/#18/#19).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CivilSpecialization {
+    /// Identification: trade 10, healing 50, identification 20.
     Identification,
+    /// Trade: trade 20, healing 50, identification 10.
     Trade,
+    /// Healing: trade 10, healing 100, identification 10.
     Healing,
 }
 
@@ -362,6 +384,8 @@ impl CharacterClass {
         }
     }
 
+    /// English class name (diagnostic/debug output only; the game shows CP866
+    /// names from `0x45ADC0`).
     pub fn name(self) -> &'static str {
         match self {
             CharacterClass::Warrior => "Warrior",
@@ -453,6 +477,8 @@ impl PrimaryStat {
         PrimaryStat::Endurance,
     ];
 
+    /// English stat name (diagnostic/debug output only; the game shows the
+    /// CP866 names from `0x465E04`).
     pub fn name(self) -> &'static str {
         match self {
             PrimaryStat::Charisma => "Charisma",
@@ -463,6 +489,7 @@ impl PrimaryStat {
     }
 }
 impl CombatSpecialization {
+    /// English specialization name (diagnostic/debug output only).
     pub fn name(self) -> &'static str {
         match self {
             CombatSpecialization::Fencing => "Fencing",
@@ -471,6 +498,7 @@ impl CombatSpecialization {
     }
 }
 impl CivilSpecialization {
+    /// English specialization name (diagnostic/debug output only).
     pub fn name(self) -> &'static str {
         match self {
             CivilSpecialization::Identification => "Identification",

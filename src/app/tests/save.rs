@@ -5,6 +5,11 @@ use crate::actors::{ActorMotion, PartyMember};
 use crate::save::SaveEnvelope;
 use std::io::Write;
 
+/// The full snapshot round-trip preserves B7 quest slots, player fields, settlement extras and the party.
+///
+/// Group flags/activity, the world tick, the discovered mask, the runtime cell and
+/// facing all survive; the settlement waypoint dialogue ids are rehydrated from
+/// `Game.N` on apply rather than stored.
 #[test]
 fn save_roundtrip_preserves_quest_progress_and_state() {
     let Some(mut app) = build_party_move_app() else {
@@ -80,6 +85,7 @@ fn save_roundtrip_preserves_quest_progress_and_state() {
     assert_eq!(app.current_map, 1);
 }
 
+/// Per-entity `Entity+0xD2` is exported for all 2000 rows and restored verbatim.
 #[test]
 fn save_roundtrip_preserves_npc_state_d2() {
     let Some(mut app) = build_party_move_app() else {
@@ -104,6 +110,7 @@ fn save_roundtrip_preserves_npc_state_d2() {
     );
 }
 
+/// The payload starts with the `OPKS` magic and the current version word, and deflates below the raw table size.
 #[test]
 fn encoded_payload_is_compressed_and_versioned() {
     let Some(app) = build_party_move_app() else {
@@ -119,6 +126,7 @@ fn encoded_payload_is_compressed_and_versioned() {
     assert!(bytes.len() < crate::save::ITEM_TABLE_LEN);
 }
 
+/// A v1 payload decodes with the default quest extras: no player dialogue/mode/relic fields and no settlement extras.
 #[test]
 fn v1_payload_migrates_with_default_quest_extras() {
     let Some(app) = build_party_move_app() else {
@@ -142,6 +150,7 @@ fn v1_payload_migrates_with_default_quest_extras() {
     assert!(decoded.extra.settlements.is_empty());
 }
 
+/// A v2 payload keeps its extras but decodes with zeroed growth accumulators.
 #[test]
 fn v2_payload_decodes_with_zeroed_growth_extras() {
     use crate::save::{GroupExtraV2, SaveEnvelopeV2, SaveExtraV2};
@@ -187,6 +196,7 @@ fn v2_payload_decodes_with_zeroed_growth_extras() {
         .all(|g| g.growth_timer == 0 && g.growth_countdown == 0));
 }
 
+/// The group growth timer/countdown, the `+0x18` counter and the leader entity id survive the round-trip.
 #[test]
 fn growth_accumulator_roundtrips() {
     let Some(mut app) = build_party_move_app() else {
@@ -214,6 +224,7 @@ fn growth_accumulator_roundtrips() {
     assert_eq!(g.entity_count, 3);
 }
 
+/// The legacy `0xB07A4` snapshot export/import preserves flags, tick, discovery mask, money and stats.
 #[test]
 fn legacy_snapshot_round_trips_live_state() {
     let Some(mut app) = build_party_move_app() else {
@@ -248,6 +259,7 @@ fn legacy_snapshot_round_trips_live_state() {
     assert_eq!(restored.discovered_locations[5], 0x40);
 }
 
+/// A legacy snapshot shorter than `SNAPSHOT_LEN` is rejected instead of partially applied.
 #[test]
 fn legacy_truncated_snapshot_is_rejected() {
     let Some(mut app) = build_party_move_app() else {
@@ -257,6 +269,7 @@ fn legacy_truncated_snapshot_is_rejected() {
     assert!(app.import_legacy_snapshot(&[0u8; 100]).is_err());
 }
 
+/// The 50-byte `KONUNG.SAV` slot-name table round-trips through write/parse.
 #[test]
 fn legacy_slot_names_round_trip() {
     let mut names: [String; crate::legacy_save::SLOT_COUNT] = Default::default();

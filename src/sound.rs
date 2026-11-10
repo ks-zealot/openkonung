@@ -50,10 +50,14 @@ pub const BYTES_PER_FRAME: usize = 2;
 /// A malformed sound archive. Never partially parsed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SoundError {
+    /// Human-readable reason, prefixed with `SOUNDS.RES:` by [`Display`].
+    ///
+    /// [`Display`]: core::fmt::Display
     pub message: String,
 }
 
 impl SoundError {
+    /// Wrap a reason string; the archive name is added when it is displayed.
     fn new(message: impl Into<String>) -> Self {
         SoundError {
             message: message.into(),
@@ -62,6 +66,7 @@ impl SoundError {
 }
 
 impl core::fmt::Display for SoundError {
+    /// Render `<archive name>: <reason>` for the browser console and tooling.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "SOUNDS.RES: {}", self.message)
     }
@@ -72,7 +77,11 @@ impl std::error::Error for SoundError {}
 /// A parsed sound archive; clips are slices into the owned bytes.
 #[derive(Clone, Debug)]
 pub struct SoundArchive {
+    /// The whole file, kept alive so [`SoundArchive::clip_bytes`] can borrow it.
     bytes: Vec<u8>,
+    /// Per-slot `(data_offset, data_size)`, `None` for an unused index slot.
+    ///
+    /// Offsets are relative to [`DATA_BASE`], exactly as stored in the index.
     entries: Vec<Option<(u32, u32)>>,
 }
 
@@ -121,6 +130,7 @@ impl SoundArchive {
         self.entries.iter().filter(|e| e.is_some()).count()
     }
 
+    /// True when no index slot is occupied.
     pub fn is_empty(&self) -> bool {
         self.entries.iter().all(|e| e.is_none())
     }
@@ -165,9 +175,13 @@ pub use position::*;
 /// secondary buffer the original would have copied the clip into.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SoundEvent {
+    /// Clip index into the archive (`FUN_0042A13C`'s first argument).
     pub id: u16,
+    /// `0` = full volume, `-10000` = silent; see [`position::source_volume`].
     pub volume: i32,
+    /// `-10000..=10000`, `0` = centred; see [`position::source_pan`].
     pub pan: i32,
+    /// Sample rate of the secondary buffer the clip is played at.
     pub rate: u32,
 }
 
@@ -185,6 +199,7 @@ impl SoundEvent {
 }
 
 impl From<u16> for SoundEvent {
+    /// Convert a bare clip id into a centred, full-volume request.
     fn from(id: u16) -> Self {
         SoundEvent::centred(id)
     }

@@ -32,7 +32,9 @@
 /// One decoded 32-bit RGBA image. Every byte is `R,G,B,A` in that order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuImage {
+    /// Image width in pixels (`u16` at `payload + 0`).
     pub width: u16,
+    /// Image height in pixels (`u16` at `payload + 2`).
     pub height: u16,
     /// `width * height * 4` bytes, row-major, top-left origin.
     pub rgba: Vec<u8>,
@@ -41,6 +43,8 @@ pub struct MenuImage {
 /// A parsed menu resource: a sequence of concatenated images.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuRes {
+    /// Images in file order; the index is the menu sprite index the frontend
+    /// refers to.
     pub images: Vec<MenuImage>,
 }
 
@@ -49,13 +53,18 @@ pub struct MenuRes {
 /// `MENU640R.RES: image 7 at 0x123456: literal run exceeds image width`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MenuResError {
+    /// Resource name the error came from (typically the filename).
     pub source: String,
+    /// Zero-based index of the image record being parsed.
     pub image: usize,
+    /// Byte offset inside the resource where the problem was detected.
     pub offset: usize,
+    /// Human-readable description of the failure.
     pub message: String,
 }
 
 impl std::fmt::Display for MenuResError {
+    /// Format as `<source>: image <n> at 0x<offset>: <message>`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -68,6 +77,7 @@ impl std::fmt::Display for MenuResError {
 impl std::error::Error for MenuResError {}
 
 impl MenuResError {
+    /// Build a diagnostic for image `image` at byte `offset`.
     fn new(source: &str, image: usize, offset: usize, message: impl Into<String>) -> Self {
         MenuResError {
             source: source.to_string(),
@@ -82,10 +92,12 @@ const MAGIC: [u8; 4] = [0x00, 0x00, 0x00, 0x05];
 /// Upper bound guarding against absurd allocations from a corrupt header.
 const MAX_DIM: u16 = 8192;
 
+/// Read a little-endian `u16` at `o` (caller guarantees bounds).
 fn rd_u16(b: &[u8], o: usize) -> u16 {
     (b[o] as u16) | ((b[o + 1] as u16) << 8)
 }
 
+/// Read a little-endian `u32` at `o` (caller guarantees bounds).
 fn rd_u32(b: &[u8], o: usize) -> u32 {
     (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24)
 }

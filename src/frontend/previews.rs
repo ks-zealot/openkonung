@@ -36,6 +36,8 @@ pub fn preview_equipment(hero: &HeroTemplate) -> [u16; 6] {
     ]
 }
 
+/// Fully transparent 160x160 placeholder used when the paper-doll compositor
+/// rejects a preview variant, so the blit still has a correctly sized surface.
 fn empty_preview() -> Img {
     Rc::new(Image::new(PREVIEW_SIZE, PREVIEW_SIZE, [0, 0, 0, 0]))
 }
@@ -72,6 +74,8 @@ pub fn compose_previews(res: &mut Res) -> Vec<Img> {
 mod tests {
     use super::*;
 
+    /// Each hero's six `Entity+0x66..+0x70` preview item ids match the
+    /// original per-hero handler loadout.
     #[test]
     fn preview_loadouts_match_original_hero_handlers() {
         assert_eq!(preview_equipment(&HEROES[0]), [3, 4, 0, 1, 8, 11]);

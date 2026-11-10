@@ -99,6 +99,10 @@ pub(super) fn actor_panel_text(info: &ActorPanelInfo) -> String {
     out
 }
 
+/// Append `, Уров:N, Здор:M` in the original order.
+///
+/// Health is the internal `Entity+0x5C` value converted to displayed points by
+/// `(hp + 15) >> 4` (so 1600 internal = the 100 shown on the character screen).
 fn push_level_health(out: &mut String, level: u8, health: u16) {
     out.push_str(", Уров:");
     out.push_str(&level.to_string());
@@ -205,6 +209,8 @@ impl PlayableApp {
         Some(self.entity_panel_text(entity))
     }
 
+    /// Canonical `Game.N` entity for `id`, falling back to the party overlay
+    /// (recruited members shadow their source row).
     fn entity_by_index(&self, index: usize) -> Option<&Entity> {
         if let Some(pop) = self.population_cache.get(&self.current_map) {
             if let Some(actor) = pop.actors.iter().find(|a| a.source_entity_id() == index) {
@@ -217,6 +223,11 @@ impl PlayableApp {
             .map(|m| &m.entity)
     }
 
+    /// Compose `Entity+0xD4` name plus the optional `Entity+0xD5` nickname
+    /// (`0x45E71C` / `0x45FC7C` tables, CP866).
+    ///
+    /// `nickname_id == 0` means "no nickname" and adds nothing; a missing table
+    /// entry degrades to the empty string rather than a placeholder.
     fn character_display_name(&self, name_id: u8, nickname_id: u8) -> String {
         let mut name = self.world.res.character_name(name_id).unwrap_or_default();
         if nickname_id != 0 {
@@ -230,6 +241,14 @@ impl PlayableApp {
         name
     }
 
+    /// Resolve every [`ActorPanelInfo`] field for a world actor and compose the
+    /// panel line.
+    ///
+    /// Name family is `FUN_0042BC60`'s rule: humans (`archetype & 0x40 == 0`)
+    /// and non-humans above `0x50` use the character name table, monsters
+    /// `0x41..=0x50` use the monster table indexed by `archetype & 0x7F`. The
+    /// profession only applies to a settled human of another group whose group
+    /// activity bit 1 is clear, i.e. `FUN_0041182C`'s role waypoint.
     fn entity_panel_text(&self, entity: &Entity) -> String {
         let low = entity.archetype & 0x7F;
         let human = entity.archetype & 0x40 == 0;
@@ -290,6 +309,9 @@ impl PlayableApp {
         actor_panel_text(&info)
     }
 
+    /// Panel line for the protagonist (party slot 0), always rendered as a
+    /// same-group human so it carries the `, воин дружины` suffix and the four
+    /// base stats.
     fn player_panel_text(&self) -> String {
         let name = self.character_display_name(self.player.hero.name_id, 0);
         let class = self.world.res.class_name(self.player.entity_class());
@@ -321,6 +343,11 @@ impl PlayableApp {
         self.hover_panel_text()
     }
 
+    /// Hovered visible inventory slot -> `FUN_0042F5F8` item detail text.
+    ///
+    /// Uses the current interface owner's 32-slot inventory offset by
+    /// `inventory_scroll` (`_81D708`); an empty or out-of-range slot yields
+    /// `None` so the panel keeps whatever the other branches produced.
     fn hovered_item_text(&self) -> Option<String> {
         let slot = self.hovered_slot?;
         let layout = crate::hud::layout(VIRTUAL_W);
@@ -341,6 +368,7 @@ impl PlayableApp {
 mod tests {
     use super::*;
 
+    /// Baseline human panel: no party membership, no profession, no skills.
     fn base_info() -> ActorPanelInfo<'static> {
         ActorPanelInfo {
             name: "Белун",
@@ -364,6 +392,8 @@ mod tests {
         }
     }
 
+    /// A human actor with no party/enemy/skill state prints exactly
+    /// `Name, Class, Уров:N, Здор:M`.
     #[test]
     fn human_panel_shows_name_class_level_health() {
         assert_eq!(
@@ -372,6 +402,8 @@ mod tests {
         );
     }
 
+    /// A party member appends `, воин дружины`, the poison marker and the four
+    /// base stats, in that order.
     #[test]
     fn party_panel_appends_loyalty_poison_and_stats() {
         let mut info = base_info();
@@ -383,6 +415,7 @@ mod tests {
         );
     }
 
+    /// An active hostility group wins over both profession and skill suffixes.
     #[test]
     fn active_group_is_enemy_before_profession_and_skills() {
         let mut info = base_info();
@@ -394,6 +427,8 @@ mod tests {
         );
     }
 
+    /// A profession name suppresses the skill suffixes; without one the five
+    /// skill thresholds (`>100`, `>4`, `>0x1E`, `>4`, `>10`) are appended.
     #[test]
     fn profession_and_skills_use_the_original_thresholds() {
         let mut info = base_info();
@@ -414,6 +449,8 @@ mod tests {
         );
     }
 
+    /// A monster (`archetype & 0x40 != 0`, low byte `<= 0x50`) gets no class,
+    /// no party/skill suffixes and its health divided by 16.
     #[test]
     fn monster_panel_shows_name_level_and_health() {
         let info = ActorPanelInfo {

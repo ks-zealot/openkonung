@@ -2,14 +2,18 @@
 
 use super::*;
 
+/// A zeroed buffer just large enough to hold the collision block.
 fn collision_buffer() -> Vec<u8> {
     vec![0u8; COLLISION_OFF + COLLISION_BYTES]
 }
 
+/// File index of collision cell `(x, y)` (column-major, `x*160 + y`).
 fn cell_idx(x: usize, y: usize) -> usize {
     COLLISION_OFF + x * RUNTIME_H as usize + y
 }
 
+/// Byte expansion: `0xFF` is fully blocked, a `0x0F` low nibble keeps the high
+/// bits and sets all low 12 bits, everything else shifts left by 8.
 #[test]
 fn collision_expansion_rules() {
     let mut data = collision_buffer();
@@ -23,6 +27,8 @@ fn collision_expansion_rules() {
     assert_eq!(c[300 * RUNTIME_H as usize + 150], 0x1FFF);
 }
 
+/// Canonical bytes expand to their documented words and passability follows
+/// the low 12 bits only (`0x1000`/`0x2000` stay walkable).
 #[test]
 fn collision_decode_canonical_bytes() {
     // (input byte, expanded u16, passable).
@@ -52,6 +58,7 @@ fn collision_decode_canonical_bytes() {
     }
 }
 
+/// The collision index is `x*160 + y`, not the transposed `y*320 + x`.
 #[test]
 fn collision_index_is_x_major_not_transposed() {
     let mut data = collision_buffer();
@@ -63,12 +70,15 @@ fn collision_index_is_x_major_not_transposed() {
     assert_eq!(c[20 * RUNTIME_H as usize + 10], 0x2200);
 }
 
+/// A file shorter than the collision block is an error, never an all-free map.
 #[test]
 fn collision_truncated_file_errors() {
     let data = vec![0xFFu8; 16];
     assert!(parse_collision(&data).is_err());
 }
 
+/// Passability tests only the low 12 bits and rejects every out-of-bounds
+/// coordinate.
 #[test]
 fn collision_free_checks_low_12_bits_and_bounds() {
     let mut data = collision_buffer();
@@ -98,6 +108,8 @@ fn collision_free_checks_low_12_bits_and_bounds() {
     assert!(!collision_is_free(&c, 0, RUNTIME_H));
 }
 
+/// The prop projection matches the source-of-truth cases
+/// (`x = gy*58 - (gx&1)*29`, `y = gx*16`).
 #[test]
 fn prop_projection_exact_cases() {
     // Source-of-truth §23.2 (grid_x = +0x20, grid_y = +0x1E).
@@ -107,6 +119,8 @@ fn prop_projection_exact_cases() {
     assert_eq!(prop_to_local_px(5, 7), (377, 80));
 }
 
+/// Both bytes of a terrain record are independent layers, `0` = none and
+/// `byte - 1` = tile index.
 #[test]
 fn terrain_layers_decode_both_bytes() {
     assert_eq!(terrain_layers(0x0201), (Some(0), Some(1)));
@@ -116,6 +130,7 @@ fn terrain_layers_decode_both_bytes() {
     assert_eq!(terrain_layers(0xFFFF), (Some(254), Some(254)));
 }
 
+/// GRAPH placement anchors are already local pixels and pass through unchanged.
 #[test]
 fn graph_anchor_is_identity() {
     assert_eq!(graph_anchor_to_local_px(0, 0), (0, 0));
@@ -123,6 +138,8 @@ fn graph_anchor_is_identity() {
     assert_eq!(graph_anchor_to_local_px(3654, 3646), (3654, 3646));
 }
 
+/// The base-terrain lattice steps 116 px per column, offsets odd rows by 58 px
+/// and advances 32 px per row.
 #[test]
 fn terrain_lattice_exact_cases() {
     assert_eq!(terrain_to_local_px(0, 0), (0, 0));
@@ -132,6 +149,8 @@ fn terrain_lattice_exact_cases() {
     assert_eq!(terrain_to_local_px(2, 1), (2 * 116 + 58, 32));
 }
 
+/// The corrected lattice surface roughly doubles the old half-scale size and
+/// still contains the maximum entity projection.
 #[test]
 fn surface_dimensions_double_vs_half_scale() {
     // Old half-scale surface was 4725 x 2608; corrected lattice roughly

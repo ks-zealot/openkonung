@@ -20,6 +20,28 @@
 //!
 //! Conditions and action programs (including trade) are intentionally **not**
 //! executed yet: every entry is shown and every action is a no-op.
+//!
+//! Layer split: this module only turns `QUEST_R.RES` into text and hit
+//! rectangles. `B4` conditions arrive as the caller's `eval` closure (the real
+//! evaluator is [`crate::script::evaluate_condition`]) and every `B5` action id
+//! is merely collected ([`DialogState::on_open_actions`],
+//! [`DialogOption::action`]) for `app/dialogue_exec.rs` / `app/dialogue_ops.rs`
+//! to run, so no game state changes here.
+//!
+//! Layout (selector `_DAT_0081D644`: `0` = 640, `1` = 800)
+//! --------------------------------------------------------
+//!
+//! ```text
+//! field        640x480      800x600
+//! window_pos   (114, 0)     (144, 0)
+//! band_pos     (129, 150)   (161, 187)
+//! text_pos     (133, 20)    (166, 25)
+//! text_width   485          606
+//! opt_pos      (133, 186)   (166, 232)
+//! ```
+//!
+//! The statement and option columns share `text_width` and both advance
+//! [`LINE_H`] (15 px) per wrapped line.
 
 use crate::font::{Fonts, OriginalFont};
 use crate::quest::{QuestData, LINK_END, LINK_NONE};
@@ -55,6 +77,10 @@ pub struct DialogLayout {
     pub opt_pos: (i32, i32),
 }
 
+/// The dialog layout for a logical screen width.
+///
+/// Widths `<= 640` take the 640x480 table, anything wider the 800x600 table, so
+/// the selector collapses to the same two original cases (`0` = 640, `1` = 800).
 pub fn layout(logical_w: i32) -> DialogLayout {
     if logical_w <= 640 {
         DialogLayout {
@@ -92,6 +118,7 @@ pub struct DialogOption {
 }
 
 impl DialogOption {
+    /// Join the wrapped lines back into one string (tooltips, tests, logging).
     pub fn label(&self) -> String {
         self.lines.join(" ")
     }
@@ -106,6 +133,7 @@ pub struct DialogState {
     pub page: usize,
     /// NPC statement lines (already wrapped).
     pub prompt_lines: Vec<String>,
+    /// Selectable options (the included `unconditional` entries, in file order).
     pub options: Vec<DialogOption>,
     /// Currently highlighted option (mouse hover), if any.
     pub selected: Option<usize>,
@@ -142,6 +170,7 @@ fn wrap(fonts: &Fonts, text: &str, max_px: i32) -> Vec<String> {
     lines
 }
 
+/// Half-open rectangle test for a `(x, y, w, h)` hit box in virtual space.
 fn contains(r: (i32, i32, i32, i32), x: i32, y: i32) -> bool {
     x >= r.0 && x < r.0 + r.2 && y >= r.1 && y < r.1 + r.3
 }

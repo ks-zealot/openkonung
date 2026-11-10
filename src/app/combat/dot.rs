@@ -6,11 +6,19 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: the fixed-rate poison tick (`periodic_damage`, 16 logic frames).
 
 use super::super::*;
 use crate::combat::CombatTarget;
 
 impl PlayableApp {
+    /// `FUN_0041D048` periodic-damage pass, every 16 logic frames.
+    ///
+    /// Every living combatant with a non-zero `periodic_damage` loses that much
+    /// health (`saturating_sub`); reaching zero routes through
+    /// [`Self::kill_combatant`] with the protagonist's level as killer level.
+    /// Covers the leader, the party and the current map's world actors.
     pub(super) fn apply_dot(&mut self) {
         if !self.player.dead && self.player.hp_internal > 0 && self.player.periodic_damage > 0 {
             let hp = self

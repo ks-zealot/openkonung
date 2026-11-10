@@ -1,17 +1,25 @@
+//! Unit tests for the dialogue trade exchange (`0x113`).
+
 use super::*;
 
+/// Per-instance base price used by the tests: `id * 10`.
 fn value(id: u16) -> i32 {
     id as i32 * 10
 }
 
+/// Every instance weighs one unit, so only the count matters for weight checks.
 fn weight(_id: u16) -> i32 {
     1
 }
 
+/// One open exchange for a plain NPC: role 0, no settlement multiplier, both
+/// sides at 100 money and trade skill 10.
 fn state(player_inv: [u16; SLOTS], partner_inv: [u16; SLOTS]) -> TradeState {
     TradeState::open(0, 0, 0, player_inv, 100, 10, partner_inv, 100, 10)
 }
 
+/// Buying moves the item to the partner offer, rebalances the table and charges
+/// the player exactly `buy_value`.
 #[test]
 fn buy_moves_partner_item_and_charges_the_player() {
     let mut inv = [0u16; SLOTS];
@@ -32,6 +40,8 @@ fn buy_moves_partner_item_and_charges_the_player() {
     assert_eq!(out.player_inventory[1], 1);
 }
 
+/// Selling moves the player item to the partner bag and pays the player the
+/// `FUN_0041AE00` value.
 #[test]
 fn sell_moves_player_item_and_pays_the_player() {
     let mut inv = [0u16; SLOTS];
@@ -47,6 +57,7 @@ fn sell_moves_player_item_and_pays_the_player() {
     assert_eq!(out.partner_inventory[0], 1);
 }
 
+/// An exchange of equal value leaves both money tables at zero and confirms.
 #[test]
 fn equal_exchange_needs_no_money() {
     let mut inv = [0u16; SLOTS];
@@ -61,6 +72,7 @@ fn equal_exchange_needs_no_money() {
     assert!(t.confirm(value, weight, 0, 100).is_ok());
 }
 
+/// Unequal values move only the difference onto the player side of the table.
 #[test]
 fn exchange_with_additional_pay_balances_the_difference() {
     let mut inv = [0u16; SLOTS];
@@ -79,6 +91,8 @@ fn exchange_with_additional_pay_balances_the_difference() {
     assert_eq!(out.player_money_delta, -25);
 }
 
+/// When the player cannot cover the partner side, confirm refuses with
+/// `NotEnoughMoney` and touches nothing.
 #[test]
 fn not_enough_money_is_rejected() {
     let mut partner = [0u16; SLOTS];
@@ -94,6 +108,7 @@ fn not_enough_money_is_rejected() {
     );
 }
 
+/// Cancelling returns the player's offers in front of the remaining bag.
 #[test]
 fn cancel_returns_player_offers() {
     let mut inv = [0u16; SLOTS];
@@ -105,6 +120,8 @@ fn cancel_returns_player_offers() {
     assert_eq!(&out[..2], &[1, 2]);
 }
 
+/// Confirm rejects an over-weight merged bag before an over-full one, using
+/// `weight` and the 33-slot overflow test respectively.
 #[test]
 fn overweight_and_full_bag_are_rejected() {
     let mut partner = [0u16; SLOTS];
@@ -122,6 +139,8 @@ fn overweight_and_full_bag_are_rejected() {
     );
 }
 
+/// A row pages right only when the cell one page ahead holds an item, and left
+/// only when the page offset is non-zero.
 #[test]
 fn paging_requires_more_items() {
     let mut inv = [0u16; SLOTS];
@@ -135,6 +154,8 @@ fn paging_requires_more_items() {
     assert_eq!(t.page[ROW_PLAYER], 0);
 }
 
+/// A positive `_DAT_0081D63C` applies the settlement multipliers: sell 2/3 and
+/// buy 3/2.
 #[test]
 fn role_sign_applies_the_settlement_price_multiplier() {
     assert_eq!(sell_value(100, 10, 10, 0), 50);

@@ -2,6 +2,10 @@
 
 use super::common::*;
 
+/// A click commits the destination cell at the start of the walk segment while the sprite draws from the source cell.
+///
+/// This is the `FUN_0041435C` step-commit timing: the stored cell `+0x08/+0x0A`
+/// leads the drawn sprite, and a single-step route is already consumed.
 #[test]
 fn click_commits_the_first_step_at_segment_start() {
     let Some(mut app) = build_movement_app() else {
@@ -36,10 +40,11 @@ fn click_commits_the_first_step_at_segment_start() {
     );
 }
 
-/// A playable app with the real `Game.1` tables and `QUEST_R.RES` (Dragomir's
-/// start map 4), so dialogue condition/action execution and recruitment can be
-/// exercised against the shipped data.
+// A playable app with the real `Game.1` tables and `QUEST_R.RES` (Dragomir's
+// start map 4), so dialogue condition/action execution and recruitment can be
+// exercised against the shipped data.
 
+/// A mid-walk click re-plans from the committed (already-entered) cell, so the sprite never jumps backwards.
 #[test]
 fn mid_walk_click_replans_from_the_committed_cell() {
     let Some(mut app) = build_movement_app() else {

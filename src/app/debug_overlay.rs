@@ -1,4 +1,11 @@
-//! `debug_overlay` subsystem of [`crate::app`] (split from `app.rs`).
+//! `debug_overlay` subsystem of [`crate::app`]: the three cosmetic diagnostic
+//! screens.
+//!
+//! None of this exists in the original and none of it feeds gameplay: it is
+//! drawn over the finished frame and toggled from the keyboard (`T` portals,
+//! `L` render layers, `P` population). The overlays use the verified runtime
+//! projections (`entity_to_local_px_f`, `prop_to_local_px`) so their markers
+//! land exactly where the world draw put the same thing.
 
 use super::*;
 

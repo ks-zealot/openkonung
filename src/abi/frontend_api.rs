@@ -1,4 +1,9 @@
 //! `frontend_api` subsystem of [`crate`] (split from `lib.rs`).
+//!
+//! Read-only view of the original menu shell for the browser smoke tests: which
+//! runtime is active, which frontend screen is showing, and the current hero /
+//! class / hover selection. Every getter returns a neutral sentinel (`-1` or
+//! `255`) instead of panicking when the frontend has not been built.
 
 use super::*;
 

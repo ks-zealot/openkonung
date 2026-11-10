@@ -1,10 +1,23 @@
 //! `lifecycle` subsystem of [`crate`] (split from `lib.rs`).
+//!
+//! Owns the one [`Runtime`] that holds the original frontend and/or the live
+//! game, and the transitions between them: `frontend_boot` -> New Game ->
+//! `start_game`, Escape -> menu -> Resume, Load/Save, and the game-over/victory
+//! disposal. The game is never dropped just because the menu is shown, and the
+//! raw resource buffers are handed back to the loader whenever a run ends, so a
+//! later New Game can rebuild the world without re-uploading files.
+//!
+//! Input handlers must not switch modes while the runtime is borrowed: they
+//! return an [`InputAction`] and [`resolve_input`] performs it afterwards.
 
 use super::*;
 
+/// Which runtime receives [`step`], input and the framebuffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActiveMode {
+    /// The original menu shell (main menu, New Hero, Settings, Load/Save).
     Frontend,
+    /// The live game (`PlayableApp`), which stays allocated while the menu is up.
     Game,
 }
 
@@ -20,10 +33,17 @@ pub struct Runtime {
     pub(super) quit: bool,
 }
 
+/// Slots left empty in [`Runtime`] until the first `boot`/`frontend_boot`.
 pub static mut LOADER: Option<Loader> = None;
 
+/// The single runtime owner, created lazily by [`runtime_mut`].
 pub static mut RUNTIME: Option<Runtime> = None;
 
+/// Borrow the process-wide [`Runtime`], creating it on first use.
+///
+/// All ABI entry points go through here; the `'static` borrow is what lets an
+/// export read the framebuffer or dispatch input without threading a context
+/// through every call.
 pub fn runtime_mut() -> &'static mut Runtime {
     unsafe {
         let slot = addr_of_mut!(RUNTIME);
@@ -31,6 +51,7 @@ pub fn runtime_mut() -> &'static mut Runtime {
     }
 }
 
+/// Borrow the frontend, if one has been built and not yet discarded.
 pub fn frontend_mut() -> Option<&'static mut Frontend> {
     runtime_mut().frontend.as_mut()
 }
@@ -47,18 +68,26 @@ pub fn texts() -> Option<&'static Vec<TextItem>> {
 /// Outcome of an input event, resolved after the runtime borrow has ended so the
 /// active mode may be switched (e.g. Escape opens the menu).
 pub enum InputAction {
+    /// Nothing to resolve.
     None,
+    /// The frontend produced a mode-changing command.
     Command(FrontendCommand),
+    /// The game asked for the menu (Escape); the live game is preserved.
     OpenMenu,
 }
 
-/// Apply the recorded host size, if the host has reported one.
+/// Apply the recorded host size to a frontend, when the host has reported one.
 pub fn apply_host(f: &mut Frontend, host_w: i32, host_h: i32) {
     if host_w > 0 && host_h > 0 {
         f.on_resize(host_w, host_h);
     }
 }
 
+/// Apply the recorded host size to the live game, when the host has reported
+/// one.
+///
+/// Both runtimes are kept in sync so a mode switch never leaves stale pointer
+/// mapping behind. A non-positive size means "not reported yet" and is ignored.
 pub fn apply_host_to_app(a: &mut PlayableApp, host_w: i32, host_h: i32) {
     if host_w > 0 && host_h > 0 {
         a.on_resize(host_w, host_h);
@@ -414,6 +443,11 @@ pub fn handle_frontend_command(cmd: FrontendCommand) {
 // Runtime
 // --------------------------------------------------------------------------
 
+/// Perform the deferred effect of one input event.
+///
+/// Called after the runtime borrow has been dropped: a frontend command starts a
+/// game, resumes it or sets the quit flag, and `OpenMenu` builds/activates the
+/// menu without discarding the live game.
 pub fn resolve_input(action: InputAction) {
     match action {
         InputAction::None => {}
@@ -439,6 +473,7 @@ pub fn apply_pending_frontend_resolution() {
 // --------------------------------------------------------------------------
 
 impl Runtime {
+    /// Empty runtime: no frontend, no game, frontend active, host size unset.
     pub(super) fn new() -> Runtime {
         Runtime {
             frontend: None,

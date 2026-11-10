@@ -60,6 +60,8 @@ pub use crate::constants::timing::WANDER_MAX_ATTEMPTS;
 
 /// Runtime collision-grid bounds (`KONUNG_SOURCE_OF_TRUTH.md` §3).
 pub const RUNTIME_W: i32 = 320;
+/// Height of the 320x160 runtime/`Entity` grid; the collision table indexes
+/// `x * 160 + y`, so this is also the row stride.
 pub const RUNTIME_H: i32 = 160;
 
 pub use crate::constants::timing::FLAG_WANDER;
@@ -68,7 +70,9 @@ pub use crate::constants::timing::FLAG_WANDER;
 /// §5.1) — never by `kind`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VisualFamily {
+    /// Humanoid: `GRAPH.RES` human blocks (body + equipment overlays).
     Human,
+    /// Monster/object: `Objects.res` blocks with the six-row animation table.
     Object,
 }
 
@@ -91,11 +95,15 @@ pub fn visual_family(archetype: u8) -> VisualFamily {
 /// (`FUN_0042C730`: cell = `entity_index - group.first_entity`).
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PartyMember {
+    /// Canonical parsed `Game.N` Entity (authored stats, gear, ids).
     pub entity: Entity,
+    /// Live movement/combat state for this member.
     pub motion: ActorMotion,
 }
 
 impl fmt::Display for PlacementError {
+    /// Render the failure as the exact `placement_failed_after_<n>_attempts`
+    /// token the tools assert on.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PlacementError::NoCandidateAfterAttempts { attempts } => {

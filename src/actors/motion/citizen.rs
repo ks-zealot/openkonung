@@ -1,4 +1,10 @@
 //! Citizen waypoint/wander AI.
+//!
+//! One fixed-step pass over the location's actors. Stationary anchors (home and
+//! role waypoints) are walked to once and then held; unanchored citizens pick
+//! random targets strictly inside the group's spawn rectangle A. One cell is
+//! stepped per completed walk-animation cycle, keyed off the original 60 ms
+//! frame so the cadence matches the 1999 build.
 
 use super::super::*;
 

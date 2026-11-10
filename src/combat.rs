@@ -89,11 +89,12 @@ pub const HUMAN_ARMED_STR_HP: f64 = 0.04 * 0.0625;
 pub const MONSTER_STR_HP: f64 = 0.04 * 0.0625;
 /// `0x4500e4` / `0x45010c` / `0x450114` and the reaction constants.
 pub const REACTION_SKILL_SCALE: f64 = 0.00015;
-/// `0x4500e4` - human reaction base value before the mastery/skill term.
+/// `0x4500e4` / `0x45010c` / `0x450114` reaction group - human reaction base
+/// (`1.5`) before the mastery/skill term.
 pub const REACTION_BASE: f64 = 1.5;
-/// `0x45010c` - archery reaction skill scale (`0.7`).
+/// Reaction group - archery reaction scale (`0.7`), used by the bow branch.
 pub const ARCHERY_REACTION_SCALE: f64 = 0.7;
-/// `0x450114` - monster reaction base (`50`).
+/// Reaction group - monster reaction base (`50`).
 pub const MONSTER_REACTION_BASE: f64 = 50.0;
 /// Monster reaction dexterity weight (`0.25` per point of base dexterity).
 pub const MONSTER_REACTION_DEX: f64 = 0.25;
@@ -127,7 +128,7 @@ pub struct CombatStats {
     pub archetype: u8,
     /// `Entity+0x12` active weapon/equipment slot.
     pub weapon_slot: u8,
-    /// `Entity+0x5C` internal HP (1600 at new game; displayed as `hp/16`+15).
+    /// `Entity+0x5C` internal HP (1600 at new game; displayed as `(hp+15)/16`).
     pub hp: u16,
     /// `Entity+0x54` dexterity base.
     pub dexterity: u16,

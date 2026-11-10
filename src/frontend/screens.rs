@@ -1,7 +1,17 @@
-//! `screens` subsystem of [`crate::frontend`] (split from `mod.rs`).
+//! Screen painters for [`crate::frontend`] (split from `mod.rs`).
+//!
+//! One painter per [`FrontendScreen`]: [`Frontend::draw_main_menu`] (`MENU#0` +
+//! the [`MAIN_MENU`] button images), [`Frontend::draw_new_hero`]
+//! (`FUN_0042EA6C`: tile `NEWH#1`, overdraw `NEWH#0`, then the portraits,
+//! values, markers, bottom controls, paper doll and description),
+//! [`Frontend::draw_settings`] (`MENU#1` + the `MENU#2` markers) and
+//! [`Frontend::draw_save_load`] (`SAVE#0`/`SAVE#1` + the ten slot names).
+//! [`Frontend::draw_region_debug`] is the `K` overlay, not a screen.
 
 use super::*;
 
+/// Stable ASCII name of a main-menu action, used by the debug overlay so a
+/// region label is readable without the localized button artwork.
 pub fn action_name(a: MainMenuAction) -> &'static str {
     match a {
         MainMenuAction::Resume => "Resume",
@@ -13,6 +23,10 @@ pub fn action_name(a: MainMenuAction) -> &'static str {
     }
 }
 
+/// Blit one decoded `MENU`/`NEWH`/`SAVE` image at a logical position.
+///
+/// The blit is clipped to the framebuffer by `res::blit`; the image keeps its
+/// decoded size (`img.width`/`img.height`) and is never scaled.
 pub fn draw_image(frame: &mut [u8], fw: usize, fh: usize, img: &MenuImage, x: i32, y: i32) {
     blit(
         frame,
@@ -43,6 +57,11 @@ pub fn tile_image(frame: &mut [u8], fw: usize, fh: usize, img: &MenuImage) {
     }
 }
 
+/// Draw a 1-pixel outline around `r` with four `fill_rect` spans.
+///
+/// `r` is inclusive on all edges, so the bottom/right spans sit on
+/// `y + h - 1` / `x + w - 1`; the corners are written twice, which is harmless
+/// because the colour is opaque.
 pub fn rect_outline(frame: &mut [u8], fw: usize, fh: usize, r: Rect, c: [u8; 4]) {
     fill_rect(frame, fw, fh, r.x as i32, r.y as i32, r.w as i32, 1, c);
     fill_rect(
@@ -131,6 +150,12 @@ impl Frontend {
         }
     }
 
+    /// Draw the main menu: `MENU{width}R.RES` `#0` full screen, then the image
+    /// of every visible [`MAIN_MENU`] button at its recovered rect.
+    ///
+    /// The hover image replaces the normal one while `hovered` names that
+    /// button; `Save`/`Resume` are only drawn when a live game exists
+    /// ([`main_menu::visible_indices`]).
     pub(super) fn draw_main_menu(&mut self) {
         let fw = self.res.width() as usize;
         let fh = self.res.height() as usize;
@@ -161,6 +186,16 @@ impl Frontend {
         }
     }
 
+    /// Draw the New-Hero screen in the original paint order (`FUN_0042EA6C`).
+    ///
+    /// 1. tile the 100x100 stone `NEWH#1` over the whole viewport, then draw the
+    ///    partly transparent `NEWH#0` artwork on top;
+    /// 2. the `NEWH#2` class marker centered in the selected class box;
+    /// 3. the three hero portrait slots (`NEWH#3..#8`);
+    /// 4. the numeric values and the combat/civil skill markers;
+    /// 5. the two bottom controls (`NEWH#11/#12` Ok, `#9/#10` Cancel);
+    /// 6. the pre-rendered 160x160 paper doll at region 22;
+    /// 7. the big-panel description at region 23.
     pub(super) fn draw_new_hero(&mut self) {
         let fw = self.res.width() as usize;
         let fh = self.res.height() as usize;

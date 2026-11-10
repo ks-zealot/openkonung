@@ -41,6 +41,7 @@ fn claimable(
         .any(|&id| id != 0 && res.item_class(id).map(|c| c < 3).unwrap_or(false))
 }
 
+/// Rectangle-A containment test for one runtime cell (inclusive bounds).
 fn inside(rect: &crate::population::Rect, cell: (i32, i32)) -> bool {
     let (x, y) = cell;
     rect.x1 as i32 <= x && x <= rect.x2 as i32 && rect.y1 as i32 <= y && y <= rect.y2 as i32
@@ -197,6 +198,14 @@ impl PlayableApp {
         true
     }
 
+    /// Apply the conquered-settlement state once the `FUN_0041B658` ratio check
+    /// passed.
+    ///
+    /// The group activity stops; members in a death row keep their final frame and
+    /// are hidden (`archetype |= 0x80`), the living are disarmed and idled; the
+    /// settlement's `0x80` flag is set, the `0x15` alarm bits, the `+0x14` counter
+    /// and the `+0x10` money pool are cleared, and the party stops fighting. Ends
+    /// by requesting `DEFEAT<location>.FLM` (`FUN_0042ADE4`).
     fn apply_settlement_defeat(&mut self, si: usize, group_id: usize) {
         // Group activity off; `Entity+0x00` 3/9 records are **death action
         // rows** and are frozen on their final frame and hidden

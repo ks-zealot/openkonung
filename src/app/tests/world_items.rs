@@ -4,6 +4,7 @@ use super::super::*;
 
 use super::common::*;
 
+/// A location-3 herb node is drawn, collected into slot 0, deactivated for `0x1518` frames and respawned as a fresh instance.
 #[test]
 fn herb_world_object_pickup_and_respawn() {
     use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
@@ -144,6 +145,7 @@ fn herb_world_object_pickup_and_respawn() {
     assert_eq!((info.class, info.subtype), (9, 1));
 }
 
+/// The settlement target state selects the prop object id, and its 7 flame emitters advance every tick.
 #[test]
 fn settlement_linkage_and_prop_flames_tick() {
     let Some(mut app) = build_party_app() else {
@@ -236,6 +238,9 @@ fn settlement_linkage_and_prop_flames_tick() {
     );
 }
 
+/// Append a synthetic WorldObject source at `cell` with the given signed money and item.
+///
+/// Returns the new source index; a negative `money` marks the spot as buried.
 fn push_dig_spot(
     app: &mut PlayableApp,
     loc: u32,
@@ -260,6 +265,7 @@ fn push_dig_spot(
     index
 }
 
+/// Return the first empty bag slot of the leader.
 fn free_inventory_slot(app: &PlayableApp) -> usize {
     app.player
         .inventory
@@ -268,6 +274,10 @@ fn free_inventory_slot(app: &PlayableApp) -> usize {
         .expect("free inventory slot")
 }
 
+/// A buried spot is skipped until a class-11 subtype-0x18 shovel is carried, then pays `abs(money)`.
+///
+/// Without the shovel `FUN_00421B50` leaves the marker active and the money untouched;
+/// with it the spot is emptied and the non-herb record is permanently removed.
 #[test]
 fn e1_buried_spot_needs_the_shovel_to_be_collected() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -317,6 +327,7 @@ fn e1_buried_spot_needs_the_shovel_to_be_collected() {
     );
 }
 
+/// The copper mirror flips a buried record positive, giving it the ground cursor and making it collectable without a shovel.
 #[test]
 fn e1_copper_mirror_reveals_a_buried_spot() {
     let Some(mut app) = build_party_app_with_free_location() else {

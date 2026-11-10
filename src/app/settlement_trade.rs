@@ -12,6 +12,9 @@ const RECIPE_LEVEL_BASE: u32 = 0x45A2FC;
 const RECIPE_LEVEL_MID: u32 = 0x459ABC;
 const RECIPE_LEVEL_HIGH: u32 = 0x45A0FC;
 
+/// Equipment kit index (`0..=2`) from the settlement group class low bits.
+///
+/// Selects the recipe-level table rows and the role-4 class/subtype map.
 fn kit_from_class(class: u8) -> usize {
     match class & 3 {
         0 => 2,
@@ -20,6 +23,11 @@ fn kit_from_class(class: u8) -> usize {
     }
 }
 
+/// Smithing level threshold of one role-4 stock slot.
+///
+/// Read from the three recipe tables at VAs `0x45A2FC` (ammo slots 0..2),
+/// `0x459ABC` (slots 3..11) and `0x45A0FC` (slots 12..), stride `0x40`, value at
+/// `+2`. Returns 0 when the item database is not loaded.
 fn recipe_level(res: &Res, kit: usize, slot: usize) -> u16 {
     let Some(db) = res.item_db.as_ref() else {
         return 0;
@@ -33,10 +41,17 @@ fn recipe_level(res: &Res, kit: usize, slot: usize) -> u16 {
     }
 }
 
+/// Allocate one class-9 herb instance of `subtype` (the role-2 restock unit).
 fn simple_herb(res: &mut Res, subtype: u8) -> Option<u16> {
     res.alloc_item_instance(9, subtype, 0, -1, 1.0, 0, 0)
 }
 
+/// `FUN_004175FC`: role-2 merchant (herb/potion) restock for `passes` ticks.
+///
+/// The `0x5A0` period timer resets all three quotas; the intermediate values
+/// `0x438`, `0x2D0` and `0x168` re-open one or two of them. Every empty stock
+/// slot then produces a herb, or combines two stocked herbs through
+/// [`crate::inventory::craft`] with the producer's healing skill.
 fn tick_role2(res: &mut Res, t: &mut SettlementTrade, passes: u64, healing: &mut u16) {
     let mut n = passes;
     while n > 0 {
@@ -125,6 +140,10 @@ fn tick_role2(res: &mut Res, t: &mut SettlementTrade, passes: u64, healing: &mut
     }
 }
 
+/// Class and subtype of the role-4 stock item for `kit`/`slot`.
+///
+/// Slots 0..2 are class-12 stacks, 3..11 the class 2/0/1 gear rows, and 12.. the
+/// class 3/5/4 armor rows.
 fn role4_class_subtype(kit: usize, slot: usize) -> (u8, u8) {
     if slot < 3 {
         (12, (0x1E + slot) as u8)
@@ -149,6 +168,10 @@ fn role4_class_subtype(kit: usize, slot: usize) -> (u8, u8) {
     }
 }
 
+/// Allocate the role-4 stock item for one slot and place it in the stock row.
+///
+/// Class-12 stacks start at 30 units, other items at their template durability.
+/// Returns false when the instance table is full.
 fn create_role4_item(res: &mut Res, t: &mut SettlementTrade, kit: usize, slot: usize) -> bool {
     let (class, subtype) = role4_class_subtype(kit, slot);
     if class == 12 {
@@ -171,6 +194,11 @@ fn create_role4_item(res: &mut Res, t: &mut SettlementTrade, kit: usize, slot: u
     true
 }
 
+/// Equipment slot the role-4 item class occupies.
+///
+/// Follows the original class-equals-slot rule: class 2 fits slot 2, class 0
+/// slot 0, class 1 slot 1, and classes 3/4/5 their own armor slots. Slots 0..2
+/// (class-12 ammo) never reach this map because they go to `Entity+0xCC`.
 fn role4_equip_slot(slot: usize) -> usize {
     if slot < 6 {
         2
@@ -269,6 +297,17 @@ fn role4_distribute(
     None
 }
 
+/// `FUN_004179C8`: role-4 merchant (equipment) restock for `passes` ticks.
+///
+/// With no slot in production, pick the first empty slot whose recipe level the
+/// producer's smithing skill (`skill * 10`) covers; when none is affordable the
+/// existing stock is distributed onto settlement members instead. A slot is
+/// produced after its one-tick timer, which raises the producer's smithing by one
+/// (capped at 500).
+///
+/// # Returns
+///
+/// The settlement member that received distributed stock, if any.
 fn tick_role4(
     res: &mut Res,
     t: &mut SettlementTrade,

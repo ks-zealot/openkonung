@@ -6,6 +6,9 @@ use super::common::build_party_app;
 
 const NPC: usize = 539;
 
+/// Execute one quest opcode through a `QuestContext` for entity 539 and apply it back.
+///
+/// Returns the opcode's boolean result, i.e. whether the condition or action passed.
 fn run(app: &mut PlayableApp, op: u16) -> bool {
     let mut ctx = QuestContext::from_app(app, NPC);
     let result = ctx.exec_op(op);
@@ -13,6 +16,11 @@ fn run(app: &mut PlayableApp, op: u16) -> bool {
     result
 }
 
+/// Ensure at least the leading `Game.1` item-instance table is attached.
+///
+/// Returns early when the save bytes already cover `ITEM_TABLE_LEN`; allocation
+/// only needs the instance table, not a full save, so an app built without a
+/// save game gets the minimum state a dialogue opcode reads.
 fn ensure_item_table(app: &mut PlayableApp) {
     if app.world.res.save_game.len() >= crate::save::ITEM_TABLE_LEN {
         return;
@@ -25,6 +33,10 @@ fn ensure_item_table(app: &mut PlayableApp) {
     }
 }
 
+/// The gold predicates compare against their fixed thresholds and the gold ops add or subtract their fixed amounts.
+///
+/// `0x131` needs > 29, `0x132` >= 40, `0x135` >= 500; `0x11D`/`0x129` move -5/+100;
+/// the XP ops `0x12B/0x12C/0x12D` add 10/20/50.
 #[test]
 fn money_checks_and_gold_ops() {
     let Some(mut app) = build_party_app() else {
@@ -58,6 +70,7 @@ fn money_checks_and_gold_ops() {
     assert_eq!(app.player.available_xp, xp + 80);
 }
 
+/// Settlement payout/charge ops move the money pool both ways, gate on flag `0x20`, and `0x16D` resets the settlement.
 #[test]
 fn settlement_money_flags_and_reset() {
     let Some(mut app) = build_party_app() else {
@@ -102,6 +115,7 @@ fn settlement_money_flags_and_reset() {
     assert_eq!(app.settlements[si].progress_14, 0);
 }
 
+/// The item-grant op adds the class-8 subtype-0x12 item, and the low-family spawners run while a free instance exists.
 #[test]
 fn item_grant_and_low_family_item_ops() {
     let Some(mut app) = build_party_app() else {
@@ -127,6 +141,7 @@ fn item_grant_and_low_family_item_ops() {
     assert!(!run(&mut app, 0xDC));
 }
 
+/// `0x158` sets the leader's interface byte `+0xD2 = 0x13` when the class-11 subtype-0x22 quest item is carried.
 #[test]
 fn quest_item_flag_interface_opcode() {
     let Some(mut app) = build_party_app() else {
@@ -149,6 +164,7 @@ fn quest_item_flag_interface_opcode() {
     assert_eq!(app.player.interface_mode_d2, 0x13);
 }
 
+/// `0x112` activates the NPC's group, and the actor predicates gate on health, charisma and the interface byte.
 #[test]
 fn group_activation_and_actor_predicates() {
     let Some(mut app) = build_party_app() else {
@@ -183,6 +199,7 @@ fn group_activation_and_actor_predicates() {
     assert!(!run(&mut app, 0x145));
 }
 
+/// `0x14E` heals the leader and raises the healer's skill by missing HP / 1024; `0x14F` heals the party only.
 #[test]
 fn healing_ops_target_the_protagonist_and_party() {
     let Some(mut app) = build_party_app() else {
@@ -220,6 +237,10 @@ fn healing_ops_target_the_protagonist_and_party() {
     );
 }
 
+/// `0x14C` appends the member to the settlement group; `0x159` stations a specialist on waypoint 4.
+///
+/// The stationing copies the authored waypoint dialogue id (`+1`), clears the role
+/// bits from `Entity+0x04` and the battle stance, and records the new owner.
 #[test]
 fn settlement_settle_ops_move_the_npc_and_party_specialist_into_the_village() {
     let Some(mut app) = build_party_app() else {
@@ -275,6 +296,7 @@ fn settlement_settle_ops_move_the_npc_and_party_specialist_into_the_village() {
     );
 }
 
+/// `0x14C` on a free elder slot copies waypoint 0's dialogue id, clears `flags_a` and the role bits.
 #[test]
 fn elder_settlement_copies_waypoint0_dialogue_and_clears_role_bits() {
     let Some(mut app) = build_party_app() else {
@@ -302,6 +324,7 @@ fn elder_settlement_copies_waypoint0_dialogue_and_clears_role_bits() {
     assert_eq!(app.settlements[si].waypoints[0].owner as usize, dest);
 }
 
+/// `0x16D` clears the control flags `0x01/0x04/0x10/0x15`, the progress counter and the money pool.
 #[test]
 fn conquest_op_clears_control_flags_and_money_pool() {
     let Some(mut app) = build_party_app() else {
@@ -323,6 +346,7 @@ fn conquest_op_clears_control_flags_and_money_pool() {
     assert_eq!(s.money_pool_10, 0);
 }
 
+/// Once conquered, the settlement pass accrues tribute into the money pool and `0x11B` pays it out.
 #[test]
 fn tribute_accrues_after_conquest_and_pays_out() {
     let Some(mut app) = build_party_app() else {
@@ -353,6 +377,7 @@ fn tribute_accrues_after_conquest_and_pays_out() {
     assert_eq!(app.settlements[si].money_pool_10, 0);
 }
 
+/// `0x163` writes a 24-frame target timer, `0x151` accepts it once, and the state-3 ops accept the target.
 #[test]
 fn settlement_requirement_and_timer_writes() {
     let Some(mut app) = build_party_app() else {
@@ -398,6 +423,7 @@ fn settlement_requirement_and_timer_writes() {
     assert!(run(&mut app, 0x169));
 }
 
+/// `0x16A` repairs equipped gear to the smithing-derived ceiling and leaves non-equipment items alone.
 #[test]
 fn party_gear_repair_caps_and_refills_durability() {
     let Some(mut app) = build_party_app() else {

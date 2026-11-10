@@ -193,7 +193,7 @@ fn classify_side(x: i32, y: i32, loc: &Location) -> &'static str {
 /// [`Key7`] is kept once and remembers which profiles carry it. With
 /// `profile = Some(id)` only that profile's links are emitted, otherwise the
 /// union. Links with a zero source or destination location are dropped.
-/// `locs` supplies the extents used by [`classify_side`]; a link whose source
+/// `locs` supplies the extents used by `classify_side`; a link whose source
 /// location is not in `locs` gets the `"?"` side. Output order is source,
 /// destination and arrival coordinates, deduplicated.
 pub fn build_exact_edges(

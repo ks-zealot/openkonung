@@ -24,13 +24,21 @@
 /// explicit width/height, in the logical frontend resolution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
+    /// Left edge in logical pixels (inclusive).
     pub x: i16,
+    /// Top edge in logical pixels (inclusive).
     pub y: i16,
+    /// Width in pixels; the last covered column is `x + w - 1`.
     pub w: i16,
+    /// Height in pixels; the last covered row is `y + h - 1`.
     pub h: i16,
 }
 
 impl Rect {
+    /// Build a rectangle from the four recovered table words, unchanged.
+    ///
+    /// This is a `const fn` so the literal layout tables below can stay
+    /// declarative; no clamping or scaling happens.
     pub const fn new(x: i16, y: i16, w: i16, h: i16) -> Rect {
         Rect { x, y, w, h }
     }
@@ -46,18 +54,26 @@ impl Rect {
 }
 
 /// Original main-menu action ordering. The numeric values are the original
-/// dispatcher indices (task §10); the `New Game` index is `3`.
+/// dispatcher indices (task section 10); the `New Game` index is `3`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MainMenuAction {
+    /// Continue the preserved live game; hidden on a fresh startup menu.
     Resume = 0,
+    /// Enter the `SAVE{width}R.RES` `#1` save screen; needs a live game.
     Save = 1,
+    /// Enter the `SAVE{width}R.RES` `#0` load screen.
     Load = 2,
+    /// Enter the New-Hero screen (character creation).
     NewGame = 3,
+    /// Enter the `MENU{width}R.RES` `#1` settings screen.
     Settings = 4,
+    /// Leave the application (`FrontendCommand::Quit`).
     Exit = 5,
 }
 
 impl MainMenuAction {
+    /// All six actions in original dispatch order; the array position equals
+    /// the discriminant and the [`MAIN_MENU`] button index.
     pub const ALL: [MainMenuAction; 6] = [
         MainMenuAction::Resume,
         MainMenuAction::Save,
@@ -67,23 +83,30 @@ impl MainMenuAction {
         MainMenuAction::Exit,
     ];
 
+    /// Original dispatcher index of this action (`0..=5`).
     pub fn index(self) -> usize {
         self as usize
     }
 
+    /// Inverse of [`MainMenuAction::index`]; `None` outside `0..=5`.
     pub fn from_index(i: usize) -> Option<MainMenuAction> {
         MainMenuAction::ALL.get(i).copied()
     }
 }
 
-/// Declarative main-menu button (task §26/§39). `normal_image`/`hover_image`
+/// Declarative main-menu button (task section 26/39). `normal_image`/`hover_image`
 /// index into the decoded `MENU{width}R.RES` image list.
 #[derive(Clone, Copy, Debug)]
 pub struct MenuButtonDef {
+    /// Action dispatched when the button is clicked.
     pub action: MainMenuAction,
+    /// `MENU{width}R.RES` image index drawn in the resting state.
     pub normal_image: usize,
+    /// `MENU{width}R.RES` image index drawn while the pointer hovers the rect.
     pub hover_image: usize,
+    /// Exact 640x480 hit/draw record from `konung.res` 0x414B4 (even record).
     pub rect_640: Rect,
+    /// Exact 800x600 record from the same table (odd record).
     pub rect_800: Rect,
 }
 
@@ -140,7 +163,14 @@ pub const MAIN_MENU: [MenuButtonDef; 6] = [
 /// **confirmed Settings screen** ("Настройки" — 640x480/800x600 toggles plus
 /// the option rows and Ok/Отмена). `#2` is a 13x13 image of unknown purpose.
 pub const MENU_IMAGE_A: usize = 0;
+/// `MENU{width}R.RES` `#1`: the confirmed Settings screen artwork (video mode
+/// toggles plus the six option rows and Ok/Cancel), drawn by `draw_settings`.
 pub const MENU_IMAGE_SETTINGS: usize = 1;
+/// `MENU{width}R.RES` `#2`: the 13x13 toggle marker blitted centered in every
+/// enabled Settings control.
+///
+/// TODO(docs): the original purpose of this small image is not recovered; the
+/// remake only uses it as the settings control marker.
 pub const MENU_IMAGE_SMALL: usize = 2;
 
 /// `SETTINGS_HIT` from `konung.res` VA `0x46257C`: 10 records of
@@ -159,6 +189,8 @@ pub const SETTINGS_HIT_640: [Rect; 10] = [
     Rect::new(250, 420, 70, 61),
     Rect::new(320, 420, 71, 61),
 ];
+/// 800x600 Settings hit rectangles: the odd records of the same `0x46257C`
+/// table (record offsets `+0x10`), in the same control order.
 pub const SETTINGS_HIT_800: [Rect; 10] = [
     Rect::new(435, 144, 41, 41),
     Rect::new(588, 144, 41, 41),
@@ -176,6 +208,8 @@ pub const SETTINGS_HIT_800: [Rect; 10] = [
 /// **Load** screen ("D-D�D3�?��D�D�D� D,D3�?�<") and `#1` is the **Save** screen
 /// ("D�D_�.�?D�D�D�D�D,D� D,D3�?�<").
 pub const SAVE_IMAGE_LOAD: usize = 0;
+/// `SAVE{width}R.RES` `#1`: the **Save** screen artwork (the CP866 title of this
+/// screen reads as "save game"; `#0` reads as "load game").
 pub const SAVE_IMAGE_SAVE: usize = 1;
 
 /// Exact 10 save-slot rectangles from `konung.res` VA `0x46241C`
@@ -207,6 +241,8 @@ pub const SAVE_SLOT_RECTS_800: [Rect; 10] = [
 ];
 /// New-Hero background / auxiliary image indices (`NEWH{width}R.RES`).
 pub const NEWH_BACKGROUND: usize = 0;
+/// `NEWH{width}R.RES` `#1`: the 100x100 stone panel tiled over the whole
+/// viewport before the (partly transparent) `#0` artwork is drawn.
 pub const NEWH_AUX_100: usize = 1;
 /// The original round "selected" blob/radio marker (image #2), centered inside
 /// the selected class draw rectangle by the original renderer (VA 0x42EA6C).
@@ -250,6 +286,8 @@ pub const HERO_REGIONS: [usize; 3] = [0, 1, 2];
 /// **Отмена** (click case `0x15` returns to mode 7, `FUN_0042EA6C(-1)` shows the
 /// pressed Cancel image `#10`).
 pub const BOTTOM_OK_REGION: usize = 20;
+/// `NEWH_HIT_*` region 21: the **right** bottom control, the Cancel button
+/// (back to the main menu; click case `0x15` in `FUN_00436214` case 2).
 pub const BOTTOM_CANCEL_REGION: usize = 21;
 /// Bottom-control ordinals used by [`BOTTOM_IMAGE_PAIRS`]: 0 = Ok, 1 = Cancel.
 pub const BOTTOM_REGIONS: [usize; 2] = [BOTTOM_OK_REGION, BOTTOM_CANCEL_REGION];
@@ -411,14 +449,18 @@ pub const NEWH_HIT_800: [Rect; NEWH_REGION_COUNT] = [
 ];
 
 /// Logical frontend resolution. The original selects `MENU{width}R.RES` /
-/// `NEWH{width}R.RES` from the current horizontal resolution (task §23).
+/// `NEWH{width}R.RES` from the current horizontal resolution (task section 23).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrontendRes {
+    /// 640x480 mode: `MENU640R.RES` / `NEWH640R.RES` / `SAVE640R.RES`.
     R640,
+    /// 800x600 mode: `MENU800R.RES` / `NEWH800R.RES` / `SAVE800R.RES`.
     R800,
 }
 
 impl FrontendRes {
+    /// Logical framebuffer width: `640` for [`FrontendRes::R640`], `800` for
+    /// [`FrontendRes::R800`].
     pub fn width(self) -> i32 {
         match self {
             FrontendRes::R640 => 640,
@@ -426,6 +468,8 @@ impl FrontendRes {
         }
     }
 
+    /// Logical framebuffer height: `480` for [`FrontendRes::R640`], `600` for
+    /// [`FrontendRes::R800`].
     pub fn height(self) -> i32 {
         match self {
             FrontendRes::R640 => 480,
@@ -433,6 +477,7 @@ impl FrontendRes {
         }
     }
 
+    /// The recovered rectangle of a [`MAIN_MENU`] button at this resolution.
     pub fn main_rect(self, b: &MenuButtonDef) -> Rect {
         match self {
             FrontendRes::R640 => b.rect_640,
@@ -440,6 +485,7 @@ impl FrontendRes {
         }
     }
 
+    /// The `NEWH_DRAW_*` image placement table (`NEWH{width}R.RES` regions).
     pub fn newh_draw(self) -> &'static [Rect] {
         match self {
             FrontendRes::R640 => &NEWH_DRAW_640,
@@ -447,6 +493,8 @@ impl FrontendRes {
         }
     }
 
+    /// The `NEWH_HIT_*` interactive table, in the same region order as
+    /// [`FrontendRes::newh_draw`].
     pub fn newh_hit(self) -> &'static [Rect] {
         match self {
             FrontendRes::R640 => &NEWH_HIT_640,

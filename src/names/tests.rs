@@ -2,10 +2,12 @@
 
 use super::*;
 
+/// Read the shipped `konung.res`, or `None` when it is absent.
 fn konung() -> Option<Vec<u8>> {
     std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../konung.res")).ok()
 }
 
+/// The character-name table resolves the documented ids and rejects id `0`.
 #[test]
 fn character_name_table_reference_values() {
     let Some(d) = konung() else {
@@ -18,6 +20,7 @@ fn character_name_table_reference_values() {
     assert_eq!(character_name(&d, 0), None);
 }
 
+/// Class names are 1-based (`Entity+0x04 - 1`) and cover the five classes.
 #[test]
 fn class_name_table_reference_values() {
     let Some(d) = konung() else { return };
@@ -29,6 +32,7 @@ fn class_name_table_reference_values() {
     assert_eq!(class_name(&d, 0), None);
 }
 
+/// Nicknames are 1-based (`Entity+0xD5`); id `0` means "no nickname".
 #[test]
 fn nickname_table_reference_values() {
     let Some(d) = konung() else { return };
@@ -38,6 +42,7 @@ fn nickname_table_reference_values() {
     assert_eq!(nickname(&d, 31).is_some(), true);
 }
 
+/// Only archetype lows `0x41..=0x50` resolve to monster names.
 #[test]
 fn monster_name_table_reference_values() {
     let Some(d) = konung() else { return };
@@ -51,6 +56,8 @@ fn monster_name_table_reference_values() {
     assert_eq!(monster_name(&d, 0x51), None);
 }
 
+/// Waypoint roles `1..=5` resolve to their names and the leading `", "` is
+/// stripped.
 #[test]
 fn profession_table_reference_values() {
     let Some(d) = konung() else { return };

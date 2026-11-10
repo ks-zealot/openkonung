@@ -11,6 +11,22 @@
 //! The `+0x14..+0x3F` array is 22 item-instance ids (indexes into the loaded
 //! `Game.N` item table, not class/subtype pairs). `+0x10` is signed money.
 //!
+//! Record layout (`0x40` bytes; only the fields this module reads are listed):
+//!
+//! ```text
+//! +0x00  i32  first activation timestamp
+//! +0x04  i32  second activation timestamp
+//! +0x08  u16  runtime-grid cell x
+//! +0x0A  u16  runtime-grid cell y
+//! +0x0C  u16  sprite id (resolved through FUN_00438CC8)
+//! +0x10  i16  signed money (negative = buried)
+//! +0x12  u16  location id (0 = removed)
+//! +0x14  ..  22 x u16 item-instance ids
+//! ```
+//!
+//! `+0x0E` is not read here; the runtime marker pool stores the table index
+//! there instead (see [`WorldObjectSource::index`]).
+//!
 //! Herb/root nodes (`class 9`, subtype 1/2) use the original respawn path in
 //! `FUN_0041093C`: after the sole item is collected, the source record gets a
 //! fresh item instance cloned from the collected one and both timestamps are
@@ -36,9 +52,12 @@ pub struct WorldObjectSource {
     /// `+0x00` / `+0x04` activation timestamps. Both are `-frame` after the
     /// herb respawn path deactivates the record.
     pub t0: i32,
+    /// `+0x04` second activation timestamp; a record whose pair differs is
+    /// active immediately (only an equal negative pair waits for respawn).
     pub t4: i32,
     /// `+0x08` / `+0x0A` runtime-grid cell.
     pub x: u16,
+    /// `+0x0A` runtime-grid cell y (grid row, `0..=159`).
     pub y: u16,
     /// `+0x10` signed money.
     pub money: i16,
@@ -49,6 +68,8 @@ pub struct WorldObjectSource {
 }
 
 impl WorldObjectSource {
+    /// Decode one `0x40`-byte `+0x21900` record verbatim, including the 22 item
+    /// ids, so a save round-trip is byte-faithful.
     fn from_record(index: usize, r: &[u8]) -> WorldObjectSource {
         let mut items = [0u16; WORLD_OBJECT_ITEM_SLOTS];
         for (i, slot) in items.iter_mut().enumerate() {
@@ -105,8 +126,11 @@ impl WorldObjectSource {
 pub struct ActiveWorldObject {
     /// Index into the source table.
     pub source: usize,
+    /// Runtime-grid cell x (`+0x08` of the source record).
     pub x: i32,
+    /// Runtime-grid cell y (`+0x0A` of the source record).
     pub y: i32,
+    /// Signed money carried by the record (`+0x10`); negative means buried.
     pub money: i16,
     /// Non-zero item-instance ids, in original order.
     pub items: Vec<u16>,
@@ -115,6 +139,7 @@ pub struct ActiveWorldObject {
 }
 
 impl ActiveWorldObject {
+    /// The marker's runtime-grid cell, as used by the depth/click passes.
     pub fn cell(&self) -> (i32, i32) {
         (self.x, self.y)
     }
@@ -161,6 +186,7 @@ pub fn parse_source_block(block: &[u8]) -> Vec<WorldObjectSource> {
 mod tests {
     use super::*;
 
+    /// Parsing stops at the first `+0x12 == 0` slot and keeps all 22 item ids.
     #[test]
     fn parser_stops_at_location_terminator_and_keeps_22_items() {
         let mut data = vec![0u8; WORLD_OBJECT_OFF + WORLD_OBJECT_STRIDE * 3];
@@ -180,6 +206,8 @@ mod tests {
         assert_eq!(recs[1].loc, 4);
     }
 
+    /// The shipped `Game.1` carries 95 respawning herb nodes (19 on location 3,
+    /// 5 on location 4) and their species are class 9 subtypes 1 and 2.
     #[test]
     fn real_game1_herb_placements_match_the_original_table() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -216,6 +244,8 @@ mod tests {
         assert_eq!(db.info(9, 2).unwrap().name, "Белый корень");
     }
 
+    /// A deactivated equal timestamp pair waits exactly `0x1518` frames, and a
+    /// removed record (`+0x12 = 0`) never becomes active again.
     #[test]
     fn activation_and_respawn_timestamps() {
         let mut s = WorldObjectSource {

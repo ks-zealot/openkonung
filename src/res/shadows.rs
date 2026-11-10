@@ -31,13 +31,24 @@ use crate::constants::combat::OBJECT_ARCHETYPE_BIT;
 
 /// Shadow data for one human block frame (body or equipped-item overlay).
 struct HumanShadow {
+    /// GRAPH offset of the block the shadow payload belongs to.
     block_pos: usize,
+    /// Shadow mask offset relative to that block's data base (`+0x4D28`).
     off: usize,
+    /// Shadow anchor x from the body anchor record.
     gx: i32,
+    /// Shadow anchor y from the body anchor record.
     gy: i32,
 }
 
 impl Res {
+    /// Resolve the shadow mask of one human block frame.
+    ///
+    /// The mask offset is the first `u32` of the frame record at
+    /// `block + 0x1728 + frame_id*8` (the second word is the sprite offset);
+    /// the anchor is the first `u16` pair of the per-pose record at
+    /// `block + 0x2F28 + action*0x300 + direction*0x60 + fi*8`. Returns `None`
+    /// for a zero/out-of-range offset or truncated tables.
     fn human_shadow(
         &self,
         block_pos: usize,
@@ -72,6 +83,12 @@ impl Res {
         })
     }
 
+    /// Resolve the shadow mask of one object/monster frame.
+    ///
+    /// The mask offset is the first `u32` of the frame record at
+    /// `block + 0x728 + frame_id*8`; the anchor is the first `u16` pair of the
+    /// anchor entry `block + 0x1728 + row*0x480 + direction*0x90 + fi*8`.
+    /// Returns `(relative offset, gx, gy)` or `None` when absent/truncated.
     fn object_shadow(
         &self,
         object_id: usize,
@@ -195,6 +212,11 @@ impl Res {
     }
 
     /// Overlay blocks active for this pose: `(block_pos, fi, anchor_x, anchor_y)`.
+    ///
+    /// Walks the `FUN_00427E9C` overlay order, skips empty slots, applies the
+    /// `+1` "in hand" selector variant, and reads the overlay anchor from the
+    /// base block's table at
+    /// `+0x828 + action*0x300 + direction*0x60 + ofi*4`.
     fn overlay_shadow_blocks(
         &self,
         equipment: &[u16; 6],
@@ -248,6 +270,7 @@ impl Res {
 mod tests {
     use super::*;
 
+    /// Load the shipped resources, or `None` when they are absent.
     fn load() -> Option<Res> {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let read = |n: &str| std::fs::read(dir.join(n)).ok();
@@ -265,8 +288,11 @@ mod tests {
         Some(res)
     }
 
+    /// 800x600 inclusive viewport used by every shadow test.
     const CLIP: crate::render::spans::Clip = (0, 0, 799, 599);
 
+    /// A bare human idle frame produces shadow spans confined to the ground box
+    /// around the actor origin.
     #[test]
     fn a_human_body_frame_contributes_a_ground_shadow() {
         let Some(res) = load() else {
@@ -297,6 +323,8 @@ mod tests {
         }
     }
 
+    /// Equipped armour and knife overlays add their own shadow masks on top of
+    /// the bare body.
     #[test]
     fn equipped_overlays_add_their_own_masks() {
         let Some(res) = load() else {
@@ -339,6 +367,8 @@ mod tests {
         );
     }
 
+    /// An object-family frame yields a wide, multi-row ground mask from the
+    /// object shadow table.
     #[test]
     fn an_object_frame_contributes_a_ground_shadow() {
         let Some(res) = load() else {
@@ -372,6 +402,7 @@ mod tests {
         assert!(max_y - min_y >= 5, "multi-row mask: y {min_y}..{max_y}");
     }
 
+    /// `0x81D620` is the plain `shadows` config word and defaults to enabled.
     #[test]
     fn the_config_gate_is_a_plain_flag() {
         // `0x81D620` is `GameConfig::shadows`; the draw pass is skipped when 0.
@@ -383,6 +414,7 @@ mod tests {
 mod sweep {
     use super::*;
 
+    /// Load the shipped resources, or `None` when they are absent.
     fn load() -> Option<Res> {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let read = |n: &str| std::fs::read(dir.join(n)).ok();
@@ -400,6 +432,8 @@ mod sweep {
         Some(res)
     }
 
+    /// Every shipped human pose (3 bases, 10 actions, 8 directions, 18 frame
+    /// slots, 3 loadouts) and object frame decodes without panicking.
     #[test]
     fn every_shipped_frame_decodes_without_panicking() {
         let Some(res) = load() else { return };

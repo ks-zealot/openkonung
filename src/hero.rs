@@ -56,9 +56,13 @@ pub struct OriginalHeroPreset {
     pub field_70: Option<u16>,
 }
 
+/// One selectable hero: identity fields, `Game.N` file, start location and the
+/// raw New-Hero handler output.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HeroTemplate {
+    /// Position in [`HEROES`] (0 = Dragomir, 1 = Mikhail, 2 = Wolf).
     pub hero_index: u32,
+    /// Display name used by diagnostics.
     pub name: &'static str,
     /// `Game.N` suffix selected for this hero (from `Entity+D6` semantics).
     pub game_suffix: u32,

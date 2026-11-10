@@ -6,11 +6,20 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: the fixed-rate tick driver that sequences one logic frame.
 
 use super::super::*;
 use crate::constants::combat::*;
 
 impl PlayableApp {
+    /// One original logic frame of the combat subsystem.
+    ///
+    /// The order follows the original call tree: projectiles first, then - every
+    /// 16 frames (`FUN_0041D048`) - group growth (`FUN_0041BD3C`), the
+    /// `FUN_00412C30` relation pass and the periodic-damage pass. It closes with
+    /// death frames, NPC gear refresh, target acquisition and the three unit
+    /// passes (leader, party, world).
     fn combat_tick(&mut self) {
         self.update_projectiles();
         self.combat_frame = self.combat_frame.wrapping_add(1);

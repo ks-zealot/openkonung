@@ -9,6 +9,11 @@
 //! * Discovered mask: 56 bytes (`0x81CF80`), indexed by the run value.
 //! * Click hit-test: `FUN_004381C8` mode 5 + `FUN_00438900` over
 //!   `0x456A1C`/`0x450EBC`; the result is `(location << 8) | 0x103`.
+//!
+//! [`draw`] covers the interface viewport only, so the left party panel and the
+//! bottom bar keep showing the HUD underneath. The discovered overlay is
+//! composed once and cached by [`mask_hash`], because the run table is 361 rows
+//! and the mask changes only when a map item reveals a location.
 
 use crate::hud::layout;
 use crate::res::{blit, blit_sub, Image, Img, Res};
@@ -108,6 +113,11 @@ pub fn compose_overlay(res: &mut Res, discovered: &[u8; 56]) -> Option<Img> {
     }))
 }
 
+/// Copy one row of `INTR[179]` into the composite buffer.
+///
+/// `x`/`w` are map-local pixel coordinates; the copy is clamped to `MAP_W` and
+/// to the source width, so a run that overshoots the sprite edge is truncated
+/// instead of panicking.
 fn copy_span(src: &Image, row: usize, x: usize, w: usize, dst: &mut [u8]) {
     let w = w.min(MAP_W.saturating_sub(x)).min(src.w.saturating_sub(x));
     if w == 0 || row >= src.h {
@@ -204,6 +214,8 @@ pub fn draw(
 mod tests {
     use super::*;
 
+    /// Every run row terminates with a zero width and never exceeds the 502 px
+    /// overlay width.
     #[test]
     fn run_table_is_361_rows_of_502px_reach() {
         assert_eq!(MAP_ROWS.len(), MAP_H);
@@ -213,6 +225,8 @@ mod tests {
         }
     }
 
+    /// The run walk returns the location covering a pixel, including its last
+    /// pixel and the last row, and rejects out-of-range points.
     #[test]
     fn location_lookup_matches_first_run() {
         // Row 0: location 28 for 84 px, location 31 for 91 px, ...
@@ -225,12 +239,14 @@ mod tests {
         assert_eq!(location_at(0, 361), None);
     }
 
+    /// The reserved table marks exactly 14 locations, the `41..=54` block.
     #[test]
     fn reserved_table_has_fourteen_locked_entries() {
         assert_eq!(MAP_RESERVED.iter().filter(|&&b| b != 0).count(), 14);
         assert!(MAP_RESERVED[41..=54].iter().all(|&b| b == 1));
     }
 
+    /// Revealing one location changes the cache key, so the overlay recomposes.
     #[test]
     fn mask_hash_changes_with_discovery() {
         let mut a = [0u8; 56];

@@ -129,20 +129,29 @@ pub const HUMAN_BLOCK_DATA_OFFSET: usize = 0x4D28;
 
 /// Body anchor table (`block + 0x2F28 + action*0x300 + direction*0x60 + fi*8`).
 pub const HUMAN_BODY_ANCHOR_TABLE_OFFSET: usize = 0x2F28;
+/// Body-anchor stride per action row (`0x300`).
 pub const HUMAN_BODY_ACTION_STRIDE: usize = 0x300;
+/// Body-anchor stride per direction (`0x60`).
 pub const HUMAN_BODY_DIRECTION_STRIDE: usize = 0x60;
 
 /// Overlay anchor table (`block + 0x828 + action*0x180 + direction*0x30 + fi*4`).
 pub const HUMAN_OVERLAY_ANCHOR_TABLE_OFFSET: usize = 0x828;
+/// Overlay-anchor stride per action row (`0x180`).
 pub const HUMAN_OVERLAY_ACTION_STRIDE: usize = 0x180;
+/// Overlay-anchor stride per direction (`0x30`).
 pub const HUMAN_OVERLAY_DIRECTION_STRIDE: usize = 0x30;
+/// One overlay-anchor record width (`4` bytes).
 pub const HUMAN_OVERLAY_ANCHOR_RECORD_SIZE: usize = 4;
 
 /// Game.res variant field offsets.
 pub const HUMAN_VARIANT_DIRECTION_OFFSET: usize = 0x01;
+/// Variant flags byte (`+0x04`) used by `find_fallback_human`.
 pub const HUMAN_VARIANT_FLAGS_OFFSET: usize = 0x04;
+/// Variant base-graphics index (`+0x3F`).
 pub const HUMAN_VARIANT_BASE_OFFSET: usize = 0x3F;
+/// Variant palette offset (`+0x41`, in 512-byte units).
 pub const HUMAN_VARIANT_PALETTE_OFFSET: usize = 0x41;
+/// Variant equipment/overlay selectors (`+0x45`, six `u16` slot values).
 pub const HUMAN_VARIANT_EQUIPMENT_OFFSET: usize = 0x45;
 /// Minimum variant record length accepted by `find_fallback_human`.
 pub const HUMAN_MIN_VARIANT_LEN: usize = 0x91;
@@ -163,6 +172,7 @@ pub const OBJECT_FAMILY_MIN_BLOCK_LEN: usize = 0x3228 + 8;
 /// Offscreen paper-doll surface size (`FUN_0042ea6c`: clip `0x9f x 0x13f`,
 /// final visible blit `0xA0 x 0xA0`). The remake only needs the visible square.
 pub const PAPER_DOLL_W: usize = 160;
+/// Visible paper-doll square height (`0xA0`).
 pub const PAPER_DOLL_H: usize = 160;
 /// Original paper-doll body origin inside the offscreen surface.
 pub const PAPER_DOLL_BODY_ORIGIN: (i32, i32) = (0x3C, 0x14);

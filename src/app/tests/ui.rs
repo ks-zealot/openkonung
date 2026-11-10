@@ -4,6 +4,7 @@ use super::super::*;
 
 use super::common::*;
 
+/// The cursor is the neutral frame 4 over the HUD panel and over free ground.
 #[test]
 fn cursor_is_neutral_over_hud_and_free_ground() {
     let Some(mut app) = build_test_app() else {
@@ -21,6 +22,7 @@ fn cursor_is_neutral_over_hud_and_free_ground() {
     assert_eq!(app.debug_cursor_frame(), 4);
 }
 
+/// Keys 1/2/3 select weapon slots 2/0/1, `I` toggles the sheet, `A` engages and `F` halts.
 #[test]
 fn original_hotkeys_are_bound() {
     let Some(mut app) = build_test_app() else {
@@ -45,6 +47,7 @@ fn original_hotkeys_are_bound() {
     assert!(!app.debug_player_active());
 }
 
+/// `C`/Escape toggle the character screen, which swallows world clicks and never mutates gameplay data.
 #[test]
 fn character_screen_open_close_and_no_world_clickthrough() {
     let Some(mut app) = build_test_app() else {
@@ -102,10 +105,11 @@ fn character_screen_open_close_and_no_world_clickthrough() {
     assert_eq!(app.player.hp_internal, hp0);
 }
 
-/// Real Game.1 + Konung.3: the 19 `Земляной орех` nodes on location 3 load,
-///
-/// collect, deactivate for 0x1518 frames and respawn with a fresh instance.
+// Real Game.1 + Konung.3: the 19 `Земляной орех` nodes on location 3 load,
+//
+// collect, deactivate for 0x1518 frames and respawn with a fresh instance.
 
+/// `cursor_for_class` reproduces the `0x424E78` jump table, including default frame 9.
 #[test]
 fn cursor_class_mapping_matches_original_jump_table() {
     use super::super::cursor::cursor_for_class;
@@ -123,6 +127,7 @@ fn cursor_class_mapping_matches_original_jump_table() {
     assert_eq!(cursor_for_class(12), 2);
 }
 
+/// A right-click on empty ground issues a move and never toggles the graph view.
 #[test]
 fn right_click_moves_and_no_longer_toggles_graph() {
     let Some(mut app) = build_test_app() else {
@@ -144,6 +149,7 @@ fn right_click_moves_and_no_longer_toggles_graph() {
     );
 }
 
+/// `TAB` flips the leader's `Entity+0x03` battle bit and is exactly reversible.
 #[test]
 fn tab_toggles_protagonist_battle_stance() {
     let Some(mut app) = build_test_app() else {
@@ -165,6 +171,7 @@ fn tab_toggles_protagonist_battle_stance() {
     );
 }
 
+/// Wrapped lines never exceed the requested pixel width, and a long header still wraps.
 #[test]
 fn wrap_to_px_keeps_every_line_within_width() {
     let s = "OpenKonung v15 | Старый лагерь | hero:Dragomir Game.1 | 800x600 native camera | pal:33 | portals:4 | C follow | H graph | D ids | P pop | L layers | T portals | cell=(72,34)";
@@ -175,6 +182,7 @@ fn wrap_to_px_keeps_every_line_within_width() {
     }
 }
 
+/// A single oversized word is hard-split without losing any character.
 #[test]
 fn wrap_to_px_hard_splits_a_single_long_word() {
     let s = "x".repeat(400);
@@ -186,6 +194,7 @@ fn wrap_to_px_hard_splits_a_single_long_word() {
     assert_eq!(lines.concat().len(), 400);
 }
 
+/// `text_px` is 0 for the empty string and grows with text length and scale.
 #[test]
 fn text_clamped_width_estimate_is_positive_and_monotonic() {
     assert!(text_px("", 1.0) == 0);

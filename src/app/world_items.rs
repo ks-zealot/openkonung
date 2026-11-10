@@ -404,6 +404,7 @@ impl PlayableApp {
         }
     }
 
+    /// Queue a transient pickup message for the world overlay (3 s lifetime).
     pub(super) fn set_pickup_message(&mut self, message: &str) {
         self.pickup_message = Some(message.to_string());
         self.pickup_message_t = 3.0;

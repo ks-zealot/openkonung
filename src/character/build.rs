@@ -1,4 +1,9 @@
 //! `build` subsystem of [`crate::character`] (split from `character.rs`).
+//!
+//! Holds the New-Hero screen's final state: the [`Skills`] record (`Entity+0x40`
+//! ..=`+0x4C`), the [`CharacterBuild`] copied once into the runtime player, and
+//! the two specialization selectors that produce those skill values. The
+//! stat-stepper cost tiers live in [`super::class`].
 
 use super::*;
 

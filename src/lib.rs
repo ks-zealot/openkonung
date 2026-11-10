@@ -218,6 +218,7 @@ pub extern "C" fn debug_player_x() -> f32 {
         .unwrap_or(0.0)
 }
 
+/// Companion to [`debug_player_x`]: live player runtime y, `0.0` when no game.
 #[no_mangle]
 pub extern "C" fn debug_player_y() -> f32 {
     runtime_mut()

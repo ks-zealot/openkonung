@@ -12,12 +12,14 @@ pub const NAME_RECORD: usize = 40;
 /// records indexed by `Entity+0xD4` (`name_id`). Verified: `124 = Драгомир`,
 /// `151 = Михаил`, `10 = Волк`.
 pub const CHAR_NAME_TABLE_OFF: usize = 0x4491C;
+/// Character-name record size: 32-byte CP866 fields, NUL-padded.
 pub const CHAR_NAME_RECORD: usize = 32;
 
 /// Character-class name table in `konung.res` (DGROUP VA `0x45ADC0`): 16-byte
 /// CP866 records indexed by `Entity+0x04 - 1` (`1 Храбрец, 2 Купец,
 /// 3 Охотник, 4 Вождь, 5 Воин`).
 pub const CLASS_NAME_TABLE_OFF: usize = 0x40FC0;
+/// Class-name record size: 16-byte CP866 fields.
 pub const CLASS_NAME_RECORD: usize = 16;
 
 /// Character nickname/surname table in `konung.res` (DGROUP VA `0x45FC7C`):
@@ -25,6 +27,7 @@ pub const CLASS_NAME_RECORD: usize = 16;
 /// 3 Глухой, 4 Слепой, 5 Сирота, ...`). Appended to the name with a space by
 /// `FUN_0042BC60`.
 pub const NICKNAME_TABLE_OFF: usize = 0x45E7C;
+/// Nickname record size: 32-byte CP866 fields.
 pub const NICKNAME_RECORD: usize = 32;
 
 /// Monster name table in `konung.res` (DGROUP VA `0x45DB3C`): 32-byte CP866
@@ -32,8 +35,11 @@ pub const NICKNAME_RECORD: usize = 32;
 /// `0x42 Аспид`, ... `0x50 Ядовитый червь`). Used by `FUN_0042BC60` only for
 /// non-human archetypes `<= 0x50`; larger values use the character-name table.
 pub const MONSTER_NAME_TABLE_OFF: usize = 0x43D3C;
+/// Monster-name record size: 32-byte CP866 fields.
 pub const MONSTER_NAME_RECORD: usize = 32;
+/// First valid monster archetype name id (`0x41`, Гигантский Муравей).
 pub const MONSTER_NAME_MIN: u8 = 0x41;
+/// Last valid monster archetype name id (`0x50`, Ядовитый червь).
 pub const MONSTER_NAME_MAX: u8 = 0x50;
 
 /// Settlement waypoint-role names in `konung.res` (DGROUP VA `0x46270C`):
@@ -41,6 +47,7 @@ pub const MONSTER_NAME_MAX: u8 = 0x50;
 /// (`1 староста, 2 знахарь, 3 купец, 4 кузнец, 5 воевода`). The stored records
 /// include a leading `", "`; [`profession_name`] strips it.
 pub const PROFESSION_TABLE_OFF: usize = 0x4890C;
+/// Profession-name record size: 16-byte CP866 fields.
 pub const PROFESSION_RECORD: usize = 16;
 
 /// CP866 glyphs for byte values 0x80..0xFF (code points). 0x00..0x7F is ASCII.
@@ -69,6 +76,8 @@ pub fn char_to_cp866(ch: char) -> Option<u8> {
         .map(|i| 0x80 + i as u8)
 }
 
+/// Decode one CP866 byte to Unicode: `0x00..=0x7F` is ASCII, `0x80..=0xFF`
+/// indexes [`CP866_HIGH`]. Unrepresentable code points become U+FFFD.
 fn cp866_byte_to_char(b: u8) -> char {
     if b < 0x80 {
         b as char
@@ -101,6 +110,8 @@ pub fn encode_cp866(text: &str) -> Vec<u8> {
         .collect()
 }
 
+/// Decode one fixed-size record at `off`, cutting at the first NUL and trimming
+/// trailing whitespace. `None` when the record runs past `data`.
 fn decode_record(data: &[u8], off: usize, record: usize) -> Option<String> {
     if off + record > data.len() {
         return None;

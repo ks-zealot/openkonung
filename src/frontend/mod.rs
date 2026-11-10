@@ -9,6 +9,36 @@
 //! On `New Game` (action index `3`) the screen switches to [`FrontendScreen::NewHero`];
 //! confirming a selected hero returns [`FrontendCommand::StartGame`] to the wasm
 //! layer, which hands the hero selection index to the existing game runtime.
+//!
+//! # Screen state machine
+//!
+//! ```text
+//! MainMenu --Load--------> LoadGame --Escape--> MainMenu
+//! MainMenu --Save--------> SaveGame --Escape--> MainMenu   (only with a live game)
+//! MainMenu --NewGame-----> NewHero -----Escape--> MainMenu
+//! NewHero  --Ok (region 20) -> StartGame command (hero_index + CharacterBuild)
+//! NewHero  --Cancel (21)  -> MainMenu
+//! MainMenu --Settings----> Settings --Ok-----> MainMenu (+ pending_resolution)
+//! Settings --Cancel/Esc--> MainMenu (entry snapshot restored)
+//! MainMenu --Resume------> Resume command      (live game re-activated)
+//! MainMenu --Exit--------> Quit command + quit flag
+//! ```
+//!
+//! Entering a sub-screen never discards the preserved game: `game_active` stays
+//! set and the host runtime keeps owning the live [`crate::app::PlayableApp`].
+//! Every screen keeps its own hover slot (`hovered`, `save_slot_hover`,
+//! `new_hero.hovered_region`, `settings.hovered`) so a click and the following
+//! redraw agree on what the pointer is over.
+//!
+//! # Original draw routine
+//!
+//! One frame per [`Frontend::step`]: clear the logical framebuffer to opaque
+//! black, blit the current screen's decoded image stack, then optionally outline
+//! every original hit rectangle when `K` toggled the debug overlay. The original
+//! frontend draws into the same 640x480/800x600 surface and is driven by the
+//! mode switch in `FUN_00436214` (case 0 settings, case 1 main menu, case 2
+//! New-Hero) with the per-screen painters `FUN_0043060C` (settings),
+//! `FUN_0042EA6C` (New Hero) and `FUN_004304F4` (save/load slots).
 
 mod screens;
 
@@ -30,16 +60,23 @@ use self::layout::*;
 use self::new_hero::NewHeroState;
 use self::settings::SettingsState;
 
-/// Explicit frontend screens (task §25). `Settings` renders the confirmed
+/// Explicit frontend screens (task section 25). `Settings` renders the confirmed
 /// `MENU{width}R.RES` #1 settings screen; `SaveGame`/`LoadGame` render the
 /// original `SAVE{width}R.RES` screen. The live game (if any) is owned by the
 /// host runtime, so there is no `InGame` screen here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrontendScreen {
+    /// Startup / in-game menu painted from `MENU{width}R.RES` `#0`.
     MainMenu,
+    /// Character creation painted from `NEWH{width}R.RES` (`FUN_0042EA6C`).
     NewHero,
+    /// Options screen painted from `MENU{width}R.RES` `#1` (`FUN_0043060C`).
     Settings,
+    /// Read-only `SAVE{width}R.RES` `#0` load screen: the ten slot rows, with a
+    /// click requesting that slot from the host.
     LoadGame,
+    /// `SAVE{width}R.RES` `#1` save screen, same slot rows; a click requests a
+    /// save into that slot (needs a live game).
     SaveGame,
 }
 
@@ -50,7 +87,11 @@ pub enum FrontendCommand {
     /// character-creation build. The build is copied into the runtime player
     /// exactly as configured — the class preset is not regenerated.
     StartGame {
+        /// Hero identity index `0..=2` (Dragomir / Mikhail / Wolf), i.e. the
+        /// `NEWH_HIT_*` hero region ordinal.
         hero_index: u32,
+        /// Character-creation draft as edited on the New-Hero screen: class,
+        /// primary stats, free XP and the seven secondary skills.
         build: crate::character::CharacterBuild,
     },
     /// Re-activate the preserved live game.
@@ -60,9 +101,18 @@ pub enum FrontendCommand {
 }
 
 use crate::constants::keys::KEY_K;
+/// Virtual key code of Escape (Win32 `VK_ESCAPE`) as dispatched by the shell.
 const KEY_ESCAPE: u32 = 27;
 
+/// The original frontend runtime: decoded menu resources, screen state and the
+/// RGBA framebuffer handed to the browser shell.
+///
+/// One instance owns exactly one logical resolution; a Settings Ok that changes
+/// the video mode is reported through [`Frontend::pending_resolution`] and the
+/// host rebuilds this struct at the new resolution.
 pub struct Frontend {
+    /// Active logical resolution; selects the `MENU`/`NEWH`/`SAVE` layout
+    /// tables and the framebuffer size.
     pub res: FrontendRes,
     menu: MenuRes,
     newh: MenuRes,
@@ -71,6 +121,7 @@ pub struct Frontend {
     save: Option<MenuRes>,
     /// Original bitmap fonts from `konung.res` (used by the New-Hero screen).
     fonts: Fonts,
+    /// Current screen; see the module state machine.
     pub screen: FrontendScreen,
     /// Hovered `MAIN_MENU` index while on the main menu.
     pub hovered: Option<usize>,
@@ -78,14 +129,18 @@ pub struct Frontend {
     pub save_slot_hover: Option<usize>,
     /// Last logical mouse position.
     pub mouse: (i32, i32),
+    /// New-Hero selection and character-creation draft.
     pub new_hero: NewHeroState,
+    /// Settings screen live values plus the entry snapshot.
     pub settings: SettingsState,
     /// Pending frontend-resolution rebuild requested by Settings Ok.
     pub pending_resolution: Option<FrontendRes>,
     /// Pre-rendered 160x160 preview frames, flat-indexed
     /// `hero_index * previews::PREVIEW_SLOTS + weapon_slot`.
     hero_previews: Vec<crate::res::Img>,
+    /// RGBA framebuffer, `res.width() * res.height() * 4` bytes.
     pub frame: Vec<u8>,
+    /// Debug-overlay strings (regions, screen banner) the shell draws on top.
     pub texts: Vec<TextItem>,
     /// Sound ids requested this frame (original main-menu click `4`).
     pub sounds: Vec<u16>,
@@ -95,6 +150,7 @@ pub struct Frontend {
     pub game_active: bool,
     host_w: i32,
     host_h: i32,
+    /// Set by Exit (or Escape with no live game); the shell then closes.
     pub quit: bool,
 }
 
@@ -170,10 +226,12 @@ impl Frontend {
         self.hero_previews = previews;
     }
 
+    /// Logical framebuffer width in pixels (640 or 800).
     pub fn logical_w(&self) -> i32 {
         self.res.width()
     }
 
+    /// Logical framebuffer height in pixels (480 or 600).
     pub fn logical_h(&self) -> i32 {
         self.res.height()
     }
@@ -214,12 +272,23 @@ impl Frontend {
         }
     }
 
+    /// Raw pointer to the RGBA framebuffer.
+    ///
+    /// # Memory contract
+    ///
+    /// The pointer is owned by `self` and stays valid until the next [`Frontend::step`]
+    /// or drop; the wasm ABI `frame_ptr` export hands it to JS together with
+    /// [`Frontend::logical_w`] * [`Frontend::logical_h`] * 4 bytes.
     pub fn frame_ptr(&self) -> *const u8 {
         self.frame.as_ptr()
     }
 
     // --- window mapping -----------------------------------------------------
 
+    /// Record the host (canvas backing-store) size used to map pointer input.
+    ///
+    /// Degenerate sizes are clamped to at least `1x1`; the logical framebuffer
+    /// is never resized here.
     pub fn on_resize(&mut self, w: i32, h: i32) {
         self.host_w = w.max(1);
         self.host_h = h.max(1);
@@ -256,6 +325,13 @@ impl Frontend {
 
     // --- input --------------------------------------------------------------
 
+    /// Update the per-screen hover from a host pointer position.
+    ///
+    /// Coordinates outside the letterboxed logical viewport are ignored (the
+    /// last logical position stays). On New Hero this also re-targets the
+    /// big-panel description exactly like `FUN_00436214` case 2: a stat stepper
+    /// (`25..=32`) is normalised to its stat row `7..=10`, and a region with no
+    /// description record leaves the previous text untouched.
     pub fn pointer_move(&mut self, x: f64, y: f64) {
         let Some((mx, my)) = self.window_to_logical(x, y) else {
             return;
@@ -290,6 +366,16 @@ impl Frontend {
         }
     }
 
+    /// Handle a button press in logical coordinates and return a host command.
+    ///
+    /// Only buttons `1` (left) and `3` (right) are accepted; the original
+    /// frontend acts on press, so a right click on a hit region behaves like a
+    /// left click here (only a left click queues the UI click sound `4`).
+    /// New Hero routes the region: hero `0..2`, class `3..6`, skill selectors
+    /// `15..19`, stat steppers `25..32`, Ok `20` (`FrontendCommand::StartGame`)
+    /// and the right-hand Cancel control `21`. SAVE rows request the slot from
+    /// the host; Settings applies the control, and Ok additionally asks for a
+    /// resolution rebuild when the video mode changed.
     pub fn pointer_down(&mut self, button: u32, x: f64, y: f64) -> Option<FrontendCommand> {
         if button != 1 && button != 3 {
             return None;
@@ -453,8 +539,17 @@ impl Frontend {
         None
     }
 
+    /// Release handler. The original frontend has no press/release distinction,
+    /// so every action already fired in [`Frontend::pointer_down`] and this is a
+    /// no-op kept for the shell's symmetric event calls.
     pub fn pointer_up(&mut self, _button: u32) {}
 
+    /// Handle a key press by Win32 virtual key code.
+    ///
+    /// `K` toggles the hit-rectangle debug overlay. Escape leaves any sub-screen
+    /// (restoring the Settings entry snapshot first) back to the main menu; on
+    /// the main menu itself it resumes a preserved game, or sets [`Frontend::quit`]
+    /// and returns `Quit` when the menu is the fresh startup menu.
     pub fn key_down(&mut self, code: u32) -> Option<FrontendCommand> {
         match code {
             KEY_K => {
@@ -490,12 +585,25 @@ impl Frontend {
 
     // --- drawing ------------------------------------------------------------
 
+    /// Advance the frontend by one frame: drop the previous frame's sound queue
+    /// and redraw the current screen.
+    ///
+    /// # Side effects
+    ///
+    /// `sounds` is cleared at the start of the call, so the shell must drain it
+    /// before stepping; `frame` and `texts` are rebuilt from scratch.
     pub fn step(&mut self) {
         // One-frame queue: the shell drains it before this call.
         self.sounds.clear();
         self.draw();
     }
 
+    /// Paint one complete frontend frame into `frame`.
+    ///
+    /// Clears to opaque black first (the `NEWH#0` artwork is partly
+    /// transparent, so an uninitialised buffer would show through), dispatches
+    /// to the per-screen painter and finally overlays the debug rectangles when
+    /// `debug_regions` is set.
     fn draw(&mut self) {
         self.texts.clear();
         let fw = self.res.width() as usize;

@@ -10,7 +10,14 @@
 //! the light masks back over terrain, while the high map marks lit entity
 //! cells that use the unshaded palette.
 
+/// Length of the ambient cycle in 60 ms frames (`0x5460` = 21 600 frames,
+/// about 21.6 minutes of play); the world frame counter wraps modulo this.
 pub const AMBIENT_PERIOD: u64 = 0x5460;
+
+/// Recovered phase boundaries from the `0x45AE0E` table, in 60 ms frames.
+///
+/// Entry 0 is the cycle start (`0`) and is never tested directly; entries
+/// `1..=12` are the boundaries [`ambient`] compares the wrapped frame against.
 pub const AMBIENT_TABLE: [u16; 13] = [
     0, 1800, 1830, 3570, 3600, 5400, 8100, 11700, 11880, 11910, 16155, 16200, 18900,
 ];
@@ -19,16 +26,25 @@ pub const AMBIENT_TABLE: [u16; 13] = [
 /// original packs it: byte 0 = blue, byte 1 = green, byte 2 = red).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Ambient {
+    /// Red channel delta, `-128..=127` (byte 2 of the packed word).
     pub r: i16,
+    /// Green channel delta, `-128..=127` (byte 1 of the packed word).
     pub g: i16,
+    /// Blue channel delta, `-128..=127` (byte 0 of the packed word).
     pub b: i16,
 }
 
 impl Ambient {
+    /// Whether this delta leaves every palette entry unchanged.
+    ///
+    /// `FUN_0042532C` skips the whole shading pass on a zero delta, so the
+    /// caller can avoid a full-frame sweep per tick.
     pub fn is_zero(self) -> bool {
         self.r == 0 && self.g == 0 && self.b == 0
     }
 
+    /// Unpack the original 32-bit word: lowest byte is blue, then green, then
+    /// red; each byte is a two's-complement signed delta.
     fn from_packed(v: u32) -> Ambient {
         Ambient {
             b: v as u8 as i8 as i16,
@@ -113,6 +129,9 @@ pub fn ambient(world_frame: u64, day_night: u32) -> Ambient {
     Ambient::default()
 }
 
+/// Pack a channel triple into the original word order (byte 0 blue, byte 1
+/// green, byte 2 red), masking each channel to 8 bits so the round trip through
+/// [`Ambient::from_packed`] sign-extends the same value.
 fn pack(r: i32, g: i32, b: i32) -> u32 {
     (((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff)) as u32
 }
@@ -142,6 +161,8 @@ pub fn light_pixel(dst: [u8; 4], alpha: u8) -> [u8; 4] {
 mod tests {
     use super::*;
 
+    /// The recovered period and boundary entries are `0x5460`, `1800` and
+    /// `18900`.
     #[test]
     fn thresholds_are_the_original_table() {
         assert_eq!(AMBIENT_PERIOD, 21600);
@@ -149,6 +170,8 @@ mod tests {
         assert_eq!(AMBIENT_TABLE[12], 18900);
     }
 
+    /// `day_night == 0` returns the zero delta at every phase, so the shading
+    /// pass is skipped entirely.
     #[test]
     fn day_night_off_is_always_zero() {
         for f in [0, 9000, 12000, 20000] {
@@ -156,12 +179,15 @@ mod tests {
         }
     }
 
+    /// The frame counter is taken modulo the period, so frame `0x5460` shades
+    /// exactly like frame 0.
     #[test]
     fn phase_wraps_and_stays_shaded_at_night() {
         assert_eq!(ambient(AMBIENT_PERIOD, 1), ambient(0, 1));
         assert!(!ambient(12000, 1).is_zero());
     }
 
+    /// The light blend only ever brightens a pixel and clamps at 255.
     #[test]
     fn light_alpha_never_darkens_or_overflows() {
         let px = [10, 20, 30, 255];

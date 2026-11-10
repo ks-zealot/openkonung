@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Action indices are their own array position and `NewGame` is dispatcher index 3.
 #[test]
 fn main_menu_ordering_and_new_game_index() {
     assert_eq!(MainMenuAction::NewGame.index(), 3);
@@ -11,6 +12,7 @@ fn main_menu_ordering_and_new_game_index() {
     }
 }
 
+/// The six `MAIN_MENU` records keep the original action/normal-image/hover-image pairing.
 #[test]
 fn main_menu_pairs_match_task_table() {
     let expect = [
@@ -27,6 +29,7 @@ fn main_menu_pairs_match_task_table() {
     }
 }
 
+/// The 640 main-menu rectangles match the recovered `0x414B4` records verbatim.
 #[test]
 fn main_menu_640_rects_match_recovered_table() {
     let expect = [
@@ -46,6 +49,7 @@ fn main_menu_640_rects_match_recovered_table() {
     }
 }
 
+/// The three hero portrait hit rects are the confirmed `NEWH_HIT_640` records.
 #[test]
 fn hero_hit_rects_match_task_section_16() {
     // task §16 #0/#1/#2 (640).
@@ -54,6 +58,7 @@ fn hero_hit_rects_match_task_section_16() {
     assert_eq!(NEWH_HIT_640[2], Rect::new(229, 94, 58, 96));
 }
 
+/// Region 20 is the left control and region 21 the right one, at the recovered rects.
 #[test]
 fn bottom_regions_match_task_section_20() {
     assert_eq!(NEWH_HIT_640[BOTTOM_REGIONS[0]], Rect::new(65, 427, 100, 33));
@@ -63,6 +68,7 @@ fn bottom_regions_match_task_section_20() {
     );
 }
 
+/// Both New-Hero tables hold exactly 33 logical regions at both resolutions.
 #[test]
 fn newh_tables_have_33_regions() {
     assert_eq!(NEWH_HIT_640.len(), 33);
@@ -71,6 +77,7 @@ fn newh_tables_have_33_regions() {
     assert_eq!(NEWH_DRAW_800.len(), 33);
 }
 
+/// Region 24 and the eight stat steppers match the recovered draw/hit records.
 #[test]
 fn points_box_and_steppers_match_recovered_tables() {
     // Region 24 (top ПАРАМЕТРЫ points box).
@@ -109,6 +116,7 @@ fn points_box_and_steppers_match_recovered_tables() {
     );
 }
 
+/// The five skill selector hit rects (15..19) match the verified records.
 #[test]
 fn skill_selector_hitboxes_match_verified_rects() {
     let r640 = [
@@ -133,6 +141,7 @@ fn skill_selector_hitboxes_match_verified_rects() {
     }
 }
 
+/// `Rect::contains` treats right/bottom as inclusive (`x + w - 1`).
 #[test]
 fn rect_inclusive_contains() {
     let r = Rect::new(10, 20, 5, 4);

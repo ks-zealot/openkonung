@@ -6,45 +6,96 @@
 //! * four row rectangles `DAT_00465E94`;
 //! * buttons `DAT_00465E34` (right = cancel, left = confirm);
 //! * money labels `DAT_00465F34/0x465F54`.
+//!
+//! Draw order: the `INTR[5]` stone tile across the viewport, the `INTR[6]`
+//! window frame, then per row the left arrow, five `INTR[17]` cells with their
+//! item icons and the right arrow, then the cancel/confirm buttons, the six
+//! money values, the partner name, an optional message or the stock-empty
+//! notice, and finally the hovered item tooltip. Everything is clipped to the
+//! viewport rectangle.
 
 use crate::res::{blit, Res};
 use crate::trade::{TradeState, SLOTS, VISIBLE};
 
+/// `INTR[6]`: the trade window frame.
 pub const WINDOW_SPRITE: usize = 6;
+/// `INTR[5]`: the 100x100 stone tile that fills the viewport behind the window.
 pub const TILE_SPRITE: usize = 5;
+/// `INTR[17]`: empty slot-cell background for the 32-slot rows.
 pub const SLOT_SPRITE: usize = 17;
+/// `INTR[18]`: left page arrow while the row is on page 0.
 pub const ARROW_LEFT: usize = 18;
+/// `INTR[19]`: left page arrow when the row is paged forward.
 pub const ARROW_LEFT_ACTIVE: usize = 19;
+/// `INTR[20]`: right page arrow when no further cell follows.
 pub const ARROW_RIGHT: usize = 20;
+/// `INTR[21]`: right page arrow when more cells follow.
 pub const ARROW_RIGHT_ACTIVE: usize = 21;
+/// `INTR[180]`: cancel button.
 pub const CANCEL_SPRITE: usize = 180;
+/// `INTR[182]`: confirm (complete the deal) button.
 pub const CONFIRM_SPRITE: usize = 182;
+/// Stone tile edge in px (`INTR[5]` is 100x100).
 const TILE: i32 = 100;
+/// Cell step, the same `slot_width - 1` rule as the inventory strip.
 const CELL_STEP: i32 = 69;
+/// Item-cell edge in px.
 const CELL: i32 = 70;
+/// Page-arrow width in px (`INTR[18]`/`INTR[20]` are 20 wide).
 const ARROW_W: i32 = 20;
 
+/// One hit-test result of the trade window.
+///
+/// The four rows are the four 32-slot arrays in `0x81CB24` order: player bag,
+/// player offer, partner stock, partner offer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TradeHit {
-    Cell { row: usize, col: usize },
+    /// One visible item cell of a row.
+    Cell {
+        /// Row index `0..=3` (player bag, player offer, partner stock, partner
+        /// offer).
+        row: usize,
+        /// Visible column `0..=4` inside the row's current page.
+        col: usize,
+    },
+    /// The row's left paging arrow.
     PageLeft(usize),
+    /// The row's right paging arrow.
     PageRight(usize),
+    /// Cancel button `INTR[180]`.
     Cancel,
+    /// Confirm button `INTR[182]`.
     Confirm,
+    /// The point is not on any trade control.
     None,
 }
 
+/// Resolved trade-window geometry for one logical resolution.
 #[derive(Clone, Copy, Debug)]
 pub struct Layout {
+    /// Interface viewport `(x, y, w, h)` (`0x81D738/0x81D754/0x81D744/0x81D760`).
     pub viewport: (i32, i32, i32, i32),
+    /// `INTR[6]` window top-left, i.e. the viewport origin.
     pub window_pos: (i32, i32),
+    /// The four row rectangles `(x, y, w, h)` from `DAT_00465E94`, top to bottom.
     pub rows: [(i32, i32, i32, i32); 4],
+    /// Cancel button rectangle (right record of `DAT_00465E34`).
     pub cancel: (i32, i32, i32, i32),
+    /// Confirm button rectangle (left record of `DAT_00465E34`).
     pub confirm: (i32, i32, i32, i32),
+    /// Six money-value origins (`DAT_00465F34`/`0x465F54`), in the order the
+    /// draw pass fills them: partner cash, partner money on the table, partner
+    /// side total, player money on the table, player cash, player side total.
     pub labels: [(i32, i32); 6],
+    /// Baseline y of the partner name. Both layouts put the viewport top at
+    /// y 0, so this is also an absolute screen row.
+    ///
+    /// TODO(docs): provenance of the 18 / 14 values not recovered.
     pub name_y: i32,
 }
 
+/// Build the trade-window layout for a logical width (`>= 800` picks the 800
+/// variant, anything narrower the 640 one).
 pub fn layout(logical_w: i32) -> Layout {
     if logical_w >= 800 {
         Layout {
@@ -93,10 +144,16 @@ pub fn layout(logical_w: i32) -> Layout {
     }
 }
 
+/// Half-open point-in-rectangle test for a `(x, y, w, h)` tuple.
 fn contains(r: (i32, i32, i32, i32), x: i32, y: i32) -> bool {
     x >= r.0 && x < r.0 + r.2 && y >= r.1 && y < r.1 + r.3
 }
 
+/// Map a screen point to a trade-window control.
+///
+/// The two buttons are tested first (they sit between rows 1 and 2), then each
+/// row splits its width into left arrow, five 69 px cells and right arrow, so a
+/// click is always attributed to exactly one row.
 pub fn hit_test(x: i32, y: i32, logical_w: i32) -> TradeHit {
     let l = layout(logical_w);
     if contains(l.cancel, x, y) {
@@ -128,6 +185,8 @@ pub fn hit_test(x: i32, y: i32, logical_w: i32) -> TradeHit {
     TradeHit::None
 }
 
+/// Blit one sprite clipped to `clip` and to the framebuffer, leaving
+/// transparent source pixels untouched.
 fn blit_clip(
     dst: &mut [u8],
     dw: usize,
@@ -158,6 +217,8 @@ fn blit_clip(
     }
 }
 
+/// Draw the INTR icon of item instance `id` centered in the 70x70 cell whose
+/// top-left is `(cx, cy)`; an unresolved item or icon draws nothing.
 fn draw_icon(res: &mut Res, frame: &mut [u8], fw: usize, fh: usize, id: u16, cx: i32, cy: i32) {
     let Some(info) = res.item_info(id) else {
         return;
@@ -170,6 +231,8 @@ fn draw_icon(res: &mut Res, frame: &mut [u8], fw: usize, fh: usize, id: u16, cx:
     blit(frame, fw, fh, &icon.data, icon.w, icon.h, x, y);
 }
 
+/// Whether a row can page right: the first off-page cell exists and is not
+/// empty (the same condition `TradeState::page_row` uses).
 fn can_right(state: &TradeState, row: usize) -> bool {
     state.page[row] + VISIBLE < SLOTS && state.rows[row][state.page[row] + VISIBLE] != 0
 }

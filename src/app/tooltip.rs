@@ -90,6 +90,10 @@ pub fn item_detail_lines(res: &Res, id: u16) -> Vec<String> {
     lines
 }
 
+/// CP866 name of one item requirement selector (1..=4: charisma, strength,
+/// dexterity, endurance).
+///
+/// `0` and unknown selectors have no label, so the requirement line is skipped.
 fn requirement_stat_label(stat: u16) -> Option<&'static str> {
     match stat {
         1 => Some("Харизма"),

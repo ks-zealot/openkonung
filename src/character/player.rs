@@ -1,4 +1,10 @@
 //! `player` subsystem of [`crate::character`] (split from `character.rs`).
+//!
+//! [`PlayerCharacter`] is the single authoritative runtime protagonist: hero
+//! identity, class, the persistent character-creation skills/stats, and the
+//! `Entity`-shaped item/status fields restored from the loaded `Game.N`
+//! `Entity[0]` (equipment `+0x66`, inventory `+0x72`, HP `+0x5C`, money
+//! `+0x34`). See [`super::build`] for the screen-side values.
 
 use super::*;
 
@@ -9,28 +15,49 @@ use super::*;
 /// `Entity` in the remake.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlayerCharacter {
+    /// Selected hero identity (`Game.N`, name id, visual, palette).
     pub hero: HeroTemplate,
+    /// Selected class; `Entity+0x04` comes from it.
     pub class: CharacterClass,
+    /// `Entity+0x38`-adjacent level counter; starts at `1`.
     pub level: u8,
+    /// `Entity+0x34` carried money.
     pub money: i32,
+    /// Unspent experience/parameter points (`Entity+0x38`).
     pub available_xp: u32,
+    /// Experience already spent on stats (remake bookkeeping).
     pub invested_xp: u32,
 
+    /// `Entity+0x40` melee mastery.
     pub melee_mastery: u16,
+    /// `Entity+0x42` trade skill.
     pub trade: u16,
+    /// `Entity+0x44` archery mastery.
     pub archery_mastery: u16,
+    /// `Entity+0x46` building skill.
     pub building: u16,
+    /// `Entity+0x48` healing skill.
     pub healing: u16,
+    /// `Entity+0x4A` identification skill.
     pub identification: u16,
+    /// `Entity+0x4C` smithing skill.
     pub smithing: u16,
 
+    /// `Entity+0x54` dexterity base (combat formulas read this).
     pub dexterity_base: u16,
+    /// `Entity+0x56` dexterity current (temporary effects modify this).
     pub dexterity_current: u16,
+    /// `Entity+0x58` charisma base (`max_party` reads this).
     pub charisma_base: u16,
+    /// `Entity+0x5A` charisma current.
     pub charisma_current: u16,
+    /// `Entity+0x5E` strength base.
     pub strength_base: u16,
+    /// `Entity+0x60` strength current.
     pub strength_current: u16,
+    /// `Entity+0x62` endurance base (`max_load` and mitigation read this).
     pub endurance_base: u16,
+    /// `Entity+0x64` endurance current.
     pub endurance_current: u16,
 
     /// `Entity+0x66` — 6 equipped item instance ids (kept separate from the

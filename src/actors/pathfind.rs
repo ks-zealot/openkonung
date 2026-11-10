@@ -1,4 +1,11 @@
 //! `pathfind` subsystem of [`crate::actors`] (split from `actors.rs`).
+//!
+//! Passability and the original route builder. Collision lives in the location's
+//! `Konung.N` table (`+0x06400`, 320x160 `u8`, index `x*160 + y`), expanded to
+//! `u16` where clear low-12 bits mean free. [`find_path`] is the Dijkstra search
+//! of `FUN_0043DA1F` over the parity-selected 8-neighbour set of
+//! [`crate::coords::neighbors`], returning original direction codes (0..=7) that
+//! `crate::coords::step_by_direction` replays.
 
 use super::*;
 

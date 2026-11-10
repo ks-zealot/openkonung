@@ -1,5 +1,6 @@
 //! Centralised constants for `timing` (extracted from the module sources).
 
+/// Maximum entries in an actor's direction-code queue (`Entity+0x13`, `0x1f`).
 pub const MAX_PATH_STEPS: usize = 0x1f;
 /// Maximum placement attempts in the original routine.
 pub const MAX_ATTEMPTS: u8 = 100;
@@ -14,6 +15,7 @@ pub const MAX_ATTEMPTS: u8 = 100;
 /// `& 0xf` (~0.96 s per 16 frames), corroborating the ~16.7 Hz rate. A walk cycle
 /// of `n` frames therefore takes `n * 60 ms` (e.g. 12 frames -> 0.72 s/cell).
 pub const ORIGINAL_FRAME_MS: f64 = 60.0;
+/// Logic/AI frame rate derived from [`ORIGINAL_FRAME_MS`] (~16.67 Hz).
 pub const LOGIC_TICK_HZ: f64 = 1000.0 / ORIGINAL_FRAME_MS;
 /// Fallback walk-cycle length (frames) used when an actor's own sprite cycle
 /// cannot be resolved (`Res::action_cycle_frames`). 8 frames at ~16.67 Hz
@@ -25,6 +27,8 @@ pub const FALLBACK_WALK_FRAMES: u8 = 8;
 /// `rng() % (2*radius)`, and the accepted candidate must also lie strictly
 /// inside the group rectangle, so these bound the random offset.
 pub const WANDER_RADIUS_X: i32 = 20;
+/// Wander search radius in cells along the `y` axis (`_DAT_0081d6a4` = `9` at
+/// 800x600, `7` at 640x480).
 pub const WANDER_RADIUS_Y: i32 = 9;
 /// `FUN_00413a84` retry count.
 pub const WANDER_MAX_ATTEMPTS: u8 = 10;

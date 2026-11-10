@@ -143,6 +143,11 @@ impl PlayableApp {
         (self.player_walk_frames() / LOGIC_TICK_HZ).max(1.0 / LOGIC_TICK_HZ)
     }
 
+    /// Frame count of the protagonist's walk cycle for the current facing and
+    /// stance, i.e. the cell-step period in logic frames.
+    ///
+    /// Read from the GRAPH human animation table; `8` when the visual index has no
+    /// block or the count is zero.
     pub(super) fn player_walk_frames(&self) -> f64 {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
         let vi = self.player.hero.visual_index as usize;
@@ -164,6 +169,12 @@ impl PlayableApp {
         }
     }
 
+    /// Advance the protagonist: walk timing, arrival/interaction, path
+    /// continuation and transition triggers.
+    ///
+    /// Runs per rendered frame but converts elapsed time into fixed 60 ms logic
+    /// ticks, so one walk cycle always equals one cell. Distance never moves the
+    /// hero: only the direction queue steps the cell.
     pub(super) fn update_player(&mut self, dt: f64) {
         if self.player.dead {
             return;
@@ -361,6 +372,13 @@ impl PlayableApp {
         (action, self.player_frame_index(moving, action), battle)
     }
 
+    /// Resolve the protagonist's RGBA frame through the canonical Entity visual
+    /// path, including the equipped-item overlays.
+    ///
+    /// # Returns
+    ///
+    /// The composed frame and its GRAPH anchor offset, or the decoder's reason
+    /// string (there is no fallback sprite).
     pub(super) fn player_frame(&mut self, moving: bool) -> Result<(Img, i32, i32), String> {
         let battle = crate::anim::battle_from_flags(self.player.flags_b);
         let (action, fi, _) = self.player_pose(moving);

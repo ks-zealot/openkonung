@@ -9,16 +9,29 @@
 //! Original references: `FUN_0042ADE4` (`PlayAVI.dll::playAVIFile`) builds
 //! `VIDEO\<name>`, blocks, and on completion performs
 //! `_81D5AC = _81D6B8`. The remake keeps that ordering but makes it async.
+//!
+//! The pending request is a single thread-local slot: [`request`] fails while a
+//! movie is queued (the original call blocks, so a second trigger cannot
+//! interleave), [`finish`] takes the slot, and `abi/video.rs` then applies the
+//! [`VideoAfter`] outcome.
 
 use std::cell::{Cell, RefCell};
 
 /// One original movie, mapped to its lowercase generated MP4 stem.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoClip {
+    /// `POSTER.FLM`, the startup movie (original startup state 9).
     Poster,
+    /// `WIN.FLM`, played when WorldObject source index 0 is collected.
     Win,
+    /// `GAMEOVER.FLM`, played when the leader's game-over flag is set.
     GameOver,
-    Defeat(u8),
+    /// `DEFEAT<location>.FLM`, played when a settlement defence is lost.
+    Defeat(
+        /// Location id of the defeated settlement (`DEFEAT<loc>.FLM`).
+        u8,
+    ),
+    /// `credits.flm`, played by the launcher only - the game never requests it.
     Credits,
 }
 
@@ -34,6 +47,7 @@ impl VideoClip {
         }
     }
 
+    /// Generated MP4 file name (`<key>.mp4`) that the shell loads.
     pub fn file_name(self) -> String {
         format!("{}.mp4", self.key())
     }
@@ -43,6 +57,10 @@ impl VideoClip {
         format!("{}.FLM", self.key().to_ascii_uppercase())
     }
 
+    /// Parse a manifest/pack video key back into a clip.
+    ///
+    /// Accepts the lowercase stem with or without `.mp4`; the original `.FLM`
+    /// spelling is deliberately rejected because it is not a manifest key.
     pub fn parse(name: &str) -> Option<VideoClip> {
         let stem = name
             .strip_suffix(".mp4")
@@ -65,14 +83,20 @@ impl VideoClip {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoAfter {
     /// Return to the original menu; `game_active` controls Resume visibility.
-    Menu { game_active: bool },
+    Menu {
+        /// Whether a live game is still in memory, i.e. whether Resume exists.
+        game_active: bool,
+    },
     /// Resume gameplay (`_81D6B8 = 0` in the defeat path).
     Gameplay,
 }
 
+/// One queued movie plus the outcome to apply when it ends or is skipped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PendingVideo {
+    /// Clip the shell should play.
     pub clip: VideoClip,
+    /// Post-video state to apply through `abi/video.rs`.
     pub after: VideoAfter,
 }
 
@@ -94,10 +118,12 @@ pub fn request(clip: VideoClip, after: VideoAfter) -> bool {
     })
 }
 
+/// The currently queued movie, if any.
 pub fn pending() -> Option<PendingVideo> {
     PENDING.with(|slot| *slot.borrow())
 }
 
+/// Whether a movie is queued; a trigger while one is pending is ignored.
 pub fn is_pending() -> bool {
     pending().is_some()
 }
@@ -107,10 +133,12 @@ pub fn finish() -> Option<PendingVideo> {
     PENDING.with(|slot| slot.borrow_mut().take())
 }
 
+/// Whether the startup poster has already been played in this session.
 pub fn intro_played() -> bool {
     INTRO_PLAYED.with(|v| v.get())
 }
 
+/// Remember that the startup poster has been played, so it never repeats.
 pub fn mark_intro_played() {
     INTRO_PLAYED.with(|v| v.set(true));
 }
@@ -125,6 +153,8 @@ pub fn reset() {
 mod tests {
     use super::*;
 
+    /// Generated stems, file names and manifest keys agree, and the original
+    /// `.FLM` spelling is not a valid manifest key.
     #[test]
     fn clip_names_match_the_generated_assets() {
         assert_eq!(VideoClip::Poster.file_name(), "poster.mp4");
@@ -137,6 +167,8 @@ mod tests {
         assert_eq!(VideoClip::parse("POSTER.FLM"), None);
     }
 
+    /// A second request while a movie is pending is refused, and `finish`
+    /// consumes the slot so the next request is accepted.
     #[test]
     fn only_one_movie_is_pending_at_a_time() {
         reset();

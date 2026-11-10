@@ -1,4 +1,8 @@
 //! Draw ordering and walk-segment commit.
+//!
+//! The original draws actors back to front by projected vertical position, then
+//! commits each walk step at the START of its animation segment
+//! (`FUN_0041435C`), which is why the stored cell leads the drawn sprite.
 
 use super::super::*;
 

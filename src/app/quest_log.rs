@@ -9,6 +9,10 @@
 use super::*;
 
 impl PlayableApp {
+    /// Toggle the quest-log window (interface mode 2, `FUN_004242BC`).
+    ///
+    /// An open dialogue, exchange or character screen blocks the toggle; opening
+    /// closes the world map, and both directions queue the UI click sound `4`.
     pub fn toggle_quest_log(&mut self) {
         if self.dialog.is_some() || self.trade.is_some() || self.character_screen {
             return;
@@ -25,6 +29,7 @@ impl PlayableApp {
         }
     }
 
+    /// Close the quest log without its own sound (travel and Escape paths).
     pub fn close_quest_log(&mut self) {
         self.quest_log_open = false;
         self.hovered_slot = None;

@@ -6,6 +6,9 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: attack and prop orders plus the `FUN_004245B4` group-wake helper
+//! they call.
 
 use super::super::*;
 use crate::actors::PopulationBuild;
@@ -183,6 +186,10 @@ impl PlayableApp {
         }
     }
 
+    /// Group id of a [`CombatTarget`] as recorded in `Group+0x1A`.
+    ///
+    /// The protagonist and the companions are the reserved party group 0, a world
+    /// actor reports its source group id, and a prop reports 0.
     fn combat_target_group(&self, target: CombatTarget) -> u8 {
         match target {
             CombatTarget::World(id) => self

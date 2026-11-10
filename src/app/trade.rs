@@ -6,16 +6,25 @@ use crate::inventory::{carried_weight, item_weight, SlotsRef};
 use crate::trade::{TradeError, TradeState};
 
 impl PlayableApp {
+    /// Index of the settlement record on the current map, if any.
     fn settlement_index_for_loc(&self) -> Option<usize> {
         self.settlements
             .iter()
             .position(|s| s.loc_id as u32 == self.current_map)
     }
 
+    /// Index into `settlement_trade` of the restock state for settlement
+    /// `index`.
     fn settlement_trade_index(&self, index: usize) -> Option<usize> {
         self.settlement_trade.iter().position(|t| t.index == index)
     }
 
+    /// Merchant role of an NPC in the current settlement, `0` for a non-merchant.
+    ///
+    /// The role is the owned waypoint slot plus one (`Settlement::role_of`).
+    /// Roles 2..=4 are the settlement merchants with their own stock row
+    /// (`+0x412`/`+0x444`/`+0x484`), so the role decides both the offered stock
+    /// and whether a deal mutates the settlement.
     pub(super) fn trade_role(&self, npc_entity: usize) -> u8 {
         self.settlement_index_for_loc()
             .and_then(|i| self.settlements.get(i))
@@ -23,6 +32,12 @@ impl PlayableApp {
             .unwrap_or(0)
     }
 
+    /// Partner side of the exchange: 32 inventory ids, money and trade skill.
+    ///
+    /// A settlement merchant (role 2..=4) trades from its restock row instead of
+    /// its own inventory and counts as having unlimited money (`99999`); while the
+    /// settlement `0x04` flag is set, class 0..2 items stay hidden from the offer.
+    /// Any other NPC trades its authored inventory, money and trade skill.
     fn partner_snapshot(&self, npc_entity: usize, role: u8) -> Option<([u16; 32], i32, u16)> {
         if matches!(role, 2..=4) {
             let si = self.settlement_index_for_loc()?;
@@ -54,6 +69,7 @@ impl PlayableApp {
         Some((e.inventory, e.stats.money, e.stats.trade))
     }
 
+    /// Trade skill of an NPC, 0 when the record is missing.
     fn partner_trade_skill(&self, npc_entity: usize) -> u16 {
         self.tables
             .as_ref()
@@ -131,6 +147,10 @@ impl PlayableApp {
         self.hovered_slot = None;
     }
 
+    /// Re-run the `FUN_00430D6C` money auto-balance for the open exchange.
+    ///
+    /// Called after every cell move and every page change, so the visible price
+    /// always matches the current offers.
     fn trade_balance(&mut self) {
         let Some(state) = self.trade.as_mut() else {
             return;
@@ -170,6 +190,7 @@ impl PlayableApp {
         self.trade_message_t = 0.0;
     }
 
+    /// Show a trade refusal message for two seconds.
     fn trade_reject(&mut self, error: TradeError) {
         self.trade_message = Some(error.message().to_string());
         self.trade_message_t = 2.0;

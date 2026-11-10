@@ -26,6 +26,10 @@ impl PlayableApp {
 
     // --- drawing ---
 
+    /// Queue one text run for the overlay pass at virtual `(x, y)`.
+    ///
+    /// The overlay list is cleared and re-emitted every `draw_detail`, so these
+    /// coordinates are virtual-screen pixels, not world cells.
     pub(super) fn text(&mut self, x: i32, y: i32, rgb: u32, scale: f32, s: String) {
         self.texts.push(TextItem {
             x,

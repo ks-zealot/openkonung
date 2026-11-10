@@ -9,14 +9,17 @@ use crate::quest::{QuestData, B2_OFF, B3_OFF, B6_OFF, FILE_LEN, NODE_STRIDE};
 const LINE_A: u16 = 10;
 const LINE_B: u16 = 20;
 
+/// A `QUEST_R.RES`-sized zero buffer.
 fn blank() -> Vec<u8> {
     vec![0u8; FILE_LEN]
 }
 
+/// Write a little-endian `u16` at an absolute file offset.
 fn put_u16(b: &mut [u8], off: usize, v: u16) {
     b[off..off + 2].copy_from_slice(&v.to_le_bytes());
 }
 
+/// Write a little-endian `u32` at an absolute file offset.
 fn put_u32(b: &mut [u8], off: usize, v: u32) {
     b[off..off + 4].copy_from_slice(&v.to_le_bytes());
 }
@@ -44,6 +47,8 @@ fn header(b: &mut [u8], node: usize, prompts: u16, opts: u16) {
     put_u16(b, o + 14, prompts); // conditional (f7)
 }
 
+/// Write one `B1` option/entry: text line `line`, link `next`, no
+/// condition/action (`0xFFFF` in `+0x06` and `+0x0A`).
 fn text_entry(b: &mut [u8], node: usize, line: u16, next: i16) {
     let o = node * NODE_STRIDE;
     put_u32(b, o, line as u32);
@@ -52,6 +57,8 @@ fn text_entry(b: &mut [u8], node: usize, line: u16, next: i16) {
     put_u16(b, o + 10, 0xFFFF);
 }
 
+/// One conditional entry becomes the statement line and one unconditional
+/// entry becomes the option.
 #[test]
 fn start_builds_prompt_and_options() {
     let mut b = blank();
@@ -74,6 +81,7 @@ fn start_builds_prompt_and_options() {
     assert_eq!(d.options[0].next, LINK_END);
 }
 
+/// An option whose `+0x04` is `-2` closes the dialogue.
 #[test]
 fn select_end_link_closes() {
     let mut b = blank();
@@ -92,6 +100,7 @@ fn select_end_link_closes() {
     );
 }
 
+/// A non-negative `+0x04` link is followed and `page` becomes the target node.
 #[test]
 fn select_follows_link() {
     let mut b = blank();
@@ -111,6 +120,8 @@ fn select_follows_link() {
     assert!(d.options.is_empty());
 }
 
+/// A branch page (`+0x0A == -2`) whose first case has no condition is followed
+/// to the case's `+0x04` display page.
 #[test]
 fn branch_node_is_followed() {
     let mut b = blank();
@@ -135,6 +146,7 @@ fn branch_node_is_followed() {
     assert_eq!(d.prompt_lines, vec!["Hi".to_string()]);
 }
 
+/// Stacked option rows hit-test in virtual space and nothing outside matches.
 #[test]
 fn option_hit_testing() {
     let mut b = blank();
@@ -154,6 +166,7 @@ fn option_hit_testing() {
     assert_eq!(d.option_at(-100, -100), None);
 }
 
+/// The 100-px tiling grid covers a 651x470 window exactly as 7 x 5 origins.
 #[test]
 fn tile_origins_cover_window_rect() {
     // 800x600 dialog window: INTR[1] is 651x470 at (144, 0).

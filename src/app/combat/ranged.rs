@@ -6,6 +6,9 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: bow readiness, arrow spawn and consumption, projectile stepping
+//! and the ranged kill reward.
 
 use super::super::*;
 use crate::combat::CombatTarget;
@@ -122,6 +125,12 @@ impl PlayableApp {
         true
     }
 
+    /// Apply one arrow hit on `defender`.
+    ///
+    /// `FUN_00420F30` runs first (the victim's group is woken before the roll),
+    /// then the shared hit/dodge roll and armor mitigation. A lethal hit enters
+    /// the death row with the shooter's level as killer level and pays the ranged
+    /// kill reward; a non-lethal hit subtracts damage and applies poison.
     fn resolve_projectile_hit(
         &mut self,
         shooter: CombatTarget,
@@ -175,6 +184,11 @@ impl PlayableApp {
         }
         self.apply_armor_wear(defender, roll.incoming as i32, armor);
     }
+    /// Pay the ranged kill reward: `power / 4` money and `power` archery mastery
+    /// to the shooter.
+    ///
+    /// Ranged kills (unlike melee) always credit the shooter, and the same
+    /// `power` is passed on as the corpse-loot bonus. `power <= 0` is ignored.
     fn award_ranged_kill(&mut self, owner: CombatTarget, power: i32) {
         if power <= 0 {
             return;
@@ -205,6 +219,12 @@ impl PlayableApp {
             CombatTarget::Prop(_) => {}
         }
     }
+    /// Resolve an arrow that stopped on a blocked prop cell.
+    ///
+    /// Only the current location's settlement targets are considered. A roll
+    /// below the recovered 21% chance advances the matching target to state `3`
+    /// and sets its timer to `1`; either way the settlement alert bits `0x15`
+    /// are set and the settlement group is woken.
     fn handle_prop_hit(&mut self, prop_index: usize) {
         let loc = self.current_map;
         let Some(sidx) = self.settlements.iter().position(|s| s.loc_id as u32 == loc) else {
@@ -234,6 +254,14 @@ impl PlayableApp {
             self.wake_group(g, CombatTarget::Player);
         }
     }
+    /// Step the projectile pool (`0x80B0D0`) once per logic tick.
+    ///
+    /// Every arrow loses one life point, then moves `SUBSTEPS` sub-steps of its
+    /// velocity. A sub-step whose cell is solid ends the arrow (a prop order
+    /// registers the settlement hit there); a sub-step landing on a living actor
+    /// other than the shooter resolves a hit, friendly fire included. The pool
+    /// keeps its order, so removal is done with index bookkeeping rather than a
+    /// retain filter.
     pub(super) fn update_projectiles(&mut self) {
         if self.projectiles.is_empty() {
             return;

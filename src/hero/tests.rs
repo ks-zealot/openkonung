@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// The three shipped heroes map to their documented Game/visual/name values.
 #[test]
 fn explicit_mapping() {
     let d = hero(0).unwrap();
@@ -23,6 +24,7 @@ fn explicit_mapping() {
     assert_eq!(w.palette_offset, 0x9400);
 }
 
+/// `hero_index` is not the `Game.N` suffix: 0->1, 1->2, 2->0.
 #[test]
 fn game_suffix_is_not_the_hero_index() {
     assert_eq!(hero(0).unwrap().game_suffix, 1);
@@ -30,6 +32,7 @@ fn game_suffix_is_not_the_hero_index() {
     assert_eq!(hero(2).unwrap().game_suffix, 0);
 }
 
+/// `start_location == visual_index * 3 + 1` and the palette id is in `0..256`.
 #[test]
 fn start_location_formula_and_palette_range() {
     for h in &HEROES {
@@ -43,11 +46,13 @@ fn start_location_formula_and_palette_range() {
     }
 }
 
+/// Selection index `3` has no hero record.
 #[test]
 fn unknown_hero_is_none() {
     assert!(hero(3).is_none());
 }
 
+/// `D4`/`D6`/`D8` equal `name_id`/`visual_index`/`palette_offset` for every hero.
 #[test]
 fn preset_identity_matches_hero_fields() {
     for h in &HEROES {
@@ -65,6 +70,7 @@ fn preset_identity_matches_hero_fields() {
     }
 }
 
+/// Every captured `0x56..0x70` field matches the traced New-Hero handler set.
 #[test]
 fn original_presets_match_documented_values() {
     let p0 = HEROES[0].preset;

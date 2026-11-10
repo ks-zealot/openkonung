@@ -3,6 +3,8 @@
 use super::*;
 use crate::hero::hero;
 
+/// Each hero's loadout comes from its own `Game.N` `Entity[0]`, with no armor
+/// or shield equipped.
 #[test]
 fn starting_loadout_is_the_loaded_game_entity_for_each_hero() {
     // The menu character-creation equipment arrays are NOT the in-game
@@ -49,6 +51,7 @@ fn starting_loadout_is_the_loaded_game_entity_for_each_hero() {
     }
 }
 
+/// An equipped id is copied into `equipment` and never duplicated into the bag.
 #[test]
 fn attach_starting_items_copies_and_keeps_equipment_separate() {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../Game.1");
@@ -73,6 +76,7 @@ fn attach_starting_items_copies_and_keeps_equipment_separate() {
     assert!(!pc.inventory.contains(&1));
 }
 
+/// The four class presets and their `Entity+0x04` values are the original ones.
 #[test]
 fn exact_class_presets() {
     assert_eq!(CharacterClass::Warrior.entity_class(), 5);
@@ -102,6 +106,7 @@ fn exact_class_presets() {
     );
 }
 
+/// `from_build` copies every stat with base equal to current.
 #[test]
 fn from_class_sets_base_equal_current_for_every_stat() {
     for class in CharacterClass::ALL {
@@ -113,6 +118,7 @@ fn from_class_sets_base_equal_current_for_every_stat() {
     }
 }
 
+/// The fresh Warrior build has the documented initial skill values.
 #[test]
 fn initial_skill_values() {
     let pc = PlayerCharacter::from_build(
@@ -128,6 +134,8 @@ fn initial_skill_values() {
     assert_eq!(pc.smithing, 10);
 }
 
+/// A hand-edited charisma/trade survives `from_build`; the preset is not
+/// regenerated.
 #[test]
 fn modified_build_survives_without_preset_regeneration() {
     // §10: choose Chief (cha 25), then edit charisma 25 -> 24 and trade 10 -> 11.
@@ -144,6 +152,7 @@ fn modified_build_survives_without_preset_regeneration() {
     assert_ne!(pc.charisma_current, CharacterClass::Chief.preset().charisma);
 }
 
+/// `region == entity_class + 1` and `from_region`/`region` are inverses.
 #[test]
 fn class_region_mapping() {
     // Original: region = entity_class + 1. The class-name table makes 2 =
@@ -174,6 +183,7 @@ fn class_region_mapping() {
     }
 }
 
+/// `from_build` copies the hero name and starts at level 1 with 0 money.
 #[test]
 fn default_hero_build_copies_identity_and_level() {
     let h = *hero(2).unwrap();
@@ -184,6 +194,7 @@ fn default_hero_build_copies_identity_and_level() {
     assert_eq!(pc.palette_id(), h.palette_id());
 }
 
+/// The diagnostic block prints the hero, class, stat bases and melee skill.
 #[test]
 fn debug_block_contains_expected_fields() {
     let pc = PlayerCharacter::from_build(
@@ -200,6 +211,8 @@ fn debug_block_contains_expected_fields() {
     assert!(b.contains("melee=100"), "{b}");
 }
 
+/// `0x45AE28` specialization: Merchant endurance, Hunter dexterity, Chief
+/// charisma, Warrior strength.
 #[test]
 fn specialization_mapping() {
     // Specialized-stat byte table 0x45AE28 + (Entity+0x04 - 1).
@@ -221,6 +234,7 @@ fn specialization_mapping() {
     );
 }
 
+/// The four documented cost/refund examples resolve through `STAT_TIERS`.
 #[test]
 fn stat_cost_worked_examples() {
     // The four documented refund/cost examples.
@@ -242,6 +256,8 @@ fn stat_cost_worked_examples() {
     );
 }
 
+/// A cost applies while its threshold is `> value`; past the last finite tier
+/// it is the `999` sentinel.
 #[test]
 fn stat_cost_tier_boundaries() {
     // Specialized (Warrior/STR): threshold row applies while spec_thr > v.
@@ -294,6 +310,7 @@ fn stat_cost_tier_boundaries() {
     );
 }
 
+/// `max_load` = `(10000 + endurance*1000/3) / 1000` (rendered `%4.1f`).
 #[test]
 fn max_load_examples() {
     assert_eq!(format!("{:4.1}", max_load(7)), "12.3");
@@ -301,6 +318,7 @@ fn max_load_examples() {
     assert_eq!(format!("{:4.1}", max_load(12)), "14.0");
 }
 
+/// `max_party` returns `1..=10` from the per-class charisma thresholds.
 #[test]
 fn max_party_examples_and_edges() {
     assert_eq!(max_party(CharacterClass::Chief, 3), 1);
@@ -317,6 +335,7 @@ fn max_party_examples_and_edges() {
     assert_eq!(max_party(CharacterClass::Warrior, 110), 10);
 }
 
+/// Lowering then raising a stat refunds and re-spends the same tier cost.
 #[test]
 fn stat_stepper_is_exactly_reversible() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior); // STR 15, points 0
@@ -329,6 +348,7 @@ fn stat_stepper_is_exactly_reversible() {
     assert_eq!(b.available_xp, 0);
 }
 
+/// Raising with fewer points than the tier cost changes nothing.
 #[test]
 fn insufficient_points_is_a_noop() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior); // points 0
@@ -337,6 +357,7 @@ fn insufficient_points_is_a_noop() {
     assert_eq!(b.available_xp, 0);
 }
 
+/// A stat already at `0` cannot be lowered and refunds nothing.
 #[test]
 fn decrease_at_zero_is_a_noop() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior);
@@ -346,6 +367,7 @@ fn decrease_at_zero_is_a_noop() {
     assert_eq!(b.available_xp, 0);
 }
 
+/// Remaining `available_xp` and the edited stat carry into `PlayerCharacter`.
 #[test]
 fn available_xp_persists_into_the_runtime_player() {
     let mut b = CharacterBuild::from_class(CharacterClass::Chief);
@@ -357,6 +379,7 @@ fn available_xp_persists_into_the_runtime_player() {
     assert_eq!(pc.charisma_current, 24);
 }
 
+/// A fresh build defaults to Fencing + Identification = `INITIAL_SKILLS`.
 #[test]
 fn secondary_skill_defaults_match_initial_skills() {
     let b = CharacterBuild::from_class(CharacterClass::Warrior);
@@ -365,14 +388,17 @@ fn secondary_skill_defaults_match_initial_skills() {
     assert_eq!(b.skills(), INITIAL_SKILLS);
 }
 
+/// The four combat-specialization skill fields `(melee, archery, building, smithing)`.
 fn combat4(b: &CharacterBuild) -> (u16, u16, u16, u16) {
     (b.melee_mastery, b.archery_mastery, b.building, b.smithing)
 }
 
+/// The three civil-specialization skill fields `(trade, healing, identification)`.
 fn civil3(b: &CharacterBuild) -> (u16, u16, u16) {
     (b.trade, b.healing, b.identification)
 }
 
+/// Switching combat specialization rewrites only its four fields.
 #[test]
 fn combat_specialization_switch() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior);
@@ -384,6 +410,7 @@ fn combat_specialization_switch() {
     assert_eq!(civil3(&b), (10, 50, 20));
 }
 
+/// Switching civil specialization rewrites only its three fields.
 #[test]
 fn civil_specialization_switch() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior);
@@ -402,6 +429,7 @@ fn civil_specialization_switch() {
     assert_eq!(combat4(&b), (100, 0, 1, 10));
 }
 
+/// `apply_class_preset` keeps the skills and resets `available_xp`.
 #[test]
 fn class_change_preserves_secondary_skills_and_specializations() {
     let mut b = CharacterBuild::from_class(CharacterClass::Warrior);

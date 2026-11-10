@@ -37,8 +37,12 @@ use std::ops::Range;
 
 use crate::res::{i32v, u16, u32};
 
+/// Record parsers for `Game.N` groups, entities and settlements.
 mod parse;
-/// Exact `Game.N` size (matches `edges::GAME_SIZE`).
+/// Decoded `Game.N` record types (Group, Entity, Settlement, trade state).
+///
+/// The tables live inside the exact `Game.N` size exported as `GAME_SIZE`
+/// (matches `edges::GAME_SIZE`).
 mod types;
 
 pub use self::parse::*;
@@ -83,6 +87,8 @@ pub use crate::constants::game_layout::WAYPOINT_OFF;
 pub use crate::constants::game_layout::WAYPOINT_STRIDE;
 
 impl fmt::Display for RangeError {
+    /// Render the invalid range with the 2000-entry Entity table size, naming
+    /// whichever bound overflowed.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RangeError::StartOutOfRange { start } => write!(

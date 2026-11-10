@@ -6,6 +6,8 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: entering the death row and handing off to the corpse loot.
 
 use super::super::*;
 use crate::combat::CombatTarget;
@@ -159,6 +161,11 @@ impl PlayableApp {
         }
     }
 
+    /// Advance every dead combatant's death row by one frame.
+    ///
+    /// The death rows `3`/`9` hold their final frame, so the per-unit advance
+    /// stops at `death_frames - 1` and the corpse stays there. Runs once per
+    /// logic tick, before the attack passes.
     pub(super) fn advance_all_death_frames(&mut self) {
         if self.player.dead {
             self.advance_death_frame(CombatTarget::Player);

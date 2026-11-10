@@ -1,4 +1,17 @@
 //! OpenKonung live-game state machine: [`PlayableApp`] and its subsystem modules.
+//!
+//! [`PlayableApp`] owns every live-game global the original keeps in static
+//! memory: the decoded `RES` pack, the transition graph, the parsed `Game.N`
+//! `Group[200]`/`Entity[2000]`/`Settlement[20]` tables, the runtime population
+//! and motion cache, the party, the runtime `B7` quest flags, the interface mode
+//! flags and the 800x600 RGBA framebuffer.
+//!
+//! The game advances on the original **60 ms** frame budget (`0x42B32F`
+//! writes `0x3C` to `0x81D5C8`), so [`PlayableApp::step`] converts the shell's
+//! wall-clock `dt` into whole original frames and drives the subsystem passes
+//! at that rate instead of per browser repaint. Subsystems live in sibling
+//! `app/*.rs` files; each file documents its own slice of the original state
+//! machine.
 
 use std::collections::{HashMap, HashSet};
 
@@ -77,11 +90,22 @@ pub use crate::constants::keys::KEY_T;
 pub use crate::constants::keys::KEY_TAB;
 pub use crate::constants::keys::KEY_V;
 
+/// One diagnostic/HUD text run queued for the browser shell.
+///
+/// The shell owns the actual glyph rasteriser (`www/app.js`, 14 px Consolas
+/// scaled by `scale`), so the wasm side only describes what to draw. The
+/// `text_count`/`text_x`/`text_y`/`text_rgb`/`text_scale`/`text_ptr`/
+/// `text_len` ABI reads this vector after [`PlayableApp::step`].
 pub struct TextItem {
+    /// Virtual-pixel x of the left edge (0..=800).
     pub x: i32,
+    /// Virtual-pixel y of the baseline box top (0..=600).
     pub y: i32,
+    /// Packed `0xRRGGBB` colour (alpha is always opaque).
     pub rgb: u32,
+    /// Multiplier applied to the shell's 14 px font.
     pub scale: f32,
+    /// UTF-8 payload (CP866 names already transcoded by `crate::names`).
     pub s: String,
 }
 
@@ -131,19 +155,44 @@ fn wrap_to_px(s: &str, scale: f32, max_px: i32) -> Vec<String> {
     lines
 }
 
+/// One live game session: the replacement for the original's static globals.
+///
+/// Build it with [`PlayableApp::new`], feed the browser's input through
+/// `pointer_down`/`pointer_move`/`pointer_up`/`wheel`/`key_down`, then call
+/// [`Self::step`] once per animation frame. After each step the wasm ABI reads
+/// [`Self::frame`] (800x600 RGBA), [`Self::texts`] and [`Self::sounds`].
+///
+/// `pub` fields are consumed by `src/abi/*` or the headless diagnostic
+/// tools; the remaining fields are subsystem-internal state.
 pub struct PlayableApp {
+    /// Decoded resource pack: the four original RES images with their
+    /// decoders, every `Konung.N` location (collision, terrain, gates) and the
+    /// per-map `LIGHTS.N` masks; the attached `Game.N` save image lives inside
+    /// `world.res`.
     pub world: World,
+    /// Every directed transition record of the loaded profile (`edges.rs`).
     pub edges: Vec<Edge>,
+    /// Bidirectional pairs: `ab`/`ba` are edge indices of the two directions.
     pub pairs: Vec<Pair>,
+    /// Indices of the edges that have no reverse edge (one-way doors).
     pub one_way: Vec<usize>,
+    /// Indices of the edges whose `from == to` (same-map transitions).
     pub self_edges: Vec<usize>,
+    /// Normalised graph-view node coordinates (`0..=1` per axis) keyed by
+    /// location id, as authored in the `Game.N` layout block.
     pub layout: HashMap<u32, (f64, f64)>,
+    /// Which shipped start/variant is loaded (`Game.0`/`Game.1`/`Game.2`).
     pub profile: u32,
     location_names: Vec<String>,
     debug_ids: bool,
 
+    /// Current location: the 1-based `Konung.N` index (`0x81D5xx` in the
+    /// original); every population, settlement and transition query is
+    /// filtered on it.
     pub current_map: u32,
+    /// Node id highlighted in the transition-graph view (not the world map).
     pub selected: Option<u32>,
+    /// Transition-graph screen (`H`/`Backspace`) replaces the gameplay view.
     pub mode_graph: bool,
 
     /// One authoritative runtime player: hero identity + class + the
@@ -154,6 +203,7 @@ pub struct PlayableApp {
     /// flight this is already the cell the hero is stepping INTO. Commands,
     /// teleport triggers and the camera key off this cell.
     pub player_x: f64,
+    /// Committed cell y (`Entity+0x0A`), advanced with [`Self::player_x`].
     pub player_y: f64,
     /// Draw-only cell: the pre-step (source) cell of the segment currently
     /// animated. This is the original `Entity+0xE8/+0xF0`, computed by
@@ -161,7 +211,9 @@ pub struct PlayableApp {
     /// sprite is drawn one step behind the logical cell (the per-frame anchor
     /// sweeps it onto `player_x/player_y` over the cycle).
     pub player_render_x: f64,
+    /// Draw-only cell y, paired with [`Self::player_render_x`].
     pub player_render_y: f64,
+    /// Facing direction code `0..=7` (`Entity+0x01`, `coords::DIR_*`).
     pub player_dir: i32,
     target: Option<(f64, f64)>,
     /// Remaining movement-direction codes (0..=7) to `target`. Each completed
@@ -233,7 +285,9 @@ pub struct PlayableApp {
     node_rects: HashMap<u32, (i32, i32, i32, i32)>,
 
     // presentation
+    /// 800x600 RGBA framebuffer, row-major, read by `frame_ptr`/`frame_w`/`frame_h`.
     pub frame: Vec<u8>,
+    /// Text runs to draw over the frame; cleared and rebuilt every step.
     pub texts: Vec<TextItem>,
     /// Sound requests queued this frame (drained by the browser shell). Mirrors
     /// the original `FUN_0042A13C(id, volume, pan, loop)` playback calls,
@@ -261,13 +315,17 @@ pub struct PlayableApp {
     pub trade: Option<crate::trade::TradeState>,
     /// Timed trade rejection message (`FUN_0042E9CC`).
     pub trade_message: Option<String>,
+    /// Seconds left before [`Self::trade_message`] is cleared.
     pub trade_message_t: f64,
     /// Settlement merchant stock/restock state (`Game.N +0xA769A` tails).
     pub settlement_trade: Vec<crate::population::SettlementTrade>,
+    /// Host canvas width in device pixels, set by `on_resize`.
     pub host_w: i32,
+    /// Host canvas height in device pixels, set by `on_resize`.
     pub host_h: i32,
     drag: bool,
     last_mouse: (f64, f64),
+    /// Set by the ABI when the session should end (never by gameplay itself).
     pub quit: bool,
     /// Set by Escape: the host runtime should open the frontend/menu while
     /// preserving this live game state (do **not** quit or rebuild).
@@ -358,6 +416,38 @@ pub struct PlayableApp {
 }
 
 impl PlayableApp {
+    /// Build one live game session from the already-loaded resources.
+    ///
+    /// This is the remake's `FUN_00436214` state-8 ("new game") entry: it
+    /// seeds the runtime `B7` quest flags from the loaded `QUEST_R.RES`, parses
+    /// the 500 `Game.N +0x21900` WorldObject source records and the settlement
+    /// merchant stocks, selects the protagonist in party cell 0
+    /// (`FUN_004246C0` sets `selection[0] = leader`) and primes the portal
+    /// bindings, settlement target props, active ground markers and camera.
+    ///
+    /// Nothing is randomised here and no authored value is regenerated: every
+    /// field not supplied by the caller starts at a documented zero/default and
+    /// is filled by the normal per-frame passes.
+    ///
+    /// # Arguments
+    ///
+    /// * `world` - decoded pack with `Game.N` already attached through
+    ///   [`crate::res::Res::set_save_game`].
+    /// * `edges`/`pairs`/`one_way`/`self_edges` - the transition graph
+    ///   (`crate::edges`) built by the loader from every `Game.N` record.
+    /// * `layout` - normalised graph-view node positions per location id.
+    /// * `profile` - which shipped start (`Game.0`/`1`/`2`) is in `world`.
+    /// * `player` - the finished character-creation result; copied once, never
+    ///   regenerated after this point.
+    /// * `start_map`/`start_x`/`start_y`/`start_dir` - initial runtime cell and
+    ///   facing (`Entity+0x08/+0x0A/+0x01`), taken from the arrival record.
+    /// * `tables` - parsed `Group[200]`/`Entity[2000]` population, or `None`
+    ///   when no save game was loaded.
+    /// * `settlements` - the 20 parsed `Game.N` settlement records.
+    ///
+    /// # Original
+    ///
+    /// `FUN_00436214` case 8 (map load), `FUN_0043ADF0` marker rebuild.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         world: World,
@@ -525,6 +615,21 @@ impl PlayableApp {
 
     // --- camera ---
 
+    /// Advance the whole session by one rendered frame.
+    ///
+    /// Order matters and follows the original frame, not the browser refresh
+    /// rate: clear the one-frame sound queue, advance the monotonic 60 ms
+    /// original-frame clock (`world_frame`, which also drives the
+    /// `(frame + 7) & 0xF == 0` settlement pass and the prop-flame tick), decay
+    /// the timed HUD/pickup/trade messages, then run the gameplay passes
+    /// (`tick_ambient_sound` -> population -> actor AI -> player -> party ->
+    /// combat -> movie trigger -> temporary potion effects -> camera follow)
+    /// and finally draw either the world (`draw_detail`) or the transition
+    /// graph (`draw_graph`).
+    ///
+    /// `dt` is wall-clock seconds from the shell. Sounds queued below are
+    /// drained by the shell before the next call, which is why the queue is
+    /// cleared first.
     pub fn step(&mut self, dt: f64) {
         // One-frame sound queue: input events pushed since the last drain are
         // preserved by the shell before this call; sounds produced below are
@@ -569,6 +674,10 @@ impl PlayableApp {
         }
     }
 }
+/// Stroke an axis-aligned ellipse outline into an RGBA framebuffer.
+///
+/// Used only by the portal debug overlay; `thickness > 1` stamps a filled
+/// square at every sampled point so the ring stays visible at small radii.
 fn ellipse_outline(
     dst: &mut [u8],
     dw: usize,
@@ -605,6 +714,10 @@ fn ellipse_outline(
     }
 }
 
+/// Stroke a one-pixel rectangle outline into an RGBA framebuffer.
+///
+/// Debug-only helper (portal/layer overlays, transition-graph node borders);
+/// `w`/`h` are the outer size and must be at least 1.
 fn rect_outline(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
     fill_rect(dst, dw, dh, x, y, w, 1, c);
     fill_rect(dst, dw, dh, x, y + h - 1, w, 1, c);
@@ -613,10 +726,17 @@ fn rect_outline(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h:
 }
 
 /// Helper because `i32::from_f64` is not stable in all contexts here.
+///
+/// Rounds half away from zero via `f64::round`, matching the C
+/// `(int)(v + 0.5)` / truncation behaviour the graph and HUD layout code
+/// needs; it is not a general-purpose lossless conversion.
 trait FromF64 {
+    /// Round `v` to the nearest `i32`.
     fn from_f64(v: f64) -> i32;
 }
 impl FromF64 for i32 {
+    /// `v.round() as i32`; out-of-range values saturate like every other
+    /// `as` cast in Rust.
     fn from_f64(v: f64) -> i32 {
         v.round() as i32
     }

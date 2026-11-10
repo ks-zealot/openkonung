@@ -6,9 +6,13 @@ use super::*;
 /// rectangle A reads `+08/+0C/+10/+14`, rectangle B `+0A/+0E/+12/+16`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Rect {
+    /// `+08` (A) / `+0A` (B) u16 - first x edge, Entity-grid column.
     pub x1: u16,
+    /// `+0C` (A) / `+0E` (B) u16 - second x edge.
     pub x2: u16,
+    /// `+10` (A) / `+12` (B) u16 - first y edge, Entity-grid row.
     pub y1: u16,
+    /// `+14` (A) / `+16` (B) u16 - second y edge.
     pub y2: u16,
 }
 
@@ -201,7 +205,9 @@ pub struct Entity {
 /// Both parsed tables.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GameTables {
+    /// `Group[200]` records in source order.
     pub groups: Vec<Group>,
+    /// `Entity[2000]` records in source order.
     pub entities: Vec<Entity>,
 }
 
@@ -218,18 +224,25 @@ pub struct GameTables {
 /// unchanged.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Waypoint {
+    /// `+0` u8 - facing/direction the settled NPC takes at the waypoint.
     pub facing: u8,
+    /// `+1` u8 - authored role dialogue id copied to `Entity+0xD0`.
     #[serde(skip)]
     pub dialogue_id: u8,
+    /// `+2` u16 - owning Entity index (`0` = unassigned).
     pub owner: u16,
+    /// `+4` u16 - target x on the runtime/Entity grid.
     pub x: u16,
+    /// `+6` u16 - target y on the runtime/Entity grid.
     pub y: u16,
 }
 
 /// One `Settlement` record (`Game.N`, stride `0x4B5`); `loc_id` is byte `+3`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settlement {
+    /// Source settlement id (table index, `0..SETTLEMENT_COUNT`).
     pub index: usize,
+    /// `+0x03` u8 - location id this settlement belongs to.
     pub loc_id: u8,
     /// `+0x02` group index woken by `FUN_004245B4`.
     pub group_id: u8,
@@ -255,6 +268,9 @@ pub struct Settlement {
     pub flags_4b2: u8,
     /// `+0x18` target list, 8 bytes per entry.
     pub targets: Vec<SettlementTarget>,
+    /// Home/role waypoint list (`WAYPOINT_OFF` base, 8 bytes each, ends at the
+    /// first all-zero record). Slots 0-4 are the elder/healer/merchant/smith/
+    /// voivode roles.
     pub waypoints: Vec<Waypoint>,
 }
 
@@ -262,9 +278,13 @@ pub struct Settlement {
 /// `+0x02 u16 prop index`, `+0x06 u16 timer`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SettlementTarget {
+    /// `+0x00` u8 - target key/index byte.
     pub key: u8,
+    /// `+0x01` u8 - target state (the projectile prop branch writes `3`).
     pub state: u8,
+    /// `+0x02` u16 - WorldObject/prop index this target refers to.
     pub prop_index: u16,
+    /// `+0x06` u16 - target countdown timer.
     pub timer: u16,
 }
 
@@ -280,26 +300,45 @@ pub struct SettlementTarget {
 /// unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SettlementTrade {
+    /// Source settlement id (table index).
     pub index: usize,
+    /// `+0x03` u8 - location id (mirrored for role lookups).
     pub loc_id: u8,
+    /// `+0x4B2` runtime flags (mirrored from [`Settlement`]).
     pub flags_4b2: u8,
+    /// Role-2 merchant stock at `+0x412` (24 ids).
     pub stock2: [u16; 24],
+    /// Role-3 stock at `+0x444` (32 ids).
     pub stock3: [u16; 32],
+    /// Role-4 equipment stock at `+0x484` (23 ids).
     pub stock4: [u16; 23],
+    /// `+0x3DA` producer word (= `waypoint[1].owner`; mirrored only).
     pub prod_role2: u16,
+    /// `+0x3E2` producer word (= `waypoint[2].owner`; mirrored only).
     pub prod_role3: u16,
+    /// `+0x3EA` producer word (= `waypoint[3].owner`; mirrored only).
     pub prod_role4: u16,
+    /// `+0x3F2` producer word (= `waypoint[4].owner`, the voivode).
     pub prod_role5: u16,
+    /// `+0x04` role-2 restock timer (decremented by `FUN_004175FC`).
     pub timer2: i32,
+    /// `+0x0C` voivode barracks-training timer (`FUN_00417F84`).
     pub timer3: i32,
+    /// `+0x08` role-4 restock timer (decremented by `FUN_004179C8`).
     pub timer4: i32,
+    /// `+0x4B4` role-4 pending stock slot (`-1` = none).
     pub last_slot: i8,
+    /// Role-2 production quota counter at `+0x40C`.
     pub quota0: u16,
+    /// Role-2 production quota counter at `+0x40E`.
     pub quota1: u16,
+    /// Role-2 production quota counter at `+0x410`.
     pub quota2: u16,
 }
 
 impl Default for SettlementTrade {
+    /// Neutral restock state: empty stock, no producers, all timers zero and
+    /// `last_slot = -1`.
     fn default() -> Self {
         SettlementTrade {
             index: 0,
@@ -377,24 +416,34 @@ impl Settlement {
 /// Diagnostic report for one group selected for a location.
 #[derive(Clone, Debug)]
 pub struct GroupReport {
+    /// The parsed group record (source id preserved).
     pub group: Group,
+    /// `index == 0`, the reserved group the original setup path skips.
     pub reserved_group_zero: bool,
+    /// `Group+0x1E != 0`, the original activity gate.
     pub valid_class: bool,
     /// Validated `first_entity .. first_entity+entity_count`, or the reason the
     /// range is invalid (in which case `entities` is empty — never clipped).
     pub range: Result<Range<usize>, RangeError>,
+    /// Entities in the range, or empty when `range` is an error.
     pub entities: Vec<Entity>,
 }
 
 /// A group refused to map to a valid Entity range.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RangeError {
+    /// `first_entity` lies beyond the 2000-entry Entity table.
     StartOutOfRange {
+        /// Invalid `first_entity` value.
         start: usize,
     },
+    /// `first_entity + entity_count` exceeds the 2000-entry Entity table.
     EndOutOfRange {
+        /// `first_entity` value.
         start: usize,
+        /// `entity_count` value.
         count: usize,
+        /// Computed exclusive end (`start + count`).
         end: usize,
     },
 }

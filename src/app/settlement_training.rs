@@ -55,6 +55,11 @@ struct Trained {
 }
 
 impl Trained {
+    /// Snapshot the stat fields the training pass may change.
+    ///
+    /// Only these are mirrored back into the cached population actor, so combat
+    /// health, poison and temporary-effect fields are never overwritten by the
+    /// authored table.
     fn capture(s: &EntityStats) -> Trained {
         Trained {
             level: s.level,
@@ -96,6 +101,11 @@ impl Trained {
     }
 }
 
+/// Stored value of one primary stat (`+0x56/+0x5A/+0x60/+0x64`).
+///
+/// The original keeps a stored ("current") and a derived ("base") pair; the
+/// `FUN_0041C69C` recalculation copies stored into derived while no temporary
+/// effect is active.
 fn stored(stat: PrimaryStat, s: &EntityStats) -> u16 {
     match stat {
         PrimaryStat::Dexterity => s.dexterity_current,
@@ -105,6 +115,7 @@ fn stored(stat: PrimaryStat, s: &EntityStats) -> u16 {
     }
 }
 
+/// Write the stored value of one primary stat (see [`stored`]).
 fn set_stored(stat: PrimaryStat, s: &mut EntityStats, value: u16) {
     match stat {
         PrimaryStat::Dexterity => s.dexterity_current = value,
@@ -247,6 +258,14 @@ impl PlayableApp {
         }
     }
 
+    /// Run one fired training pass for one settlement.
+    ///
+    /// The voivode (`waypoint[4].owner`) is the stat and mastery ceiling. Members
+    /// are filtered like `FUN_00417F84`: visible, not in a death row, `visual < 3`,
+    /// not the voivode and not a recruited party member. Each changed stat set is
+    /// then mirrored into that location's cached actor.
+    ///
+    /// `first`/`count` are the settlement group's authored entity window.
     fn train_settlement(
         &mut self,
         si: usize,
@@ -329,6 +348,7 @@ impl PlayableApp {
 mod tests {
     use super::*;
 
+    /// Build an `EntityStats` fixture with the four primary stats and health set.
     fn stats(level: u8, dex: u16, cha: u16, str_: u16, end: u16) -> EntityStats {
         EntityStats {
             level,
@@ -345,6 +365,7 @@ mod tests {
         }
     }
 
+    /// Build a low-visual `Entity` fixture for the training tests.
     fn entity(archetype: u8, stats: EntityStats) -> Entity {
         Entity {
             index: 0,
@@ -371,6 +392,8 @@ mod tests {
         }
     }
 
+    /// Training levels the villager up before and after the stat pass and moves
+    /// both masteries toward the voivode.
     #[test]
     fn training_raises_stats_toward_the_voivode_and_levels_up() {
         // `archetype & 7 == 5` -> raw class index 4 (Warrior record).
@@ -397,6 +420,7 @@ mod tests {
         assert_eq!(ent.stats.melee_mastery, ent.stats.archery_mastery);
     }
 
+    /// A member already at or above the voivode gains neither stats nor mastery.
     #[test]
     fn training_does_not_exceed_the_voivode_stats() {
         let mut ent = entity(0x5, stats(3, 40, 40, 40, 40));
@@ -406,6 +430,7 @@ mod tests {
         assert_eq!(ent.stats.melee_mastery, 0, "no deficit, no mastery gain");
     }
 
+    /// An active temporary effect blocks the level-up and every stat raise.
     #[test]
     fn training_is_blocked_by_a_temporary_effect() {
         let mut ent = entity(0x5, stats(1, 10, 10, 10, 10));

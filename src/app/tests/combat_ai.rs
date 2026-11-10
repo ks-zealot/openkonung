@@ -6,6 +6,12 @@ use super::common::*;
 use crate::combat::CombatTarget;
 use crate::population::{Entity, EntityStats, GameTables, Group, Rect};
 
+/// Build a complete synthetic `Entity` for one group member.
+///
+/// Sets the given index, authored action row `kind`, archetype, group id and
+/// authored cell; `flags_a = 0x40` (the shipped active-actor flag used by the
+/// group dispatcher), full health (`hp_internal = 1600`), strength/endurance 10,
+/// no gear and no dialogue (`dialogue_id = 0xFF`).
 fn entity(index: usize, kind: u8, archetype: u8, group: u8, x: u16, y: u16) -> Entity {
     Entity {
         index,
@@ -39,6 +45,10 @@ fn entity(index: usize, kind: u8, archetype: u8, group: u8, x: u16, y: u16) -> E
     }
 }
 
+/// Build a synthetic `Group` holding `count` entities starting at `first`.
+///
+/// Fills the index, entity range, rectangle A and class byte (`Group+0x1E`), with
+/// activity `+0x1D = 0`, no rectangle B and location 1.
 fn group(index: usize, first: u16, count: u8, class: u8, rect: Rect) -> Group {
     Group {
         index,
@@ -58,6 +68,12 @@ fn group(index: usize, first: u16, count: u8, class: u8, rect: Rect) -> Group {
     }
 }
 
+/// Build a party app whose only population table is one synthetic group 1.
+///
+/// Replaces `app.tables` with 200 zeroed groups and 2000 zeroed entities, installs
+/// `actor` at its own index inside group 1 (with rectangle A 10..20), clears the
+/// population cache and re-enters map 1, then parks the leader at cell (16, 15)
+/// with no companions so the relation pass sees exactly one party unit.
 fn synthetic_app(actor: Entity, class: u8) -> Option<PlayableApp> {
     let mut app = build_party_move_app()?;
     let rect = Rect {
@@ -90,6 +106,7 @@ fn synthetic_app(actor: Entity, class: u8) -> Option<PlayableApp> {
     Some(app)
 }
 
+/// A party inside rectangle A sets `Group+0x1D = 1`, and the nearest member then orders an attack on the player.
 #[test]
 fn party_inside_group_rect_wakes_and_acquires() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
@@ -110,6 +127,7 @@ fn party_inside_group_rect_wakes_and_acquires() {
     assert!(m.attack_frames >= 1);
 }
 
+/// `FUN_004245B4` only raises group activity; it never assigns a combat target.
 #[test]
 fn wake_sets_activity_without_assigning_a_target() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
@@ -123,6 +141,7 @@ fn wake_sets_activity_without_assigning_a_target() {
     assert_eq!(m.combat_target, None);
 }
 
+/// A group whose own member stands inside rectangle A stays idle when the party is outside.
 #[test]
 fn group_with_party_outside_and_member_inside_stays_idle() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
@@ -137,6 +156,7 @@ fn group_with_party_outside_and_member_inside_stays_idle() {
     assert_eq!(m.combat_target, None);
 }
 
+/// A member outside rectangle A sets the `0x20` return flag and starts walking back.
 #[test]
 fn stray_member_sets_recall_and_starts_return_path() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 30, 30), 0x41) else {
@@ -151,6 +171,7 @@ fn stray_member_sets_recall_and_starts_return_path() {
     assert!(m.walking || !m.path.is_empty());
 }
 
+/// The citizen wander pass leaves a live combat target and its attack frame untouched.
 #[test]
 fn citizen_combat_target_is_not_reset_by_wander_pass() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x81, 1, 15, 15), 0x81) else {
@@ -177,6 +198,7 @@ fn citizen_combat_target_is_not_reset_by_wander_pass() {
     assert_eq!(m.frame, 3);
 }
 
+/// The relation pass tests `ActorMotion.cell`, not the authored `Entity+0x08/+0x0A` position.
 #[test]
 fn group_recall_uses_live_cells_not_authored_positions() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
@@ -196,6 +218,7 @@ fn group_recall_uses_live_cells_not_authored_positions() {
     assert_eq!(app.tables.as_ref().unwrap().groups[1].activity_1d, 0x20);
 }
 
+/// An object group with activity `0` holds its members on the idle row at frame 0.
 #[test]
 fn inactive_object_group_is_forced_idle() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
@@ -215,6 +238,7 @@ fn inactive_object_group_is_forced_idle() {
     assert_eq!(m.frame, 0);
 }
 
+/// An armed archer that acquires the player switches to action row 4 and latches a ranged order.
 #[test]
 fn ranged_world_actor_switches_to_action_row_four() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x21, 1, 18, 15), 0x41) else {
@@ -245,6 +269,7 @@ fn ranged_world_actor_switches_to_action_row_four() {
     assert_eq!(m.action, crate::anim::ACT_RANGED as u8);
 }
 
+/// A `0x4D` object walk cycle eventually seeds the `Entity+0x12` walk delay.
 #[test]
 fn mo_walk_completion_seeds_entity_0x12_delay() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x4D, 1, 15, 15), 0x4D) else {
@@ -281,6 +306,7 @@ fn mo_walk_completion_seeds_entity_0x12_delay() {
     assert!(saw_delay, "M/O walk completion never seeded Entity+0x12");
 }
 
+/// `A` puts the leader in battle stance and orders the nearest awake hostile world actor.
 #[test]
 fn engage_button_orders_nearest_awake_hostile() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
@@ -308,6 +334,7 @@ fn engage_button_orders_nearest_awake_hostile() {
     );
 }
 
+/// An idle leader acquires an adjacent attacker that already targets it (`FUN_0041EB48`).
 #[test]
 fn idle_party_retaliates_against_adjacent_attacker() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {

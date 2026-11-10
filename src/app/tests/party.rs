@@ -4,6 +4,10 @@ use super::super::*;
 
 use super::common::*;
 
+/// A world click only commands selected units, and single selection replaces the whole set.
+///
+/// The leader starts selected; `FUN_00424D8C` clears the set unless Shift is held, and
+/// an unselected leader then issues no move.
 #[test]
 fn party_selection_gates_world_commands() {
     let Some(mut app) = build_test_app() else {
@@ -39,6 +43,7 @@ fn party_selection_gates_world_commands() {
     );
 }
 
+/// A party portrait click selects that cell and never issues a world move.
 #[test]
 fn party_portrait_click_is_consumed_and_selects() {
     let Some(mut app) = build_test_app() else {
@@ -55,10 +60,14 @@ fn party_portrait_click_is_consumed_and_selects() {
     );
 }
 
-/// A playable app with one synthetic, fully-free location so world clicks issue
-/// real routes (the plain `build_test_app` has no location, so every route is
-/// rejected). Player starts at `(100, 80)`.
+// A playable app with one synthetic, fully-free location so world clicks issue
+// real routes (the plain `build_test_app` has no location, so every route is
+// rejected). Player starts at `(100, 80)`.
 
+/// Entity 539 joins group 0 through dialogue 97 and can be dismissed with `0x14C`.
+///
+/// The first-meeting page 1771 -> 1774 reaches the recruit op `0x123`, which also sets
+/// quest flag 207; re-talking resolves the member branch 1781 and offers the dismissal.
 #[test]
 fn sigma_joins_the_party_through_dialogue() {
     let Some(mut app) = build_party_app() else {
@@ -120,6 +129,7 @@ fn sigma_joins_the_party_through_dialogue() {
     assert!(app.party.is_empty(), "companion dismissed via op 0x14C");
 }
 
+/// The apprentice option only marks the apprentice (`0x162`); the village stays peaceful and the join is a later `0x123`.
 #[test]
 fn apprentice_option_does_not_wake_the_settlement_or_recruit_immediately() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -225,6 +235,7 @@ fn apprentice_option_does_not_wake_the_settlement_or_recruit_immediately() {
     assert_eq!(app.party[0].entity.index, apprentice_id);
 }
 
+/// The clicked cell is stored on every selected unit, so a recruited companion walks with the leader.
 #[test]
 fn selected_companion_receives_the_world_click_move() {
     let Some(mut app) = build_party_move_app() else {
@@ -271,6 +282,7 @@ fn selected_companion_receives_the_world_click_move() {
     );
 }
 
+/// `TAB` flips the battle stance of every selected unit and re-syncs its action row.
 #[test]
 fn tab_toggles_every_selected_party_member() {
     let Some(mut app) = build_party_move_app() else {
@@ -311,6 +323,7 @@ fn tab_toggles_every_selected_party_member() {
     );
 }
 
+/// A stance toggle applies only to selected members, leaving an unselected leader untouched.
 #[test]
 fn tab_toggles_a_solo_selected_companion_not_the_leader() {
     let Some(mut app) = build_party_move_app() else {
@@ -349,6 +362,7 @@ fn tab_toggles_a_solo_selected_companion_not_the_leader() {
     assert_eq!(app.party[0].motion.action, expected);
 }
 
+/// The stance to toggle into comes from the first selected unit, not from each unit's own stance.
 #[test]
 fn tab_stance_direction_comes_from_first_selected_unit() {
     let Some(mut app) = build_party_move_app() else {
@@ -376,6 +390,7 @@ fn tab_stance_direction_comes_from_first_selected_unit() {
     );
 }
 
+/// Death rows (3/9) are skipped by `FUN_00421554` while a living selected leader still toggles.
 #[test]
 fn tab_skips_dead_companions() {
     let Some(mut app) = build_party_move_app() else {

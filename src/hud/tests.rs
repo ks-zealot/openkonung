@@ -4,15 +4,18 @@ use super::*;
 use crate::res::Image;
 use std::rc::Rc;
 
+/// Solid-colour RGBA sprite of `w` x `h` px, as the INTR resolver would return.
 fn solid(w: usize, h: usize, c: [u8; 4]) -> Img {
     Rc::new(Image::new(w, h, c))
 }
 
+/// Read one RGBA pixel out of a packed `fw`-wide framebuffer.
 fn px(frame: &[u8], fw: usize, x: usize, y: usize) -> [u8; 4] {
     let i = (y * fw + x) * 4;
     [frame[i], frame[i + 1], frame[i + 2], frame[i + 3]]
 }
 
+/// The original slot step is always `slot_width - 1`, never the width.
 #[test]
 fn slot_step_is_width_minus_one() {
     assert_eq!(slot_step(70), 69);
@@ -20,6 +23,8 @@ fn slot_step_is_width_minus_one() {
     assert_eq!(slot_step(1), 0);
 }
 
+/// The 800x600 layout reproduces the recovered globals: strip 140..800 at
+/// y 486, 9 slots from x 159 stepped by 69, caps at 139/780.
 #[test]
 fn layout_800_matches_executable_constants() {
     let l = layout_800();
@@ -34,6 +39,8 @@ fn layout_800_matches_executable_constants() {
     assert_eq!(l.arrows, [(18, 139, 486), (20, 780, 486)]);
 }
 
+/// The 640x480 layout reproduces the recovered globals: strip 112..640 at
+/// y 375, 7 slots from x 134, caps at 111/620.
 #[test]
 fn layout_640_matches_executable_constants() {
     let l = layout_640();
@@ -47,6 +54,7 @@ fn layout_640_matches_executable_constants() {
     assert_eq!(l.arrows, [(18, 111, 375), (20, 620, 375)]);
 }
 
+/// Any width at or below 640 selects the 640 variant; wider picks 800.
 #[test]
 fn layout_selects_variant_by_logical_width() {
     assert_eq!(layout(800).logical_w, 800);
@@ -54,6 +62,8 @@ fn layout_selects_variant_by_logical_width() {
     assert_eq!(layout(400).logical_w, 640);
 }
 
+/// Every visible slot is a 70x70 cell on the strip row, stepped by 69, and
+/// stays inside the inventory region.
 #[test]
 fn inventory_slots_are_within_region_and_step_spaced() {
     for l in [layout_800(), layout_640()] {
@@ -77,6 +87,8 @@ fn inventory_slots_are_within_region_and_step_spaced() {
     }
 }
 
+/// The party panel is 2 columns x 5 rows, row-major, entirely inside the left
+/// panel (left of the inventory strip).
 #[test]
 fn party_grid_is_two_by_five() {
     for l in [layout_800(), layout_640()] {
@@ -100,6 +112,8 @@ fn party_grid_is_two_by_five() {
     }
 }
 
+/// The verified reference cases resolve to 240 for the hero and 245 for an
+/// ordinary party member.
 #[test]
 fn portrait_id_reference_cases() {
     // appearance/status = 0x05, portrait_group = 1, health = 1600.
@@ -107,6 +121,8 @@ fn portrait_id_reference_cases() {
     assert_eq!(portrait_id(false, 1, 0x05, 1600), 245);
 }
 
+/// Health tiers 400/800/1200 pick variants 3/2/1, above that variant 0, and the
+/// `0x80` condition flag forces variant 4 regardless of health.
 #[test]
 fn portrait_id_health_thresholds() {
     // Main hero, group 0 => base 215.
@@ -120,6 +136,8 @@ fn portrait_id_health_thresholds() {
     assert_eq!(portrait_id(false, 0, 0x07, 1600), 195 + 35);
 }
 
+/// Over every portrait group, appearance and health tier the selector stays
+/// inside the 195..=269 window of the INTR portrait block.
 #[test]
 fn portrait_ids_stay_in_reference_range() {
     // Three portrait groups (0..=2), five appearances (0..=4, the low 3 bits
@@ -142,6 +160,8 @@ fn portrait_ids_stay_in_reference_range() {
     }
 }
 
+/// A transparent HUD pixel leaves the world pixel behind it untouched while an
+/// opaque one overwrites it.
 #[test]
 fn compose_preserves_world_through_transparent_pixels() {
     let fw = 8;
@@ -203,6 +223,7 @@ fn compose_preserves_world_through_transparent_pixels() {
     assert_eq!(px(&frame, fw, 0, 1), [255, 0, 0, 255]);
 }
 
+/// Sprites larger than the framebuffer are clipped instead of panicking.
 #[test]
 fn compose_clips_out_of_bounds_without_panic() {
     let fw = 4;
@@ -257,6 +278,8 @@ fn compose_clips_out_of_bounds_without_panic() {
     assert_eq!(px(&frame, fw, 3, 3), [1, 2, 3, 255]);
 }
 
+/// The bottom-bar text area keeps the recovered origins: (140,555,660,45) at
+/// 800 and (112,444,528,36) at 640.
 #[test]
 fn layout_has_inventory_bar_text_area() {
     let l800 = layout_800();
@@ -281,12 +304,16 @@ fn layout_has_inventory_bar_text_area() {
     );
 }
 
+/// The AUTO button keeps the traced positions (644,379) at 800 and (515,303)
+/// at 640.
 #[test]
 fn auto_button_position_matches_traced_table() {
     assert_eq!(layout_800().auto_pos, (644, 379));
     assert_eq!(layout_640().auto_pos, (515, 303));
 }
 
+/// A cell 70x70 sits at the layout origin, steps by 69, and slot 9 is out of
+/// range at 800x600 (9 slots, 0..=8).
 #[test]
 fn inventory_slot_rect_bounds() {
     let l = layout_800();
@@ -296,6 +323,8 @@ fn inventory_slot_rect_bounds() {
     assert!(l.inventory_slot_rect(9, 70).is_none());
 }
 
+/// The strip end caps sit at `left-1` and `right - 20 + 1` on the slot row,
+/// with `INTR[18]` left and `INTR[20]` right at scroll 0.
 #[test]
 fn arrow_caps_match_the_original_strip_renderer() {
     // Left cap at left-1; right cap at right - arrow_w(20) + 1; both at the
@@ -308,6 +337,8 @@ fn arrow_caps_match_the_original_strip_renderer() {
     assert_eq!(l.arrows[1], (20, 620, 375));
 }
 
+/// An item icon is centered in its own visible cell and an occupied-only cell
+/// stays empty.
 #[test]
 fn item_icons_are_centered_in_their_slots() {
     let fw = 800;
@@ -353,6 +384,8 @@ fn item_icons_are_centered_in_their_slots() {
     assert_eq!(px(&frame, fw, cx6, cy6), [0, 0, 0, 0]);
 }
 
+/// Composing the same state twice yields identical frames, i.e. no pass depends
+/// on leftover framebuffer contents.
 #[test]
 fn compose_is_idempotent() {
     let fw = 32;
@@ -377,6 +410,7 @@ fn compose_is_idempotent() {
     assert_eq!(a, b);
 }
 
+/// Slot 0's portrait is blitted at the `0x45AF10` origin (3,1) at 640x480.
 #[test]
 fn portraits_use_recovered_origin_table() {
     let fw = 200;
@@ -407,6 +441,8 @@ fn portraits_use_recovered_origin_table() {
     assert_eq!(px(&frame, fw, ox as usize, oy as usize), [222, 0, 0, 255]);
 }
 
+/// Poison always wins, the tier borders are 400/800, and the fill height is
+/// `health * H / 1600` with a 1 px minimum.
 #[test]
 fn hp_bar_thresholds_and_fill() {
     // Poison wins regardless of tier.
@@ -426,6 +462,7 @@ fn hp_bar_thresholds_and_fill() {
     assert_eq!(hp_fill(1600, 32), 32);
 }
 
+/// The selection marker is drawn only for a selected member.
 #[test]
 fn selection_marker_drawn_only_when_selected() {
     let fw = 80;
@@ -460,6 +497,8 @@ fn selection_marker_drawn_only_when_selected() {
     assert_eq!(px(&off, fw, ox as usize, oy as usize), [0, 0, 0, 0]);
 }
 
+/// The HP indicator keeps only the bottom `fill` rows of the fill sprite, and a
+/// dead member (health 0) gets no bar at all.
 #[test]
 fn hp_bar_shows_only_bottom_fill_rows() {
     let fw = 120;
@@ -504,6 +543,7 @@ fn hp_bar_shows_only_bottom_fill_rows() {
     assert_eq!(px(&dead, fw, bx, by + 31), [0, 0, 0, 0]);
 }
 
+/// Words are packed greedily up to the measured panel width before wrapping.
 #[test]
 fn hover_text_wraps_to_the_original_panel_width() {
     use super::compose::wrap_by_measure;
@@ -513,6 +553,8 @@ fn hover_text_wraps_to_the_original_panel_width() {
     assert_eq!(lines, vec!["aaa bbb", "ccc ddd"]);
 }
 
+/// A single word wider than the panel is hard-split at glyph boundaries, never
+/// overflowing the width.
 #[test]
 fn hover_text_hard_splits_a_word_wider_than_the_panel() {
     use super::compose::wrap_by_measure;
@@ -521,6 +563,8 @@ fn hover_text_hard_splits_a_word_wider_than_the_panel() {
     assert_eq!(lines, vec!["abc", "def", "gh"]);
 }
 
+/// The hover text origin and wrap width match `FUN_0042BD8C`: (150,560)/644 at
+/// 800x600 and (122,449)/512 at 640x480.
 #[test]
 fn hover_text_origin_matches_fun_0042bd8c() {
     let l = layout_800();

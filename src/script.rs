@@ -16,6 +16,14 @@
 //! used as a **predicate** (its boolean result is meaningful) or an **action**
 //! (side effect; the result is ignored by the action executor). Recovered from
 //! `konung.res` via REA (see `DIALOG_SYSTEM.md` §7).
+//!
+//! Wiring: programs come from [`crate::quest::QuestData::condition_program`]
+//! (`B4`) and [`crate::quest::QuestData::action_program`] (`B5`), both stopping
+//! at the `0xFFFF` terminator. `app/dialogue_exec.rs` evaluates `B4` with
+//! [`evaluate_condition`] while a page is built; `app/dialogue_ops.rs` decodes
+//! `B5` with [`action_steps`] and dispatches each step. Opcodes below
+//! [`OP_BASE`] are decoded by [`low_family`] into five strided range families
+//! instead of the table.
 
 /// First opcode dispatched through the `0x465BD4` pointer table.
 pub const OP_BASE: u16 = 0x112;
@@ -30,15 +38,30 @@ pub const TRADE_OP: u16 = 0x113;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LowFamily {
     /// `0x00..=0x37`: location `N = op+1` has an active object group.
-    GroupActive { location: u16 },
+    GroupActive {
+        /// Location id tested by the predicate (`op + 1`).
+        location: u16,
+    },
     /// `0x38..=0x6F`: location `N = op-0x37` has no live object-group member.
-    GroupNoLiveMember { location: u16 },
+    GroupNoLiveMember {
+        /// Location id tested by the predicate (`op - 0x37`).
+        location: u16,
+    },
     /// `0x70..=0xA5`: remove inventory item class `0x0B`, subtype `N = op-0x6F - 1`.
-    RemovePartyItem { subtype: u8 },
+    RemovePartyItem {
+        /// Class-`0x0B` special-item subtype (`op - 0x70`).
+        subtype: u8,
+    },
     /// `0xA6..=0xDB`: add inventory item class `0x0B`, subtype `N = op-0xA5 - 1`.
-    SpawnPartyItem { subtype: u8 },
+    SpawnPartyItem {
+        /// Class-`0x0B` special-item subtype (`op - 0xA6`).
+        subtype: u8,
+    },
     /// `0xDC..=0x111`: inventory contains class `0x0B`, subtype `N = op-0xDB - 1`.
-    HasPartyItem { subtype: u8 },
+    HasPartyItem {
+        /// Class-`0x0B` special-item subtype (`op - 0xDC`).
+        subtype: u8,
+    },
 }
 
 /// Decode a low-family opcode into its parameterized operation.
@@ -82,9 +105,11 @@ pub enum OpKind {
 /// One recovered script opcode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ScriptOp {
+    /// Opcode id (`0x112..=0x16E`), the low 9 operand bits of a `0x2000` word.
     pub op: u16,
     /// Handler virtual address in `konung.res`.
     pub handler: u32,
+    /// Whether the boolean result matters or only the side effect does.
     pub kind: OpKind,
     /// Short recovered effect description.
     pub effect: &'static str,
@@ -738,6 +763,8 @@ pub fn action_steps(words: &[u16]) -> Vec<ActionStep> {
 mod tests {
     use super::*;
 
+    /// The catalogue is a dense `OP_BASE..=OP_LAST` table with no holes and no
+    /// handler below the `konung.res` code base.
     #[test]
     fn table_is_contiguous_and_complete() {
         assert_eq!(OPS.len(), (OP_LAST - OP_BASE + 1) as usize);
@@ -751,6 +778,7 @@ mod tests {
         }
     }
 
+    /// `0x113` is the trade opcode and resolves to `FUN_00431E2C` as an action.
     #[test]
     fn trade_op_is_0x113() {
         let t = script_op(TRADE_OP).unwrap();
@@ -759,6 +787,7 @@ mod tests {
         assert!(t.effect.contains("trade"));
     }
 
+    /// Only `OP_BASE..=OP_LAST` resolve; the ids just outside return `None`.
     #[test]
     fn lookup_bounds() {
         assert!(script_op(OP_BASE).is_some());
@@ -767,6 +796,7 @@ mod tests {
         assert!(script_op(0xFFFF).is_none());
     }
 
+    /// `0x4000` terms AND with short circuit, and `0x8000` inverts a `B7` term.
     #[test]
     fn condition_programs_are_short_circuit_and() {
         use crate::quest::{OP_FLAG_GROUP, OP_FLAG_NEGATE, OP_FLAG_SCRIPT};
@@ -793,6 +823,8 @@ mod tests {
         assert!(!evaluate_condition(&neg, |i| i == 207, |_| false));
     }
 
+    /// Every low family boundary decodes to its first parameter value and the
+    /// high table is excluded from [`low_family`].
     #[test]
     fn all_recognized_ranges_decode() {
         assert!(op_supported(0x00));
@@ -849,6 +881,8 @@ mod tests {
         }
     }
 
+    /// A `0x2000` word becomes an opcode step, `0x8000` sets a flag and a bare
+    /// word clears one, in program order.
     #[test]
     fn action_steps_decode_flags_and_ops() {
         use crate::quest::OP_FLAG_NEGATE;

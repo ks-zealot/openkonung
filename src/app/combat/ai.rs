@@ -18,6 +18,10 @@ use crate::combat::CombatTarget;
 use crate::constants::combat::OBJECT_ARCHETYPE_BIT;
 use crate::population::{GameTables, Rect};
 
+/// Inclusive rectangle-A test over raw runtime cells.
+///
+/// The original compares the live cell against the group rectangle bounds
+/// directly, so a member exactly on `x2`/`y2` is inside.
 fn rect_contains(rect: &crate::population::Rect, x: i32, y: i32) -> bool {
     x >= rect.x1 as i32 && x <= rect.x2 as i32 && y >= rect.y1 as i32 && y <= rect.y2 as i32
 }
@@ -408,6 +412,11 @@ impl PlayableApp {
         world.res.item_db.as_ref().map(|db| db.probe_range(subtype))
     }
 
+    /// `FUN_0041FF68` shared branch: the first available enemy that some group
+    /// member already targets.
+    ///
+    /// `engaged` holds the targets of the group's own members, so the group
+    /// focuses its attacks instead of splitting over every candidate.
     fn shared_target(
         engaged: &HashSet<CombatTarget>,
         enemies: &[EnemyRef],
@@ -418,6 +427,8 @@ impl PlayableApp {
             .map(|e| e.target)
     }
 
+    /// `FUN_00420098` plain nearest: the enemy at the smallest
+    /// `FUN_0043881C` distance from `cell`.
     fn nearest_enemy(cell: (i32, i32), enemies: &[EnemyRef]) -> Option<CombatTarget> {
         enemies
             .iter()
@@ -425,6 +436,8 @@ impl PlayableApp {
             .map(|e| e.target)
     }
 
+    /// `FUN_00420190` nearest-unengaged: the smallest-distance enemy that no
+    /// group member has targeted yet.
     fn nearest_unengaged(
         cell: (i32, i32),
         enemies: &[EnemyRef],
@@ -437,6 +450,11 @@ impl PlayableApp {
             .map(|e| e.target)
     }
 
+    /// `FUN_00412E00` adjacent branch (archetypes `0x44`/`0x57`): the enemy
+    /// standing on one of the eight neighbouring cells of `cell`.
+    ///
+    /// Returns `None` when no adjacent cell holds an enemy, which leaves the
+    /// unit without a target for this pass.
     fn adjacent_enemy(cell: (i32, i32), enemies: &[EnemyRef]) -> Option<CombatTarget> {
         for (_, nx, ny) in crate::coords::neighbors(cell.0, cell.1) {
             if let Some(e) = enemies.iter().find(|e| e.cell == (nx, ny)) {
@@ -446,6 +464,13 @@ impl PlayableApp {
         None
     }
 
+    /// Activity `0x20` recall: walk every stray group member back into
+    /// rectangle A.
+    ///
+    /// The goal is the member's cell clamped into the rectangle, so it never aims
+    /// past the bound. A reversed (invalid) authored rectangle is skipped instead
+    /// of being normalized. Walking members finish their current cycle; idle
+    /// ones start a route through `FUN_0043DA1F`.
     fn return_group_to_rect(
         pop: &mut PopulationBuild,
         collision: &[u16],

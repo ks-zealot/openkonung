@@ -73,6 +73,7 @@ pub fn description_for_region(region: usize) -> Option<&'static str> {
 mod tests {
     use super::*;
 
+    /// All twenty description records are present, non-empty and verbatim.
     #[test]
     fn all_twenty_records_are_present_and_non_empty() {
         assert_eq!(DESCRIPTIONS.len(), 20);
@@ -83,6 +84,8 @@ mod tests {
         assert!(DESCRIPTIONS[15].starts_with("Мастерство владения мечом"));
     }
 
+    /// Steppers `25..=32` normalise to stat rows `7..=10`; `20..=24` and `33+`
+    /// have no record, so the previous description stays on screen.
     #[test]
     fn hover_normalisation_matches_original() {
         for r in 0..=19 {

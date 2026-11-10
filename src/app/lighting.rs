@@ -17,10 +17,14 @@ use crate::render::WorldSprite;
 use crate::res::{TERRAIN_TILE_H, TERRAIN_TILE_W};
 
 impl PlayableApp {
+    /// Override the world frame counter that drives the `FUN_00428FE0` ambient
+    /// palette (diagnostics and the lighting smoke).
     pub fn set_world_frame(&mut self, frame: u64) {
         self.world_frame = frame;
     }
 
+    /// The world frame counter (`_DAT_0081D640` equivalent) last used by the
+    /// ambient pass.
     pub fn world_frame(&self) -> u64 {
         self.world_frame
     }
@@ -41,6 +45,20 @@ impl PlayableApp {
         })
     }
 
+    /// Apply ambient darkening, terrain light masks and the lit-sprite redraw.
+    ///
+    /// Three decisions of the original palette versions are reproduced:
+    ///
+    /// 1. every framebuffer pixel is shaded by the `FUN_00428FE0` ambient delta
+    ///    (skipped while the `light_effects` config word is off, neutral while
+    ///    `day_night` is off);
+    /// 2. a `LIGHTS.N` low-map cell with a non-zero id re-lights its terrain tile
+    ///    through the `LIGHTS.RES` 114x64 mask;
+    /// 3. a sprite whose cell has a non-zero high-map byte is redrawn with its
+    ///    unshaded colors over the result.
+    ///
+    /// `ox`/`oy` are the camera pan of the finished world so both passes land on
+    /// the same pixels.
     pub(super) fn apply_world_lighting(&mut self, sprites: &[WorldSprite], ox: i32, oy: i32) {
         let cfg = crate::config::config();
         if cfg.light_effects == 0 {

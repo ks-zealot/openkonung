@@ -13,6 +13,7 @@ const K4_TRIGGERS: [(i32, i32, i32, i32); 4] = [
 ];
 const K4_RECS: [usize; 4] = [10, 11, 12, 13];
 
+/// The four Konung.4 triggers bind one-to-one to the gates at their averaged grid centers.
 #[test]
 fn konung4_maps_each_trigger_to_its_gate() {
     let a = match_triggers_to_gates(&K4_TRIGGERS, &K4_RECS, &K4_GATES, MAX_GATE_TRIGGER_DIST);
@@ -20,6 +21,7 @@ fn konung4_maps_each_trigger_to_its_gate() {
     assert_eq!(a, vec![Some(3), Some(0), Some(1), Some(2)]);
 }
 
+/// The matcher minimises total distance globally instead of binding triggers in record order.
 #[test]
 fn global_matching_beats_greedy_rec_order() {
     // g0 near e1; e0 is nearer to g1 than greedy (rec order) would allow by
@@ -32,6 +34,7 @@ fn global_matching_beats_greedy_rec_order() {
     assert_eq!(a, vec![Some(1), Some(0)]);
 }
 
+/// A trigger farther than `MAX_GATE_TRIGGER_DIST` stays unbound.
 #[test]
 fn threshold_leaves_distant_trigger_unbound() {
     let gates = [(0.0, 0.0)];
@@ -43,6 +46,7 @@ fn threshold_leaves_distant_trigger_unbound() {
     );
 }
 
+/// `trigger_center` averages the two corners, so point and reversed rectangles still yield the middle.
 #[test]
 fn point_and_rectangular_trigger_centers() {
     assert_eq!(trigger_center(12, 5, 12, 5), [12.0, 5.0]);
@@ -50,6 +54,7 @@ fn point_and_rectangular_trigger_centers() {
     assert_eq!(trigger_center(14, 7, 12, 5), [13.0, 6.0]);
 }
 
+/// `dist_point_to_rect` is 0 inside the rectangle and the distance to the nearest corner outside.
 #[test]
 fn dist_point_to_rect_handles_points_and_ranges() {
     // Point trigger.
@@ -61,6 +66,7 @@ fn dist_point_to_rect_handles_points_and_ranges() {
     assert_eq!(dist_point_to_rect(0.0, 0.0, 14, 7, 12, 5), 13.0);
 }
 
+/// Equal-cost ties resolve by ascending `(rec, gate)`, so the result is deterministic.
 #[test]
 fn tie_break_is_deterministic_by_rec_then_gate() {
     // Two identical gates, two coincident triggers of equal cost: the winner

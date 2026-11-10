@@ -10,6 +10,12 @@
 //! (`draw_background` + dynamic sprites), so no full-map RGBA surface is
 //! allocated. `render_location_surface` is retained as the native/parity
 //! full-surface renderer used by `examples/dump.rs` and `tools/parity.py`.
+//!
+//! Draw order for one frame: [`draw_background`] blits the low terrain layer,
+//! then the high terrain layer, then every `GRAPH.RES` placement (each in its
+//! own coordinate domain); the caller then adds the depth-sorted props, actors,
+//! projectiles and ground markers on top. [`spans`] supplies the per-scanline
+//! run accumulator the ground-shadow pass uses before those sprites are blitted.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -22,20 +28,37 @@ use crate::res::{blit, Image, Img, Res, TERRAIN_TILE_H, TERRAIN_TILE_W};
 
 pub mod spans;
 
+/// The loaded resource bundle plus every decoded `Konung.N` map.
+///
+/// One `World` mirrors the original's resident state: the four resource images
+/// and all map files stay decoded for the whole session. [`World::into_loader_parts`]
+/// hands those buffers back so a New Game or game-over restart never needs the
+/// browser to re-upload anything.
 pub struct World {
+    /// The four original resource images with their decoders.
     pub res: Res,
+    /// Every decoded `Konung.N` location, in load order.
     pub locs: Vec<Location>,
+    /// `loc_id` -> index into `locs`, so a lookup never scans the vector.
     pub loc_index: HashMap<u32, usize>,
     /// Per-map `LIGHTS.N` data, attached by the game loader.
     pub light_maps: HashMap<u32, crate::res::LightMap>,
+    /// Rendered map thumbnails keyed by `(loc_id, width, height)`.
     thumb_cache: HashMap<(u32, i32, i32), Img>,
 }
 
 /// Counts of background layer tiles drawn in the last viewport pass.
+///
+/// The per-tile "is this cell on screen" test is the only culling the static
+/// pass does, so these counters are what the parity tooling compares against
+/// `examples/dump.rs`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LayerCounts {
+    /// Tiles drawn from the low byte of the `Konung.N` terrain record.
     pub terrain_low: usize,
+    /// Tiles drawn from the high (overlay) byte of the same record.
     pub terrain_high: usize,
+    /// `GRAPH.RES` placement tiles drawn after both terrain layers.
     pub graph: usize,
 }
 
@@ -44,10 +67,18 @@ pub struct LayerCounts {
 /// anchor used for depth sorting.
 #[derive(Clone)]
 pub struct WorldSprite {
+    /// Decoded RGBA sprite pixels.
     pub img: Img,
+    /// Resource-side x offset added to the projected anchor before blitting
+    /// (the sprite's own anchor inside its GRAPH frame).
     pub gx: i32,
+    /// Resource-side y offset, same role as `gx` for the row axis.
     pub gy: i32,
+    /// Projected local-world x of the anchor.
     pub lx: f64,
+    /// Projected local-world y (the baseline); the depth pass draws back to
+    /// front by this value, and a flame emitter is nudged by `+0.01` so it
+    /// sorts immediately in front of its prop.
     pub ly: f64,
     /// Ground-shadow source when this sprite is an actor (`FUN_0043C040`).
     /// `None` for props, flames and other non-actor layers.
@@ -56,19 +87,33 @@ pub struct WorldSprite {
 
 /// Everything `Res::add_actor_shadow` needs to resolve one actor's ground
 /// shadow (body frame + equipped-item overlays).
+///
+/// It is the subset of the `Entity` record that selects the GRAPH frame, so the
+/// shadow mask always matches the sprite that is about to be composited.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShadowKey {
+    /// `Entity+0x66` / `PlayerCharacter.equipment`: six item-instance ids
+    /// (`0` = empty slot).
     pub equipment: [u16; 6],
+    /// `Entity+0x12` active weapon slot (`0` axe, `1` bow, else sword) which
+    /// selects the "in hand" overlay variant.
     pub weapon_slot: u8,
+    /// `Entity+0x03 & 0x04`; selects `HUMAN_DRAW_ORDER_BATTLE_A/B`.
     pub battle: bool,
+    /// `Entity+0x04`; `& 0x40` selects the `Objects.res` (monster) family.
     pub archetype: u8,
+    /// `Entity+0xD6` human visual index inside the GRAPH block.
     pub visual_index: u8,
+    /// Animation row (`Entity+0x00`), `0..=9` on the human table.
     pub action: usize,
+    /// `Entity+0x01` direction, `0..=7`.
     pub facing: u8,
+    /// Frame index inside the current action row.
     pub frame: usize,
 }
 
 impl World {
+    /// Index the decoded maps by id and start with empty light/thumbnail caches.
     pub fn new(res: Res, locs: Vec<Location>) -> World {
         let loc_index = locs
             .iter()
@@ -84,19 +129,29 @@ impl World {
         }
     }
 
+    /// Decoded location for `loc_id`, or `None` when the map is not in the
+    /// loaded set (the original refuses to enter a missing `Konung.N`).
     pub fn loc(&self, loc_id: u32) -> Option<&Location> {
         self.loc_index.get(&loc_id).map(|&i| &self.locs[i])
     }
 
+    /// Mutable location access, used by the prop-flame tick and by the map
+    /// loader when a map's state changes in place.
     pub fn loc_mut(&mut self, loc_id: u32) -> Option<&mut Location> {
         let index = *self.loc_index.get(&loc_id)?;
         self.locs.get_mut(index)
     }
 
+    /// Parsed `LIGHTS.N` of `loc_id`, when the game loader attached its bytes.
     pub fn light_map(&self, loc_id: u32) -> Option<&crate::res::LightMap> {
         self.light_maps.get(&loc_id)
     }
 
+    /// Parse and store one map's `LIGHTS.N`.
+    ///
+    /// `crate::res::LightMap::parse` validates the 0x3200 low map and the
+    /// 0xC800 high map, so a malformed file returns `Err` and leaves any map
+    /// attached earlier for the same location in place.
     pub fn attach_light_map(&mut self, loc_id: u32, data: &[u8]) -> Result<(), String> {
         let map = crate::res::LightMap::parse(data)?;
         self.light_maps.insert(loc_id, map);
@@ -230,6 +285,13 @@ impl World {
         self.prop_hit_at(loc_id, lx, ly, true)
     }
 
+    /// Shared implementation of the two prop hit tests.
+    ///
+    /// Walks every placement, decodes its sprite (a malformed `Objects.res`
+    /// record is skipped rather than fatal), rejects transparent pixels, and
+    /// keeps the placement with the greatest projected baseline so the
+    /// front-most sprite wins. `interactive_only` additionally requires record
+    /// `+0x22 & 1` (`_DAT_0081D57C`).
     fn prop_hit_at(
         &mut self,
         loc_id: u32,
@@ -298,6 +360,11 @@ impl World {
         img.data[((py as usize * img.w + px as usize) * 4) + 3] != 0
     }
 
+    /// Cached whole-map thumbnail for `loc_id` at `w` x `h`.
+    ///
+    /// The surface is rendered once by [`render_thumbnail`] and cloned from the
+    /// cache afterwards; an unknown location yields a flat dark placeholder
+    /// image instead of `None`.
     pub fn thumbnail(&mut self, loc_id: u32, w: i32, h: i32) -> Img {
         if let Some(t) = self.thumb_cache.get(&(loc_id, w, h)) {
             return t.clone();
@@ -314,11 +381,17 @@ impl World {
         img
     }
 
+    /// Drop every cached thumbnail (used when the resource set is replaced).
     pub fn clear_caches(&mut self) {
         self.thumb_cache.clear();
     }
 }
 
+/// Conservative "might touch the frame" test for a `sw` x `sh` sprite whose
+/// top-left is `(sx, sy)`.
+///
+/// It accepts anything with a positive-area overlap against `fw` x `fh`; the
+/// blitter still clips precisely, so a false positive only costs a wasted blit.
 fn on_screen(sx: i32, sy: i32, sw: i32, sh: i32, fw: usize, fh: usize) -> bool {
     sx + sw > 0 && sy + sh > 0 && sx < fw as i32 && sy < fh as i32
 }

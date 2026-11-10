@@ -2,12 +2,24 @@
 
 use super::super::*;
 
+/// Return the install directory that holds the original game data files.
+///
+/// `CARGO_MANIFEST_DIR/..` - the crate lives in `web/`, while `Game.res`,
+/// `Game.N`, `Konung.N`, `konung.res` and `QUEST_R.RES` are one level up. Every
+/// fixture reads from here and returns `None` when a required file is missing.
 pub(super) fn install_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
 /// A minimal playable app (real `Game.res` + `CLIENT.EXE`; synthetic
 /// GRAPH/Objects) for input-routing tests. Gated on files being present.
+///
+/// `GRAPH.RES`/`Objects.res` are zeroed, so nothing can be drawn or decoded from
+/// them; the app therefore has no locations, no edges/pairs, no population
+/// tables and no settlements. It starts on map 1 at cell `(0, 0)` facing 5 with
+/// the player at full health (`hp_internal = 1600` = 100 displayed HP) and
+/// equipment slot 2 marked occupied by instance 1, which gives the weapon-cycle
+/// tests a single occupied slot to jump to.
 pub(super) fn build_test_app() -> Option<PlayableApp> {
     use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
     use crate::hero::hero;
@@ -47,6 +59,11 @@ pub(super) fn build_test_app() -> Option<PlayableApp> {
 /// A playable app with one synthetic, fully-free location so world clicks issue
 /// real routes (the plain `build_test_app` has no location, so every route is
 /// rejected). Player starts at `(100, 80)`.
+///
+/// The single location is id 1 with an all-zero `320x160` collision grid, no
+/// data/props/gates and bounds `(319, 159)`, so every cell is passable; the app
+/// keeps no population tables or settlements, starts on map 1 facing 0 and has
+/// no equipment.
 pub(super) fn build_movement_app() -> Option<PlayableApp> {
     use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
     use crate::hero::hero;
@@ -94,6 +111,9 @@ pub(super) fn build_movement_app() -> Option<PlayableApp> {
 }
 
 /// Screen coordinate of runtime cell `(cx, cy)` under the app's current pan.
+///
+/// Applies the verified `FUN_00438A78` projection (`entity_to_local_px_f`) and
+/// adds `detail_pan`, so a test can turn a grid cell into a pointer position.
 pub(super) fn cell_screen(app: &PlayableApp, cx: i32, cy: i32) -> (f64, f64) {
     let (lx, ly) = crate::coords::entity_to_local_px_f(cx as f64, cy as f64);
     (app.detail_pan[0] + lx, app.detail_pan[1] + ly)
@@ -102,6 +122,14 @@ pub(super) fn cell_screen(app: &PlayableApp, cx: i32, cy: i32) -> (f64, f64) {
 /// A playable app with the real `Game.1` tables and `QUEST_R.RES` (Dragomir's
 /// start map 4), so dialogue condition/action execution and recruitment can be
 /// exercised against the shipped data.
+///
+/// Loads `konung.res` (item templates + fonts), attaches `Game.1` as the active
+/// save game and parses its entity/group tables and settlements; the quest file
+/// is read as `Quest_r.res` first, then `QUEST_R.RES`, so the shipped spelling
+/// and the executable's literal name both resolve. `GRAPH.RES`/`Objects.res` stay
+/// zeroed, there is no decoded location (so routes are rejected until a fixture
+/// adds one), the start map is 4 at `(0, 0)` facing 5 and the player starts at
+/// full health with no gear.
 pub(super) fn build_party_app() -> Option<PlayableApp> {
     use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
     use crate::hero::hero;
@@ -150,6 +178,10 @@ pub(super) fn build_party_app() -> Option<PlayableApp> {
 /// A playable app with the real `Game.1` tables + `QUEST_R.RES` and one
 /// synthetic, fully-free location 4 (the start map), so population/AI tests
 /// can run the settlement's citizens.
+///
+/// The location is appended after the (empty) location list and registered in
+/// `world.loc_index`; its collision grid is all zero and it carries no props or
+/// gates, so the shipped citizens of location 4 spawn on a fully passable map.
 pub(super) fn build_party_app_with_free_location() -> Option<PlayableApp> {
     let mut app = build_party_app()?;
     use crate::loc::Location;
@@ -172,6 +204,10 @@ pub(super) fn build_party_app_with_free_location() -> Option<PlayableApp> {
 /// A party app with the real `Game.1` tables + `QUEST_R.RES` and one synthetic,
 /// fully-free location (id `1`), so a world click issues real routes to the
 /// leader and its selected companions. Player starts at `(100, 80)`.
+///
+/// Same resource/tables setup as `build_party_app`, but the location list holds
+/// the free location 1 as its only entry, the start map is 1 facing 0, and the
+/// zeroed collision grid makes every ordered route reachable.
 pub(super) fn build_party_move_app() -> Option<PlayableApp> {
     use crate::character::{CharacterBuild, CharacterClass, PlayerCharacter};
     use crate::hero::hero;

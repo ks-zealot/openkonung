@@ -22,6 +22,7 @@ fn record(w: u16, h: u16, rows: &[Vec<u8>]) -> Vec<u8> {
     out
 }
 
+/// A 1x1 record parses and its RGB555 literal expands to opaque red.
 #[test]
 fn header_and_single_pixel() {
     // 1x1 opaque red (RGB555 0x7C00).
@@ -33,6 +34,7 @@ fn header_and_single_pixel() {
     assert_eq!(&im.rgba, &[255, 0, 0, 255]);
 }
 
+/// A transparent run advances the column without writing any pixel.
 #[test]
 fn transparent_run_advances_without_pixels() {
     // 4x1: two transparent then two literal.
@@ -46,6 +48,7 @@ fn transparent_run_advances_without_pixels() {
     assert_eq!(&im.rgba[12..16], &[0, 255, 0, 255]);
 }
 
+/// The `0x00` token ends a row, so each row decodes independently.
 #[test]
 fn eol_ends_row() {
     // 2x2, each row one literal then EOL.
@@ -65,6 +68,8 @@ fn eol_ends_row() {
     assert_eq!(&im.rgba[row2 + 4..row2 + 8], &[255, 0, 0, 255]);
 }
 
+/// Records are concatenated back-to-back and parsing runs to EOF, keeping file
+/// order.
 #[test]
 fn multiple_records_reach_eof() {
     let a = record(1, 1, &[vec![0x00]]);
@@ -76,6 +81,7 @@ fn multiple_records_reach_eof() {
     assert_eq!((r.images[0].width, r.images[1].width), (1, 2));
 }
 
+/// A literal run wider than the image is rejected with a width diagnostic.
 #[test]
 fn rejects_literal_run_beyond_width() {
     // width 1, literal run of 2.
@@ -84,6 +90,7 @@ fn rejects_literal_run_beyond_width() {
     assert!(e.message.contains("exceeds image width"), "{e}");
 }
 
+/// A transparent run wider than the image is rejected.
 #[test]
 fn rejects_transparent_run_beyond_width() {
     let data = record(1, 1, &[vec![0x82, 0x00]]);
@@ -91,6 +98,8 @@ fn rejects_transparent_run_beyond_width() {
     assert!(e.message.contains("transparent run"), "{e}");
 }
 
+/// A literal token that claims more RGB555 bytes than the row holds is
+/// rejected.
 #[test]
 fn rejects_missing_rgb555_bytes() {
     // token claims 2 pixels but only one is present.
@@ -99,6 +108,7 @@ fn rejects_missing_rgb555_bytes() {
     assert!(e.message.contains("RGB555 bytes"), "{e}");
 }
 
+/// A row without its `0x00` end-of-row token is rejected.
 #[test]
 fn rejects_missing_eol() {
     // One white pixel (0x7FFF -> bytes FF 7F, no 0x00) and no EOL token.
@@ -106,6 +116,7 @@ fn rejects_missing_eol() {
     assert!(e.message.contains("end-of-row"), "{e}");
 }
 
+/// A record whose magic is not `00 00 00 05` is rejected.
 #[test]
 fn rejects_bad_magic() {
     let mut data = record(1, 1, &[vec![0x00]]);
@@ -114,6 +125,8 @@ fn rejects_bad_magic() {
     assert!(e.message.contains("bad magic"), "{e}");
 }
 
+/// A payload cut short of its declared size is rejected instead of decoding
+/// partial rows.
 #[test]
 fn rejects_truncated_payload() {
     let mut data = record(4, 1, &[vec![0x81, 0x01, 0x00, 0x7C, 0x00]]);
@@ -125,6 +138,7 @@ fn rejects_truncated_payload() {
     );
 }
 
+/// Directory holding the original shipped game files.
 fn install_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
@@ -145,6 +159,8 @@ fn menu640_real_resource() {
     assert_eq!(res.images[0].rgba.len(), 640 * 480 * 4);
 }
 
+/// The 640-wide `NEWH640R.RES` yields 13 images with the documented background
+/// and stone-tile sizes.
 #[test]
 fn newh640_real_resource() {
     let path = install_dir().join("NEWH640R.RES");
@@ -159,6 +175,8 @@ fn newh640_real_resource() {
     assert_eq!((res.images[3].width, res.images[3].height), (56, 65));
 }
 
+/// The 800-wide MENU and NEWH variants yield 15 and 13 images with an 800x600
+/// background.
 #[test]
 fn menu800_and_newh800_real_resource() {
     for (name, count) in [("MENU800R.RES", 15usize), ("NEWH800R.RES", 13usize)] {
@@ -174,6 +192,7 @@ fn menu800_and_newh800_real_resource() {
     }
 }
 
+/// RGB555 expansion replicates the high bits so channel maxima are exactly 255.
 #[test]
 fn rgb555_expansion_matches_expected() {
     assert_eq!(rgb555_to_rgba(0x7C00), [255, 0, 0, 255]);

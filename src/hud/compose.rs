@@ -1,4 +1,20 @@
 //! `compose` subsystem of [`crate::hud`] (split from `hud.rs`).
+//!
+//! [`compose()`] is a single back-to-front pass that reproduces the original
+//! `FUN_0042CA44` frame order:
+//!
+//! 1. `INTR[3]` whole-screen overlay at `(0,0)` (party panel + bottom bar are
+//!    baked into that sprite);
+//! 2. the seven-icon strip `0x81CF68[0..7]`, with the pressed icon shifted up
+//!    2 px;
+//! 3. the two scroll-arrow end caps `INTR[18]`/`INTR[20]`;
+//! 4. the empty slot backgrounds `INTR[17]` stepped by `slot_width - 1`;
+//! 5. one item icon per visible cell, centered in the cell;
+//! 6. the AUTO button `INTR[169]`/`INTR[170]`;
+//! 7. each party portrait, followed by the selection marker `INTR[173]` and the
+//!    HP indicator fill 174..=177.
+//!
+//! Everything that is not the overlay itself is placed from [`HudLayout`].
 
 use super::*;
 
@@ -56,7 +72,9 @@ pub fn hp_fill(health: u16, bar_h: i32) -> i32 {
 /// original selection marker (`FUN_00411708`) and HP indicator.
 #[derive(Clone, Copy, Debug)]
 pub struct PartyPortrait {
+    /// Flat party slot `0..=9`, indexing the per-slot origin table `0x45AF10`.
     pub cell: usize,
+    /// `INTR` portrait index chosen by [`portrait_id`] (`200..=274`).
     pub intr_id: usize,
     /// Member is in the 10-slot selection set (`FUN_00411708`).
     pub selected: bool,
@@ -69,7 +87,9 @@ pub struct PartyPortrait {
 /// One resolved visible inventory cell: `(visible slot index, INTR icon id)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ItemIcon {
+    /// Visible cell index `0..visible_slots` (already offset by the scroll page).
     pub slot: usize,
+    /// `INTR` icon index from the item template (`ItemInfo::icon`).
     pub icon: usize,
     /// Class-12 stack quantity (shown as a small badge); `None` for non-stacks.
     pub count: Option<u32>,
@@ -80,7 +100,9 @@ pub struct ItemIcon {
 /// is a per-frame view of it and never re-parses or re-initializes anything.
 #[derive(Clone, Debug, Default)]
 pub struct HudState {
+    /// Party portraits to overlay, in party-slot order.
     pub party: Vec<PartyPortrait>,
+    /// Item icons visible at the current scroll offset, in cell order.
     pub items: Vec<ItemIcon>,
     /// AUTO button `(intr_id, x, y)` to overlay, if any.
     pub auto: Option<(usize, i32, i32)>,

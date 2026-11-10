@@ -12,6 +12,18 @@
 //! same [`crate::Loader`] the raw path fills, so every downstream decoder is
 //! unchanged.
 //!
+//! Archive layout (`openkonung.pack.zip`):
+//!
+//! ```text
+//! bundle.bin          bincode(ResourcePack); DEFLATE
+//! pack.json           human-readable index written by the packer; STORE
+//! manifest.raw.json   verbatim copy of the input raw manifest; STORE
+//! ```
+//!
+//! `bundle.bin` is the only entry the wasm reader ever asks for; the other two
+//! exist so a later build can regenerate the manifest without reopening the
+//! original `.res`/`.exe` files.
+//!
 //! Packing is performed by the native-only `examples/pack.rs` target, which is
 //! never compiled into the wasm module. If the archive is absent, unreadable or
 //! invalid, the shell falls back to the original per-file downloads.
@@ -24,6 +36,9 @@ use serde::{Deserialize, Serialize};
 pub mod zip;
 
 /// Archive format version. Bump when the serialized layout changes.
+///
+/// Version 3 is the current layout: the same resource/profile/map/music lists
+/// plus the transcoded `videos` list.
 pub const PACK_FORMAT: u32 = 3;
 
 /// ZIP entry holding the serialized [`ResourcePack`].
@@ -43,30 +58,44 @@ pub const MAX_BUNDLE_BYTES: usize = 384 * 1024 * 1024;
 /// One named resource blob, tagged with the existing `KIND_*` ABI selector.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NamedBlob {
+    /// Original install filename (for example `"GRAPH.RES"`); diagnostics only.
     pub name: String,
+    /// `KIND_*` selector used by the `load_*` ABI (`0` = Game.res, `1` = GRAPH,
+    /// .., `16` = LIGHTS.RES).
     pub kind: u32,
+    /// Verbatim original file bytes; never transformed or re-encoded.
     pub bytes: Vec<u8>,
 }
 
 /// One `Game.N` profile (`id` = suffix) or `Konung.N` map (`id` = location).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdBlob {
+    /// Profile suffix (`0..=2`) or Konung location id.
     pub id: u32,
+    /// Original filename the bytes came from.
     pub name: String,
+    /// Verbatim original file bytes.
     pub bytes: Vec<u8>,
 }
 
 /// One background-music track (Ogg Vorbis bytes).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MusicBlob {
+    /// Path from the manifest's `music` list (for example `"music/track02.ogg"`);
+    /// the shell uses it to name the Blob URL.
     pub name: String,
+    /// Verbatim Ogg Vorbis file bytes, played from a `Blob` URL by the shell.
     pub bytes: Vec<u8>,
 }
 
 /// One browser-playable movie (transcoded H.264/AAC MP4 bytes).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VideoBlob {
+    /// Movie id: the manifest `videos` object key, which is the base name the
+    /// runtime queues (for example `"POSTER"`, `"DEFEAT4"`).
     pub name: String,
+    /// Transcoded MP4 bytes; the original `.flm` RIFF/Indeo files cannot be
+    /// decoded by a browser.
     pub bytes: Vec<u8>,
 }
 
@@ -77,24 +106,35 @@ pub struct VideoBlob {
 /// loader does not consume it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourcePack {
+    /// Serialized layout version; must equal [`PACK_FORMAT`].
     pub format: u32,
+    /// Content id computed by [`ResourcePack::compute_build`].
     pub build: String,
+    /// Logical key -> original filename, diagnostics only.
     pub source: BTreeMap<String, String>,
+    /// One blob per `KIND_*` selector; each kind appears at most once.
     pub resources: Vec<NamedBlob>,
+    /// The three starting `Game.0/1/2` saves, by suffix.
     pub profiles: Vec<IdBlob>,
+    /// The 43 `Konung.N` maps, keyed by location id.
     pub konungs: Vec<IdBlob>,
+    /// `LIGHTS.N` light maps, keyed by location id.
     pub light_maps: Vec<IdBlob>,
+    /// Background-music tracks.
     pub music: Vec<MusicBlob>,
+    /// Transcoded movies.
     pub videos: Vec<VideoBlob>,
 }
 
 /// A rejected or unreadable pack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackError {
+    /// Human-readable reason; the shell logs it before using the raw fallback.
     pub message: String,
 }
 
 impl PackError {
+    /// Wrap a reason string; no prefix is added here (see `Display`).
     pub fn new(message: impl Into<String>) -> Self {
         PackError {
             message: message.into(),
@@ -103,6 +143,7 @@ impl PackError {
 }
 
 impl fmt::Display for PackError {
+    /// Print the reason behind the `resource pack: ` prefix.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "resource pack: {}", self.message)
     }
@@ -111,12 +152,14 @@ impl fmt::Display for PackError {
 impl std::error::Error for PackError {}
 
 impl From<bincode::Error> for PackError {
+    /// Convert a `bincode` decode/encode failure into a pack rejection.
     fn from(e: bincode::Error) -> Self {
         PackError::new(e.to_string())
     }
 }
 
 impl From<std::io::Error> for PackError {
+    /// Convert an I/O failure (native packer only) into a pack rejection.
     fn from(e: std::io::Error) -> Self {
         PackError::new(e.to_string())
     }
@@ -125,8 +168,11 @@ impl From<std::io::Error> for PackError {
 /// Result of a successful [`ResourcePack::apply`]: metadata the shell needs
 /// plus the music payloads (the Rust runtime itself does not play audio).
 pub struct AppliedPack {
+    /// Content id stored in the archive.
     pub build: String,
+    /// Tracks the shell exposes as Blob URLs.
     pub music: Vec<MusicBlob>,
+    /// Movies the shell plays in its modal `<video>` overlay.
     pub videos: Vec<VideoBlob>,
 }
 
@@ -366,22 +412,28 @@ impl ResourcePack {
 struct Fnv(u64);
 
 impl Fnv {
+    /// Start from the FNV-1a 64-bit offset basis.
     fn new() -> Self {
         Fnv(0xcbf2_9ce4_8422_2325)
     }
+    /// Fold raw bytes into the hash (one XOR+multiply per byte).
     fn write_bytes(&mut self, bytes: &[u8]) {
         for &b in bytes {
             self.0 ^= b as u64;
             self.0 = self.0.wrapping_mul(0x100_0000_01b3);
         }
     }
+    /// Fold a length-prefixed UTF-8 string so `("ab","c")` cannot collide with
+    /// `("a","bc")`.
     fn write_str(&mut self, s: &str) {
         self.write_u32(s.len() as u32);
         self.write_bytes(s.as_bytes());
     }
+    /// Fold a little-endian `u32` (kind/id fields).
     fn write_u32(&mut self, v: u32) {
         self.write_bytes(&v.to_le_bytes());
     }
+    /// The 64-bit digest; [`ResourcePack::compute_build`] keeps 48 bits of it.
     fn finish(&self) -> u64 {
         self.0
     }

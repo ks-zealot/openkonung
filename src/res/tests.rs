@@ -2,6 +2,8 @@
 
 use super::{human_frame_count, human_mapped_frame, Res};
 
+/// Frame lookup wraps at the row's GRAPH sequence count, so any frame index maps
+/// onto a valid id.
 #[test]
 fn human_frames_wrap_by_graph_sequence_count() {
     // Synthetic GRAPH block at position 0: action 0 / direction 0 has a
@@ -20,6 +22,7 @@ fn human_frames_wrap_by_graph_sequence_count() {
     assert_eq!(human_mapped_frame(&g, 0, 0, 0, 7), (9, 3)); // 7 % 3 == 1
 }
 
+/// A row with count `0` behaves as a single-frame sequence reading id `0`.
 #[test]
 fn zero_count_sequence_is_single_frame() {
     let g = vec![0u8; 0x200];
@@ -27,6 +30,8 @@ fn zero_count_sequence_is_single_frame() {
     assert_eq!(human_mapped_frame(&g, 0, 0, 0, 5), (0, 1));
 }
 
+/// A cursor block decodes 16-bit color literals and leaves skipped pixels
+/// transparent; a missing second block yields `None`.
 #[test]
 fn cursor_block_decodes_16bit_color_and_transparency() {
     // One cursor block at 0x20000: `[u32 type][u32 size][u16 w][u16 h]
@@ -55,6 +60,8 @@ fn cursor_block_decodes_16bit_color_and_transparency() {
     );
 }
 
+/// All ten human action rows address their own GRAPH slice; the peaceful rows
+/// `6`/`7` must not alias the battle rows `0`/`1`.
 #[test]
 fn human_action_rows_do_not_fold_modulo_six() {
     // Each of the 10 action rows must read its own table slice. Row 6/7
@@ -80,6 +87,7 @@ fn human_action_rows_do_not_fold_modulo_six() {
     );
 }
 
+/// Object actions `6..=11` alias rows `0..=5`.
 #[test]
 fn object_actions_six_to_eleven_alias_zero_to_five() {
     for a in 0..6usize {
@@ -88,6 +96,8 @@ fn object_actions_six_to_eleven_alias_zero_to_five() {
     }
 }
 
+/// The object anchor table is indexed by `(row, direction, frame_index)`, never
+/// by the animation frame id (the old bug made object animations jump).
 #[test]
 fn object_anchor_is_indexed_by_row_dir_frame_not_frame_id() {
     use super::objects::monster_anchor_offset;
@@ -181,6 +191,8 @@ fn monster_anchor_uses_row_dir_frame_index() {
     assert_eq!(res.monster_anchor(0, 1, 0, 0), expected);
 }
 
+/// The three draw-order tables match the original DGROUP arrays word for word
+/// (peace `0x4631FC`, battle A `0x462BFC`, battle B `0x462EFC`).
 #[test]
 fn battle_overlay_order_tables_match_original_dgroup() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -223,6 +235,9 @@ fn battle_overlay_order_tables_match_original_dgroup() {
     }
 }
 
+/// The action bucket and overlay plan reproduce `FUN_00427E9C`: peace has no
+/// variants, bow/`slot 1` picks order B, otherwise order A with the active and
+/// slot 5 variants.
 #[test]
 fn overlay_plan_matches_fun_00427e9c() {
     use super::{battle_overlay_bucket, overlay_plan};
@@ -255,6 +270,8 @@ fn overlay_plan_matches_fun_00427e9c() {
     assert!(!variant[1] && variant[5]);
 }
 
+/// In battle the active weapon slot selects the `equipped_visual + 1` "in hand"
+/// variant for both the world frame and the paper doll.
 #[test]
 fn battle_stance_uses_active_weapon_variant_and_paper_doll() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -297,6 +314,8 @@ fn battle_stance_uses_active_weapon_variant_and_paper_doll() {
     assert_ne!(doll.data, doll_no_variant.data);
 }
 
+/// Every peace/battle action and direction renders a paper doll with a
+/// substantial opaque body.
 #[test]
 fn paper_doll_peace_frame_is_nonempty() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -339,6 +358,8 @@ fn paper_doll_peace_frame_is_nonempty() {
     }
 }
 
+/// Prop flame descriptors come from the `+0x08` count and `+0x1C + i*5` records,
+/// and actor blocks (id < 30) report none.
 #[test]
 fn object_flame_descriptors_match_the_record() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");

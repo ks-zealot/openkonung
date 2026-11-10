@@ -86,8 +86,8 @@ pub struct TradeOutcome {
 /// One open exchange.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TradeState {
-    /// Settlement producer role (`1..=4`) of the partner; `0` for a plain NPC
-    /// dialogue trade.
+    /// Settlement waypoint role of the partner (`Settlement::role_of`): `2..=4`
+    /// are the stocked merchants; `0` is a plain NPC trading its own bag.
     pub role: u8,
     /// `_DAT_0081D63C`: positive selects the settlement price multiplier.
     pub role_sign: i32,

@@ -2,6 +2,8 @@
 
 use super::*;
 
+/// Write `v` as a little-endian `u32` at byte offset `o`, matching the archive's
+/// index encoding.
 fn put_u32(b: &mut [u8], o: usize, v: u32) {
     b[o..o + 4].copy_from_slice(&v.to_le_bytes());
 }
@@ -22,6 +24,8 @@ fn synth(frames: usize) -> Vec<u8> {
     b
 }
 
+/// A one-clip archive parses into the exact offset/size/frame values the index
+/// stores, and unused slots stay `None`.
 #[test]
 fn parses_synthetic_clip() {
     let a = SoundArchive::parse(&synth(100)).unwrap();
@@ -33,6 +37,8 @@ fn parses_synthetic_clip() {
     assert_eq!(a.entry(999), None);
 }
 
+/// Bad magic, a truncated file and an out-of-range block are all rejected
+/// rather than partially decoded.
 #[test]
 fn rejects_bad_magic_and_truncation() {
     let mut b = synth(10);
@@ -47,6 +53,8 @@ fn rejects_bad_magic_and_truncation() {
 }
 
 /// Shipped `SOUNDS.RES`, gated on file presence.
+/// The shipped archive yields the documented 391 clips, and every NPC voice id
+/// `0x0C..=0x13` is present and frame aligned.
 #[test]
 fn decodes_shipped_sounds() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");

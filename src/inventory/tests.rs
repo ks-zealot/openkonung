@@ -133,7 +133,7 @@ fn craft_produces_the_table_result_and_consumes_the_target() {
     assert!(res.item_quality(a).unwrap() <= 15.0);
 }
 
-/// An unknown pair produces «Непонятная смесь»: subtype 4, consumed target, no
+/// An unknown pair produces the default mix: subtype 4, consumed target, no
 /// skill gain.
 #[test]
 fn craft_unknown_mix_uses_subtype_four() {

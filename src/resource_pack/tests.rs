@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// A dummy blob for resource kind `kind`: eight repetitions of `byte`.
 fn named(kind: u32, name: &str, byte: u8) -> NamedBlob {
     NamedBlob {
         name: name.to_string(),
@@ -10,6 +11,8 @@ fn named(kind: u32, name: &str, byte: u8) -> NamedBlob {
     }
 }
 
+/// The smallest pack that passes [`ResourcePack::validate`]: every required
+/// `KIND_*`, all three profiles, one Konung map, one light map, one movie.
 fn minimal_pack() -> ResourcePack {
     ResourcePack {
         format: PACK_FORMAT,
@@ -69,6 +72,7 @@ fn minimal_pack() -> ResourcePack {
     }
 }
 
+/// A pack survives a bincode round trip unchanged, including its content id.
 #[test]
 fn roundtrips_through_bincode() {
     let mut pack = minimal_pack();
@@ -79,11 +83,13 @@ fn roundtrips_through_bincode() {
     assert_eq!(back.compute_build(), pack.build);
 }
 
+/// A complete pack validates with no required kind missing.
 #[test]
 fn validates_a_complete_pack() {
     minimal_pack().validate().unwrap();
 }
 
+/// Any `format` other than [`PACK_FORMAT`] is rejected before loading.
 #[test]
 fn rejects_wrong_format() {
     let mut pack = minimal_pack();
@@ -91,6 +97,7 @@ fn rejects_wrong_format() {
     assert!(pack.validate().is_err());
 }
 
+/// Dropping a core resource kind (`1` = GRAPH.RES) fails validation.
 #[test]
 fn rejects_missing_core_kind() {
     let mut pack = minimal_pack();
@@ -99,6 +106,7 @@ fn rejects_missing_core_kind() {
     assert!(e.message.contains("kind 1"), "{}", e.message);
 }
 
+/// Two blobs with the same `KIND_*` selector are rejected.
 #[test]
 fn rejects_duplicate_kind() {
     let mut pack = minimal_pack();
@@ -107,6 +115,7 @@ fn rejects_duplicate_kind() {
     assert!(e.message.contains("duplicate"), "{}", e.message);
 }
 
+/// All three `Game.0/1/2` profiles are mandatory.
 #[test]
 fn rejects_missing_profile() {
     let mut pack = minimal_pack();
@@ -115,6 +124,7 @@ fn rejects_missing_profile() {
     assert!(e.message.contains("Game.0/1/2"), "{}", e.message);
 }
 
+/// Flipping one resource byte changes the 12-hex-digit build id.
 #[test]
 fn build_id_is_content_sensitive() {
     let mut a = minimal_pack();

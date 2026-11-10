@@ -5,6 +5,10 @@ use super::common::*;
 use crate::inventory::INVENTORY_SLOTS;
 use crate::trade::{ROW_PARTNER, ROW_PLAYER};
 
+/// Build a rich party app with the real `Game.1` trade stocks and an empty bag.
+///
+/// Attaches `Game.1` to `Res`, parses the settlement trade rows and gives the
+/// leader 100000 gold so price checks never fail for lack of money.
 fn trade_app() -> Option<PlayableApp> {
     let mut app = build_party_app()?;
     let save = std::fs::read(install_dir().join("Game.1")).ok()?;
@@ -15,6 +19,7 @@ fn trade_app() -> Option<PlayableApp> {
     Some(app)
 }
 
+/// Borrow the first stock slot of `role` at the current location.
 fn stock_slot_mut(app: &mut PlayableApp, role: u8) -> Option<&mut u16> {
     let ti = app
         .settlement_trade
@@ -24,6 +29,7 @@ fn stock_slot_mut(app: &mut PlayableApp, role: u8) -> Option<&mut u16> {
     trade.stock_mut(role)?.first_mut()
 }
 
+/// Entities 278/279/280 resolve to the merchant/smith/voivode roles from the waypoint owners, and anyone else to 0.
 #[test]
 fn role_resolution_matches_settlement_waypoints() {
     let Some(app) = trade_app() else {
@@ -36,6 +42,7 @@ fn role_resolution_matches_settlement_waypoints() {
     assert_eq!(app.trade_role(420), 0);
 }
 
+/// Buying stock moves the item into the bag, charges money, clears the slot and reopens the exchange.
 #[test]
 fn buy_from_settlement_stock_deducts_money_and_clears_stock() {
     let Some(mut app) = trade_app() else {
@@ -65,6 +72,7 @@ fn buy_from_settlement_stock_deducts_money_and_clears_stock() {
     assert!(!role2.contains(&item));
 }
 
+/// Selling to a settlement merchant pays the player and destroys the sold instance (`class = 0xFF`).
 #[test]
 fn selling_destroys_the_item_for_a_settlement_merchant() {
     let Some(mut app) = trade_app() else {
@@ -85,6 +93,7 @@ fn selling_destroys_the_item_for_a_settlement_merchant() {
     assert_eq!(app.world.res.item_class(item), Some(0xFF));
 }
 
+/// Cancelling returns the offers to their rows and closes the window.
 #[test]
 fn cancel_returns_offers_and_closes_the_exchange() {
     let Some(mut app) = trade_app() else {
@@ -104,6 +113,7 @@ fn cancel_returns_offers_and_closes_the_exchange() {
     assert_eq!(app.player.inventory[0], item);
 }
 
+/// Dialogue record 2788 (op `0x113`) closes the dialogue and opens the trade window.
 #[test]
 fn npc_dialogue_trade_option_opens_the_exchange() {
     let Some(mut app) = trade_app() else {
@@ -128,6 +138,7 @@ fn npc_dialogue_trade_option_opens_the_exchange() {
     assert!(app.trade.is_some());
     assert!(app.dialog.is_none());
 }
+/// The settlement pass seeds role-2 herbs/potions and role-4 equipment.
 #[test]
 fn role2_and_role4_restock_produce_stock() {
     let Some(mut app) = trade_app() else {
@@ -157,6 +168,7 @@ fn role2_and_role4_restock_produce_stock() {
     );
 }
 
+/// Return the `settlement_trade` index matching the current location's settlement.
 fn settlement_ti(app: &PlayableApp) -> usize {
     let si = app
         .settlements
@@ -169,6 +181,7 @@ fn settlement_ti(app: &PlayableApp) -> usize {
         .expect("settlement trade")
 }
 
+/// Role 3 is never restocked but still buys from the player.
 #[test]
 fn role3_is_buy_only() {
     let Some(mut app) = trade_app() else {
@@ -197,6 +210,7 @@ fn role3_is_buy_only() {
     assert!(app.settlement_trade[ti].stock3.iter().all(|&id| id == 0));
 }
 
+/// A full role-4 stock moves onto a group member's ammo slot and empties the stock.
 #[test]
 fn role4_distributes_full_stock_to_a_group_member() {
     let Some(mut app) = trade_app() else {
@@ -222,6 +236,7 @@ fn role4_distributes_full_stock_to_a_group_member() {
     assert_eq!(special, item);
 }
 
+/// A higher-subtype restock replaces the member's equipment and destroys the old piece.
 #[test]
 fn role4_distribution_replaces_lower_subtype_gear() {
     let Some(mut app) = trade_app() else {

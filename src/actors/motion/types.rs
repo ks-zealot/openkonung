@@ -1,4 +1,13 @@
 //! Runtime actor motion state types.
+//!
+//! [`ActorMotion`] is the port of the original per-entity movement fields
+//! (`Entity+0x08/+0x0A` cell, `+0x01` facing, `+0x10` frame, `+0x13` direction
+//! queue, `+0xE8` draw cell). It is the only place runtime position lives;
+//! [`RuntimeActor::entity`] keeps the authored `Game.N` record untouched.
+//!
+//! The one non-obvious invariant: the committed cell **leads** the drawn sprite
+//! by one step. `cell` is advanced at the START of a walk segment
+//! (`FUN_0041435C`) while `render_cell` keeps the cell the segment started from.
 
 use super::super::*;
 
@@ -55,6 +64,8 @@ pub struct ActorMotion {
     pub attack_frames: u8,
     /// Ranged order (action row 4) for bow-armed actors.
     pub ranged_order: bool,
+    /// The bow has already released its arrow for the current attack cycle, so
+    /// the spawn frame cannot fire twice.
     pub ranged_fired: bool,
     /// Death-cycle length (`Res::action_cycle_frames` for the death row).
     pub death_frames: u8,
@@ -69,9 +80,13 @@ pub enum ActorPlacement {
     Persisted,
     /// Runtime-assigned position; the original Entity x/y remain `(0,0)`.
     Runtime {
+        /// Runtime grid column (`0..=319`).
         x: i32,
+        /// Runtime grid row (`0..=159`).
         y: i32,
+        /// Placement attempt that produced this cell (1-based, max 100).
         attempts: u8,
+        /// The group spawn rectangle A the point was drawn from.
         spawn_rect: Rect,
     },
 }
@@ -88,5 +103,6 @@ pub struct RuntimeActor {
     pub entity: Entity,
     /// The group index that enumerated this entity.
     pub source_group_id: usize,
+    /// Where the draw position comes from: authored x/y or a runtime spawn.
     pub placement: ActorPlacement,
 }

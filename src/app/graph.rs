@@ -1,8 +1,16 @@
-//! `graph` subsystem of [`crate::app`] (split from `app.rs`).
+//! `graph` subsystem of [`crate::app`]: the transition-graph viewer.
+//!
+//! A remake-only diagnostic screen (`H`/`Backspace`): it lays the loaded
+//! locations out from the `Game.N` layout block and draws one box per map plus
+//! the edges between them. It is not an original interface - the original only
+//! has the parchment world map (interface mode 5). Node boxes are recorded in
+//! `node_rects` so a left-click can jump straight to a location.
 
 use super::*;
 
 impl PlayableApp {
+    /// Graph-space node positions: normalised layout coordinates scaled to the
+    /// 330x235 virtual grid the old fixed viewer used.
     pub(super) fn graph_positions(&self) -> HashMap<u32, (f64, f64)> {
         self.layout
             .iter()
@@ -10,6 +18,11 @@ impl PlayableApp {
             .collect()
     }
 
+    /// Fit the whole graph into the screen and reset the pan.
+    ///
+    /// Zoom is clamped to `0.04..=1.0` (never magnify past 1:1, never shrink
+    /// into unreadable specks) and the pan centres the bounding box inside the
+    /// margins left for the header/bottom bar.
     pub(super) fn fit_graph(&mut self) {
         let pos = self.graph_positions();
         if pos.is_empty() {
@@ -44,6 +57,11 @@ impl PlayableApp {
         ];
     }
 
+    /// Draw one graph frame and repopulate `node_rects` for hit testing.
+    ///
+    /// Green lines are the bidirectional pairs present in all three shipped
+    /// starts, yellow pairs appear in some variants and red edges are one-way.
+    /// Thumbnails are skipped below zoom `0.42` so the screen stays legible.
     pub(super) fn draw_graph(&mut self) {
         self.texts.clear();
         let fw = VIRTUAL_W as usize;

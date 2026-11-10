@@ -6,11 +6,26 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file holds the [`CombatTarget`] accessor layer: one uniform read/write
+//! for the protagonist, a party slot, a world actor or a prop, so the rules and
+//! the unit passes never have to know where the live state is stored.
 
 use super::super::*;
 use crate::combat::{self, CombatStats, CombatTarget};
 
 impl PlayableApp {
+    /// Snapshot the combat-rule inputs for one [`CombatTarget`].
+    ///
+    /// The rules in [`crate::combat`] work on plain values, so each live
+    /// combatant is converted through [`CombatStats::from_player`] (protagonist)
+    /// or [`CombatStats::from_entity`] (party slot / world actor). Props are
+    /// static scenery and have no stats.
+    ///
+    /// # Returns
+    ///
+    /// `None` for props and for a world id that is not in the current map's
+    /// population cache.
     pub(super) fn combatant_stats(&self, t: CombatTarget) -> Option<CombatStats> {
         match t {
             CombatTarget::Player => Some(CombatStats::from_player(&self.player)),
@@ -25,6 +40,15 @@ impl PlayableApp {
         }
     }
 
+    /// Clone the authored `Game.N` entity record of a world actor.
+    ///
+    /// The population cache holds one canonical `Entity` per placed actor; the
+    /// combat passes read it through this accessor so a modifier never has to
+    /// borrow the whole population build.
+    ///
+    /// # Returns
+    ///
+    /// `None` when `id` is not part of the current map's built population.
     pub(super) fn combatant_entity(&self, id: usize) -> Option<crate::population::Entity> {
         self.population_cache
             .get(&self.current_map)?
@@ -34,6 +58,11 @@ impl PlayableApp {
             .map(|a| a.entity.clone())
     }
 
+    /// Runtime grid cell of the prop whose source index is `index`.
+    ///
+    /// A `Konung.N` prop record keeps its own id, which is what the entity and
+    /// trigger tables reference; the cell comes from the prop placement and is a
+    /// 320x160 runtime cell, never a pixel projection.
     pub(super) fn prop_cell(&self, index: usize) -> Option<(i32, i32)> {
         let loc = self.world.loc(self.current_map)?;
         loc.props
@@ -42,6 +71,10 @@ impl PlayableApp {
             .map(|p| (p.grid_x, p.grid_y))
     }
 
+    /// Authored level of a combatant, used as the ranged kill's `killer_level`
+    /// (which drives the corpse-loot item roll).
+    ///
+    /// A missing party slot or world actor reports level 1, as do props.
     pub(super) fn combatant_level(&self, t: CombatTarget) -> u8 {
         match t {
             CombatTarget::Player => self.player.level,
@@ -54,6 +87,12 @@ impl PlayableApp {
         }
     }
 
+    /// Current runtime/Entity cell of a combatant.
+    ///
+    /// The protagonist uses the committed cell (`player_x/player_y`), party
+    /// members and world actors use their live `ActorMotion::cell`, and a prop
+    /// uses its `Konung.N` placement. This is the 320x160 runtime grid
+    /// (`Entity+0x08/+0x0A`), never the screen projection.
     pub(super) fn combatant_cell(&self, t: CombatTarget) -> Option<(i32, i32)> {
         match t {
             CombatTarget::Player => {
@@ -70,6 +109,10 @@ impl PlayableApp {
         }
     }
 
+    /// Facing direction `0..=7` of a combatant (`Entity+0x01`).
+    ///
+    /// Drives the death action row and the arrow muzzle offset; a combatant
+    /// without live motion reports `0`.
     pub(super) fn combatant_facing(&self, t: CombatTarget) -> u8 {
         match t {
             CombatTarget::Player => (self.player_dir.max(0) as u8) & 7,
@@ -84,6 +127,11 @@ impl PlayableApp {
         }
     }
 
+    /// True when a combatant is in a death state.
+    ///
+    /// The protagonist mirrors `dead`/`hp_internal == 0`, party and world actors
+    /// use `ActorMotion::dead`. A world id with no motion entry counts as dead so
+    /// callers never act on a phantom actor. Props are never dead.
     pub(super) fn combatant_dead(&self, t: CombatTarget) -> bool {
         match t {
             CombatTarget::Player => self.player.dead || self.player.hp_internal == 0,
@@ -98,6 +146,11 @@ impl PlayableApp {
         }
     }
 
+    /// Write a combatant's facing direction, masked to the three-bit range.
+    ///
+    /// The original turns a unit toward its target with `dir & 7`
+    /// (`FUN_0043897C`); an out-of-range value must not leak into the animation
+    /// row lookup.
     pub(super) fn set_combat_facing(&mut self, t: CombatTarget, dir: u8) {
         match t {
             CombatTarget::Player => self.player_dir = (dir & 7) as i32,
@@ -117,6 +170,11 @@ impl PlayableApp {
         }
     }
 
+    /// Store a combatant's raw internal health.
+    ///
+    /// `hp_internal` is the 16x-scaled value (the interface bar shows
+    /// `(hp_internal + 15) / 16`). Saturation and the lethal branch
+    /// ([`Self::kill_combatant`]) are the caller's responsibility.
     pub(super) fn set_combat_hp(&mut self, t: CombatTarget, hp: u16) {
         match t {
             CombatTarget::Player => self.player.hp_internal = hp,
@@ -136,6 +194,11 @@ impl PlayableApp {
         }
     }
 
+    /// Add poison damage to a combatant's periodic-damage accumulator.
+    ///
+    /// `periodic_damage` (`Entity+0x50` in the original record) is subtracted
+    /// every 16 logic frames by [`Self::apply_dot`]. A zero amount is a no-op so
+    /// an unpoisoned hit cannot touch the field; the add saturates.
     pub(super) fn add_combat_poison(&mut self, t: CombatTarget, amount: u16) {
         if amount == 0 {
             return;
@@ -162,6 +225,10 @@ impl PlayableApp {
         }
     }
 
+    /// Six equipped item-instance ids (`Entity+0x66`, slots 0..=5).
+    ///
+    /// Slot 0 and 2 hold the two melee families, 1 the bow and 3..=5 the armor;
+    /// an id of 0 means the slot is empty. Props have no equipment.
     fn combatant_equipment(&self, t: CombatTarget) -> Option<[u16; 6]> {
         match t {
             CombatTarget::Player => Some(self.player.equipment),
@@ -171,6 +238,10 @@ impl PlayableApp {
         }
     }
 
+    /// Instance id in the special slot (`Entity+0xCC`), the ammo cell.
+    ///
+    /// Ranged combat reads it as the loaded ammo stack (class 12); 0 means
+    /// nothing is loaded.
     pub(super) fn combatant_special(&self, t: CombatTarget) -> u16 {
         match t {
             CombatTarget::Player => self.player.special_equipment,
@@ -187,6 +258,10 @@ impl PlayableApp {
         }
     }
 
+    /// Empty the special slot after the last ammo unit was fired.
+    ///
+    /// The original zeroes `Entity+0xCC` when the decremented quantity reaches
+    /// zero, which also disarms the ranged gate in [`Self::ranged_ready`].
     pub(super) fn clear_combatant_special(&mut self, t: CombatTarget) {
         match t {
             CombatTarget::Player => self.player.special_equipment = 0,
@@ -206,6 +281,9 @@ impl PlayableApp {
         }
     }
 
+    /// Empty one equipment slot (0..=5), e.g. when a weapon or armor breaks.
+    ///
+    /// Out-of-range slot indices are ignored rather than panicking.
     pub(super) fn clear_equipment_slot(&mut self, t: CombatTarget, slot: usize) {
         if slot >= 6 {
             return;
@@ -228,6 +306,11 @@ impl PlayableApp {
         }
     }
 
+    /// Queue a transient combat message for the world overlay.
+    ///
+    /// The string lives for 2.5 logic-rate seconds (`combat_message_t`); the
+    /// countdown runs in [`Self::update_combat`]. A new message replaces the
+    /// pending one.
     pub(super) fn set_combat_message(&mut self, message: impl Into<String>) {
         self.combat_message = Some(message.into());
         self.combat_message_t = 2.5;
@@ -278,6 +361,12 @@ impl PlayableApp {
         }
     }
 
+    /// Pre-step render cell used for the sprite anchor.
+    ///
+    /// A walk segment commits its step at the START of the cycle, so the stored
+    /// cell leads the drawn sprite by one step; the render cell is the cell the
+    /// sprite is still leaving. Arrows also start from it. Props report
+    /// `(0.0, 0.0)`.
     pub(super) fn combatant_render_cell(&self, t: CombatTarget) -> (f32, f32) {
         match t {
             CombatTarget::Player => (self.player_render_x as f32, self.player_render_y as f32),

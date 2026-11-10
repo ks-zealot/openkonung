@@ -26,6 +26,7 @@ fn add_free_location(app: &mut PlayableApp, loc_id: u32) {
     app.selected = Some(loc_id);
 }
 
+/// Return the authored `Entity` level from the population table.
 fn entity_level(app: &PlayableApp, id: usize) -> u8 {
     app.tables
         .as_ref()
@@ -34,6 +35,10 @@ fn entity_level(app: &PlayableApp, id: usize) -> u8 {
         .unwrap()
 }
 
+/// Return the settlement school timer (`Settlement+0x0C`, stored as `SettlementTrade::timer3`).
+///
+/// The voivode training pass counts it down and reloads `0x2D0` when it reaches
+/// zero, so a test can tell whether a pass trained the village.
 fn settlement_timer3(app: &PlayableApp, loc_id: u8) -> i32 {
     let si = app
         .settlements
@@ -47,6 +52,7 @@ fn settlement_timer3(app: &PlayableApp, loc_id: u8) -> i32 {
         .unwrap()
 }
 
+/// The voivode's school pass levels the villagers, moves mastery toward the voivode and resets the `0x2D0` timer.
 #[test]
 fn voivode_training_levels_up_the_village() {
     let Some(mut app) = build_party_app() else {
@@ -104,6 +110,7 @@ fn voivode_training_levels_up_the_village() {
     assert_eq!(settlement_timer3(&app, 19), 0x2CF);
 }
 
+/// Without a waypoint-4 owner the training pass changes nothing.
 #[test]
 fn training_requires_a_voivode() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -124,6 +131,7 @@ fn training_requires_a_voivode() {
     assert_eq!(entity_level(&app, 281), before);
 }
 
+/// A recruited apprentice gains `round(elapsed periods * master skill * 0.03)` smithing.
 #[test]
 fn recruited_apprentice_gains_the_elapsed_smith_skill() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -186,6 +194,7 @@ fn recruited_apprentice_gains_the_elapsed_smith_skill() {
     assert_eq!(app.party[0].entity.stats.smithing, 3);
 }
 
+/// The apprentice walks to a free neighbour of the master's station and faces the waypoint facing.
 #[test]
 fn apprentice_stands_next_to_the_master_not_on_him() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -269,6 +278,7 @@ fn apprentice_stands_next_to_the_master_not_on_him() {
     assert_eq!(motion.facing, waypoint.facing, "faces the station facing");
 }
 
+/// Return the `settlements` index of the settlement at `loc_id`.
 fn settlement_index(app: &PlayableApp, loc_id: u8) -> usize {
     app.settlements
         .iter()
@@ -276,6 +286,7 @@ fn settlement_index(app: &PlayableApp, loc_id: u8) -> usize {
         .expect("settlement")
 }
 
+/// Build a settlement target record with the given key, state byte, prop index and timer.
 fn target(key: u8, state: u8, prop_index: u16, timer: u16) -> crate::population::SettlementTarget {
     crate::population::SettlementTarget {
         key,
@@ -285,6 +296,7 @@ fn target(key: u8, state: u8, prop_index: u16, timer: u16) -> crate::population:
     }
 }
 
+/// The target timer is divided by the free-worker count, and training is skipped while `local_30` is set.
 #[test]
 fn target_pass_scales_by_workers_and_gates_training() {
     let Some(mut app) = build_party_app() else {
@@ -319,6 +331,7 @@ fn target_pass_scales_by_workers_and_gates_training() {
     assert!(entity_level(&app, 183) > before_level);
 }
 
+/// Key 255 is a sentinel, and a finished target (state 6) resets to state 0 with a fresh timer.
 #[test]
 fn target_pass_ignores_sentinels_and_resets_completed_targets() {
     let Some(mut app) = build_party_app() else {
@@ -339,6 +352,7 @@ fn target_pass_ignores_sentinels_and_resets_completed_targets() {
     assert_eq!(app.settlements[si].targets[1].timer, 180);
 }
 
+/// An armed foreign party inside rectangle A clears `+0x1A`, sets `+0x1D = 1` and targets group 0.
 #[test]
 fn settlement_claim_wakes_the_group_for_a_hostile_party() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -371,6 +385,7 @@ fn settlement_claim_wakes_the_group_for_a_hostile_party() {
     assert_eq!(group.target_group, 0);
 }
 
+/// The `+0x14` event counter resets at `0x2760` and adds the worker/trade-derived tribute.
 #[test]
 fn settlement_random_event_adds_the_money_pool() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -392,6 +407,7 @@ fn settlement_random_event_adds_the_money_pool() {
     assert_eq!(app.settlements[si].money_pool_10, expected);
 }
 
+/// Zero workers clear the activity flags and counter, after which the same pass's event increments it once.
 #[test]
 fn no_worker_clear_resets_activity_flags_and_counter() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -414,6 +430,10 @@ fn no_worker_clear_resets_activity_flags_and_counter() {
     assert_eq!(app.settlements[si].progress_14, 1);
 }
 
+/// A power-ratio defeat hides the defenders, freezes death rows on their last frame and only idles survivors.
+///
+/// The hide bit is `Entity+0x04 & 0x80`; the frozen frame is `Entity+0xD7 - 1`,
+/// which is what `Entity+0x10` holds for a corpse.
 #[test]
 fn defeat_freezes_runtime_death_rows_on_the_last_frame() {
     use crate::actors::{ActorMotion, ActorPlacement, PopulationBuild, RuntimeActor};
@@ -495,6 +515,7 @@ fn defeat_freezes_runtime_death_rows_on_the_last_frame() {
     assert_eq!(live_motion.frame, 0);
 }
 
+/// Construction states 0..6 step the object ids 37..43, and state 6 rebuilds to the base sprite.
 #[test]
 fn building_progresses_construction_damage_and_rebuild_sprites() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -544,6 +565,7 @@ fn building_progresses_construction_damage_and_rebuild_sprites() {
     assert_eq!(app.world.locs[0].props.last().unwrap().object_id, 37);
 }
 
+/// A target state change rewrites the prop's object id on the current map.
 #[test]
 fn target_state_change_updates_the_current_map_prop() {
     let Some(mut app) = build_party_app_with_free_location() else {

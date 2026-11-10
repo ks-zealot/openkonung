@@ -49,6 +49,8 @@ pub(super) struct CursorActor {
 pub(super) struct CursorHover {
     /// Interactive prop under the pointer (`_DAT_0081D57C`, `+0x22 & 1`).
     pub prop: bool,
+    /// Actor found by the sprite-precise hit test, when one is under the
+    /// pointer (`_DAT_0081D578`).
     pub actor: Option<CursorActor>,
     /// Runtime collision flag `0x2000` (ground WorldObject / portal prop).
     pub flag_2000: bool,

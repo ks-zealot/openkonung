@@ -3,6 +3,23 @@
 use super::*;
 
 impl PlayableApp {
+    /// Compose one gameplay framebuffer: world, overlays, interface and cursor.
+    ///
+    /// The order follows the original draw tree:
+    ///
+    /// 1. base terrain plus GRAPH placements (`FUN_00426384`);
+    /// 2. the dynamic depth pass of props, NPCs, companions and the protagonist,
+    ///    sorted by projected anchor (documented provisional key, section 25);
+    /// 3. ground shadows (`FUN_0043C040`/`FUN_0043D247`) while the `shadows`
+    ///    config word is set;
+    /// 4. the projectile pool, then ambient and `LIGHTS.N` lighting;
+    /// 5. portal rings at the canonical trigger cells, the click marker, the
+    ///    protagonist marker and the `FUN_0042532C` ground-object pass;
+    /// 6. the HUD, then the interface modes (map, quest log, exchange, character
+    ///    screen, dialogue), the hover text and finally the game-drawn cursor.
+    ///
+    /// A sprite frame that cannot be resolved is recorded in
+    /// `population_rejected` instead of being silently skipped.
     pub(super) fn draw_detail(&mut self) {
         self.texts.clear();
         let fw = VIRTUAL_W as usize;

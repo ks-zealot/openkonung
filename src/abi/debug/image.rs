@@ -1,4 +1,9 @@
-//! Menu/INTR/cursor image diagnostics.
+//! Menu/INTR/cursor image diagnostics: decode one original image to RGBA8.
+//!
+//! Every exporter here writes the shared [`DEBUG_IMAGE`] buffer plus its width
+//! and height, which the PNG tools read through [`debug_image_ptr`] /
+//! [`debug_image_w`] / [`debug_image_h`]. The decoders are the runtime decoders,
+//! so a captured image proves what the game would draw.
 
 use super::super::*;
 
@@ -8,14 +13,26 @@ use crate::constants::debug::*;
 // Debug: decoded menu images (diagnostic tooling; same decoder as runtime)
 // --------------------------------------------------------------------------
 
+/// Retained RGBA8 pixels of the last decoded image.
+///
+/// `None` before the first successful decode; overwritten by every later
+/// `debug_decode_*` call.
 pub static mut DEBUG_IMAGE: Option<Vec<u8>> = None;
 
+/// Width in pixels of the image in [`DEBUG_IMAGE`] (`0` when nothing is
+/// decoded).
 pub static mut DEBUG_IMAGE_W: u32 = 0;
 
+/// Height in pixels of the image in [`DEBUG_IMAGE`] (`0` when nothing is
+/// decoded).
 pub static mut DEBUG_IMAGE_H: u32 = 0;
 
 /// Decode `kind` (menu RES family) image `index` into a static RGBA buffer and
 /// return 1 on success. Used by `tools/menu_png.mjs`; not used at runtime.
+///
+/// `kind` is one of the `KIND_MENU640`/`MENU800`/`NEWH640`/`NEWH800`/
+/// `SAVE640`/`SAVE800` selectors; any other value, an unloaded archive, a parse
+/// error or an out-of-range index returns 0 and leaves the buffer untouched.
 #[no_mangle]
 pub extern "C" fn debug_decode_menu_image(kind: u32, index: u32) -> u32 {
     let bytes: Vec<u8> = {
@@ -50,6 +67,13 @@ pub extern "C" fn debug_decode_menu_image(kind: u32, index: u32) -> u32 {
     1
 }
 
+/// Start of the last decoded image.
+///
+/// # Memory contract
+///
+/// Borrowed RGBA8 owned by the debug buffer; never free it. Null before the
+/// first successful decode. Valid for `debug_image_w() * debug_image_h() * 4`
+/// bytes.
 #[no_mangle]
 pub extern "C" fn debug_image_ptr() -> *const u8 {
     match unsafe { &*addr_of!(DEBUG_IMAGE) } {
@@ -58,11 +82,13 @@ pub extern "C" fn debug_image_ptr() -> *const u8 {
     }
 }
 
+/// Width of the last decoded image in pixels, or 0.
 #[no_mangle]
 pub extern "C" fn debug_image_w() -> u32 {
     unsafe { DEBUG_IMAGE_W }
 }
 
+/// Height of the last decoded image in pixels, or 0.
 #[no_mangle]
 pub extern "C" fn debug_image_h() -> u32 {
     unsafe { DEBUG_IMAGE_H }

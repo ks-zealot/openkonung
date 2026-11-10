@@ -6,6 +6,8 @@
 //! (right-click attack order, battle stance required), `FUN_004123BC` case 5
 //! (melee resolves on the last attack frame) and `FUN_0041D048` (periodic
 //! damage every 16 logic frames).
+//!
+//! This file: melee resolution, the approach cell and the adjacency test.
 
 use std::collections::HashSet;
 
@@ -86,6 +88,10 @@ impl PlayableApp {
         best.map(|(c, _)| c)
     }
 
+    /// True when two runtime cells are 8-neighbours and not the same cell.
+    ///
+    /// Melee resolution needs the attackers to touch; the original compares the
+    /// `FUN_0041165C` neighbour set the same way.
     pub(super) fn is_adjacent(a: (i32, i32), b: (i32, i32)) -> bool {
         a != b && neighbors(a.0, a.1).iter().any(|&(_, x, y)| (x, y) == b)
     }

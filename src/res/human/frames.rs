@@ -3,6 +3,11 @@
 use super::super::*;
 use crate::constants::combat::OBJECT_ARCHETYPE_BIT;
 
+/// Frame count of one human action/direction row.
+///
+/// The count is the `u16` at `block + action*0xD0 + direction*0x1A + 0x08`
+/// (10 action rows x 8 directions, 26-byte direction records). `0` means the
+/// row is absent/truncated.
 pub fn human_frame_count(graph: &[u8], block_pos: usize, action: usize, direction: usize) -> usize {
     let o = block_pos
         + action * HUMAN_ACTION_STRIDE
@@ -14,6 +19,12 @@ pub fn human_frame_count(graph: &[u8], block_pos: usize, action: usize, directio
     u16(graph, o) as usize
 }
 
+/// GRAPH frame id for one human action/direction/frame index.
+///
+/// Frame ids live at `block + action*0xD0 + direction*0x1A + 0x0A + fi*2`.
+/// `frame_index` wraps at the row count, and an empty row is treated as a
+/// single frame. Returns `(frame_id, count)`; an out-of-range table read yields
+/// `(0, count)`.
 pub fn human_mapped_frame(
     graph: &[u8],
     block_pos: usize,
@@ -37,6 +48,12 @@ pub fn human_mapped_frame(
     (u16(graph, o) as usize, count)
 }
 
+/// Decode one GRAPH human body/overlay frame id into RGBA.
+///
+/// The sprite offset comes from the 8-byte frame record at
+/// `block + 0x1728 + frame_id*8` (`u32` at `+4`), and the indexed payload is
+/// read from the block's data base `block + 0x4D28`. A short block or bad id
+/// yields a 1x1 transparent image; there is no substitute sprite.
 pub fn render_graph_4d28_frame(
     graph: &[u8],
     block_pos: usize,
@@ -67,6 +84,10 @@ pub fn render_graph_4d28_frame(
 // --- resource container ---
 
 impl Res {
+    /// Animation-0 frame of a `Game.res` human variant, facing the direction
+    /// byte at variant `+0x01 & 7`, with the variant's equipment table.
+    ///
+    /// Returns `(image, gx, gy, frame_count)`.
     pub fn human_frame(
         &mut self,
         variant_id: usize,
@@ -76,6 +97,12 @@ impl Res {
         self.human_frame_state(variant_id, 0, direction, anim_frame_index, None)
     }
 
+    /// Stateful human frame of a `Game.res` variant: `action`/`direction`/
+    /// `anim_frame_index` select the GRAPH row, and the variant's six `+0x45`
+    /// equipment ids drive the overlay plan.
+    ///
+    /// `palette_override_id` replaces the variant's `+0x41` palette when given.
+    /// Results are cached per pose/loadout; returns `(image, gx, gy, count)`.
     pub fn human_frame_state(
         &mut self,
         variant_id: usize,

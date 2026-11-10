@@ -12,9 +12,10 @@
 //! after bases       24 human equipment overlay blocks
 //! ```
 //!
-//! Every block begins with a `u32` tag and carries its byte size at `+4`, so the
-//! walk is `pos += 8 + size` (the human blocks step by the size at `+4` alone
-//! because the caller already positioned at the block start).
+//! Every block begins with a `u32` tag and carries its byte size at `+4`. The
+//! cursor/terrain walk is `pos += 8 + size`; for the human base and overlay
+//! blocks the step is the size at `+4` alone (`pos += size`), as the parser
+//! shows.
 //!
 //! `OBJECTS.RES`: an 8-byte header, a 512-entry `{u32 offset, u32 size}` index
 //! at `+0x08`, and the block data region based at `0x1008`.

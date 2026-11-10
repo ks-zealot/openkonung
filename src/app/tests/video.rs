@@ -3,6 +3,7 @@
 use super::common::*;
 use crate::video::{self, VideoAfter, VideoClip};
 
+/// A dead leader requests `GAMEOVER.FLM` once, to the menu, and latches `game_over`.
 #[test]
 fn dead_leader_requests_gameover_once() {
     let Some(mut app) = build_test_app() else {
@@ -21,6 +22,7 @@ fn dead_leader_requests_gameover_once() {
     video::reset();
 }
 
+/// Collecting the WorldObject whose source index is 0 requests `WIN.FLM` and defers the pickup.
 #[test]
 fn source_zero_world_object_requests_win() {
     use crate::world_objects::ActiveWorldObject;
@@ -49,6 +51,10 @@ fn source_zero_world_object_requests_win() {
     video::reset();
 }
 
+/// An engaged settlement defeat requests `DEFEAT<loc>.FLM`, sets flag `0x80` and clears the money pool.
+///
+/// The check uses the `FUN_0041B658` power ratio, not raw HP, so a single
+/// zero-power defender is enough to trigger it.
 #[test]
 fn engaged_settlement_defeat_requests_location_movie() {
     let Some(mut app) = build_party_app() else {

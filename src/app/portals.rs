@@ -65,6 +65,9 @@ pub(super) struct GateMatchBest {
     assign: Vec<Option<usize>>,
 }
 
+/// Lexicographic comparison of two gate assignments: more bound transitions
+/// first, then the lower total distance, then the deterministic `(rec, gate)`
+/// key.
 pub(super) fn gate_match_better(a: &GateMatchBest, b: &GateMatchBest) -> bool {
     if a.count != b.count {
         return a.count > b.count;
@@ -75,6 +78,10 @@ pub(super) fn gate_match_better(a: &GateMatchBest, b: &GateMatchBest) -> bool {
     a.key < b.key
 }
 
+/// Sorted `(transition rec, gate index)` pairs of an assignment.
+///
+/// Used as the final tie-break so the matcher result does not depend on the
+/// search order.
 pub(super) fn gate_match_key(assign: &[Option<usize>], recs: &[usize]) -> Vec<(usize, usize)> {
     let mut v: Vec<(usize, usize)> = assign
         .iter()
@@ -85,6 +92,12 @@ pub(super) fn gate_match_key(assign: &[Option<usize>], recs: &[usize]) -> Vec<(u
     v
 }
 
+/// Branch-and-bound exhaustive search over the gate candidates.
+///
+/// `cur` is the current assignment (indexed like `recs`), `used` a bitmask of the
+/// transitions already bound, and `order` the gate visiting order (fewest
+/// candidates first). The bound prunes a branch once even binding every remaining
+/// gate cannot beat the incumbent.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn gate_match_dfs(
     k: usize,
@@ -270,6 +283,7 @@ impl PlayableApp {
         self.portal_bindings = bindings;
     }
 
+    /// Portal bindings leaving location `lid`, empty when none were built.
     pub(super) fn outgoing(&self, lid: u32) -> Vec<PortalBinding> {
         self.portal_bindings.get(&lid).cloned().unwrap_or_default()
     }

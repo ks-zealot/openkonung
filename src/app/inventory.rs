@@ -5,6 +5,10 @@ use super::*;
 use crate::inventory::*;
 use crate::world_objects::{WORLD_OBJECT_GENERIC_SPRITE, WORLD_OBJECT_ITEM_SLOTS};
 
+/// Borrow one owner's item slots immutably (protagonist or companion).
+///
+/// Split out so [`PlayableApp::slots`] can hand out a [`SlotsRef`] without
+/// cloning the owner; a missing companion index yields `None`.
 fn slots_ref_parts<'a>(
     player: &'a crate::character::PlayerCharacter,
     party: &'a [crate::actors::PartyMember],
@@ -26,6 +30,10 @@ fn slots_ref_parts<'a>(
     }
 }
 
+/// Borrow one owner's item slots mutably (protagonist or companion).
+///
+/// Split out so [`PlayableApp::slots_mut`] can hand out a [`SlotsMut`] without
+/// cloning the owner; a missing companion index yields `None`.
 fn slots_mut_parts<'a>(
     player: &'a mut crate::character::PlayerCharacter,
     party: &'a mut [crate::actors::PartyMember],
@@ -64,6 +72,11 @@ impl PlayableApp {
         }
     }
 
+    /// HUD/owner slot number: 0 for the protagonist, `i + 1` for companion `i`.
+    ///
+    /// # Returns
+    ///
+    /// `None` when the companion index is out of range.
     pub fn owner_index(&self, owner: InventoryOwner) -> Option<usize> {
         match owner {
             InventoryOwner::Protagonist => Some(0),
@@ -77,14 +90,23 @@ impl PlayableApp {
         }
     }
 
+    /// Immutable view of an owner's equipment, inventory, additional and special
+    /// slots.
+    ///
+    /// `None` when the owner does not exist.
     pub fn slots(&self, owner: InventoryOwner) -> Option<SlotsRef<'_>> {
         slots_ref_parts(&self.player, &self.party, owner)
     }
 
+    /// Mutable view of an owner's item slots.
+    ///
+    /// `None` when the owner does not exist.
     pub fn slots_mut(&mut self, owner: InventoryOwner) -> Option<SlotsMut<'_>> {
         slots_mut_parts(&mut self.player, &mut self.party, owner)
     }
 
+    /// Owner-derived values the requirement predicates need (class, stats,
+    /// skills) without borrowing the owner itself.
     pub fn snapshot(&self, owner: InventoryOwner) -> Option<OwnerSnapshot> {
         match owner {
             InventoryOwner::Protagonist => Some(OwnerSnapshot::from_player(&self.player)),
@@ -187,6 +209,10 @@ impl PlayableApp {
         }
     }
 
+    /// Display name of an owner: the hero name for the protagonist, the
+    /// `Entity+0xD4` name-table entry for a companion.
+    ///
+    /// Falls back to `Member <n>` when the name id is not in the table.
     pub fn owner_label(&self, owner: InventoryOwner) -> String {
         match owner {
             InventoryOwner::Protagonist => self.player.hero.name.to_string(),
@@ -203,6 +229,8 @@ impl PlayableApp {
         }
     }
 
+    /// Class selector of an owner: `0..=4`, from the hero identity for the
+    /// protagonist and from `Entity+0x04 & 0x07` for a companion.
     pub fn owner_class(&self, owner: InventoryOwner) -> u8 {
         match owner {
             InventoryOwner::Protagonist => self.player.entity_class(),
@@ -214,6 +242,8 @@ impl PlayableApp {
         }
     }
 
+    /// `(visual_index, palette_offset)` of an owner (`Entity+0xD6`/`+0xD8`);
+    /// `None` for a missing companion.
     pub fn owner_visual(&self, owner: InventoryOwner) -> Option<(u8, u32)> {
         match owner {
             InventoryOwner::Protagonist => Some((
@@ -227,6 +257,8 @@ impl PlayableApp {
         }
     }
 
+    /// `Entity+0x12`: the active weapon-slot selector, or the M/O walk delay for
+    /// object-family actors.
     pub fn owner_raw_0x12(&self, owner: InventoryOwner) -> u8 {
         match owner {
             InventoryOwner::Protagonist => self.player.raw_0x12,
@@ -234,6 +266,8 @@ impl PlayableApp {
         }
     }
 
+    /// `Entity+0x03` flag byte: battle stance `0x04`, bag toggle `0x02` and the
+    /// route/render bits.
     pub fn owner_flags_b(&self, owner: InventoryOwner) -> u8 {
         match owner {
             InventoryOwner::Protagonist => self.player.flags_b,
@@ -241,20 +275,30 @@ impl PlayableApp {
         }
     }
 
+    /// Copy of an owner's six equipment ids (`Entity+0x66`), all-zero when the
+    /// owner does not exist.
     pub fn owner_equipment(&self, owner: InventoryOwner) -> [u16; 6] {
         self.slots(owner).map(|s| *s.equipment).unwrap_or([0; 6])
     }
 
+    /// Copy of an owner's 32 inventory ids, all-zero when the owner does not
+    /// exist.
     pub fn owner_inventory(&self, owner: InventoryOwner) -> [u16; 32] {
         self.slots(owner).map(|s| *s.inventory).unwrap_or([0; 32])
     }
 
+    /// Switch the edited party member (`_81D560` portrait click).
+    ///
+    /// Resets the inventory scroll and clears the hovered slot so the previous
+    /// member's hit rectangles are never reused.
     pub fn set_inventory_owner(&mut self, owner: InventoryOwner) {
         self.inventory_owner = owner;
         self.inventory_scroll = 0;
         self.hovered_slot = None;
     }
 
+    /// Healing skill of an owner (`Entity+0x48`), used as the alchemy quality
+    /// source by [`crate::inventory::craft`].
     fn owner_healing(&mut self, owner: InventoryOwner) -> Option<&mut u16> {
         match owner {
             InventoryOwner::Protagonist => Some(&mut self.player.healing),
@@ -262,6 +306,12 @@ impl PlayableApp {
         }
     }
 
+    /// Drop every broken instance of one owner (`class 0xFF`, or a durable item
+    /// at zero durability).
+    ///
+    /// Ports the original break sweep over all four slot groups; the doomed ids
+    /// are collected before the mutable borrow so removal cannot invalidate the
+    /// scan.
     pub fn sweep_owner(&mut self, owner: InventoryOwner) {
         let broken: Vec<u16> = {
             let Some(slots) = self.slots(owner) else {
@@ -288,6 +338,7 @@ impl PlayableApp {
         self.set_pickup_message("Сломанный предмет выброшен");
     }
 
+    /// Run the broken-item sweep for the protagonist and every companion.
     pub fn sweep_all_owners(&mut self) {
         self.sweep_owner(InventoryOwner::Protagonist);
         for i in 0..self.party.len() {
@@ -772,6 +823,9 @@ impl PlayableApp {
         true
     }
 
+    /// HUD party cell under a virtual screen point, if any.
+    ///
+    /// Uses the per-resolution party-panel rectangles from [`crate::hud`].
     fn party_cell_at_virtual(&self, vx: i32, vy: i32) -> Option<usize> {
         let l = crate::hud::layout(VIRTUAL_W);
         (0..crate::hud::PARTY_CELLS)

@@ -49,6 +49,7 @@ mod roles;
 pub use self::roles::*;
 
 #[inline]
+/// Read a little-endian `u16` at `o` (bounds checked by the caller).
 fn rd_u16(b: &[u8], o: usize) -> u16 {
     (b[o] as u16) | ((b[o + 1] as u16) << 8)
 }
@@ -97,10 +98,13 @@ impl IntrEntry {
 /// A malformed archive or sprite record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntrError {
+    /// Description of the structural problem (index/offset/row context is
+    /// already included by the constructor call sites).
     pub message: String,
 }
 
 impl std::fmt::Display for IntrError {
+    /// Format as `INTR: <message>`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "INTR: {}", self.message)
     }
@@ -109,6 +113,7 @@ impl std::fmt::Display for IntrError {
 impl std::error::Error for IntrError {}
 
 impl IntrError {
+    /// Wrap a message into an `IntrError`.
     fn new(message: impl Into<String>) -> Self {
         IntrError {
             message: message.into(),
@@ -126,6 +131,7 @@ pub struct IntrArchive {
 }
 
 impl std::fmt::Debug for IntrArchive {
+    /// Render the occupied-slot and cached-sprite counts.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -228,6 +234,7 @@ impl IntrArchive {
         self.entries.iter().filter(|e| e.is_some()).count()
     }
 
+    /// True when no index slot is occupied (an archive with no sprites).
     pub fn is_empty(&self) -> bool {
         self.entries.iter().all(|e| e.is_none())
     }

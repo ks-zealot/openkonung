@@ -19,18 +19,36 @@
 
 use std::ptr::addr_of_mut;
 
+/// Size of one `KONUNG.CFG`: seven little-endian `u32` option words.
 pub const CONFIG_LEN: usize = 28;
+
+/// `video_mode` word for 640x480 (the original default when the file is
+/// missing or its mode is not recognised).
 pub const VIDEO_640: u32 = 0x111;
+
+/// `video_mode` word for 800x600.
 pub const VIDEO_800: u32 = 0x114;
 
+/// The seven live option globals mirrored by the 28-byte `KONUNG.CFG`.
+///
+/// The words are stored in the original order, so [`GameConfig::to_bytes`] and
+/// [`GameConfig::from_bytes`] are a straight little-endian copy; the game reads
+/// each flag as "non-zero means enabled".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GameConfig {
+    /// `+00` video mode, `VIDEO_640` (`0x111`) or `VIDEO_800` (`0x114`).
     pub video_mode: u32,
+    /// `+04` transparency effects.
     pub transparency: u32,
+    /// `+08` day/night ambient cycle (`lighting::ambient` reads this).
     pub day_night: u32,
+    /// `+0C` per-map `LIGHTS.N` light masks and the light blend pass.
     pub light_effects: u32,
+    /// `+10` music playback.
     pub music: u32,
+    /// `+14` ground-shadow span pass (`FUN_0043C040`/`FUN_0043D247`).
     pub shadows: u32,
+    /// `+18` sound-effect playback.
     pub sound: u32,
 }
 
@@ -71,6 +89,10 @@ impl GameConfig {
         })
     }
 
+    /// Serialise the seven option words back into the original on-disk order.
+    ///
+    /// Every flag is written verbatim, so a caller that stored e.g. `7` gets
+    /// `7` back; only [`GameConfig::from_bytes`] normalises to 0/1.
     pub fn to_bytes(self) -> [u8; CONFIG_LEN] {
         let mut out = [0u8; CONFIG_LEN];
         for (i, value) in [
@@ -90,6 +112,9 @@ impl GameConfig {
         out
     }
 
+    /// Logical framebuffer width selected by the mode word: `640` for
+    /// `VIDEO_640`, otherwise `800` (`from_bytes` normalises every other word
+    /// to `VIDEO_640`, so `800` means `VIDEO_800` in practice).
     pub fn width(self) -> i32 {
         if self.video_mode == VIDEO_640 {
             640
@@ -99,9 +124,13 @@ impl GameConfig {
     }
 }
 
+/// Live configuration, mirroring the original's seven global option words.
 static mut CONFIG: GameConfig = GameConfig::DEFAULT;
+
+/// Bumped on every [`set_config`]; the shell persists when it changes.
 static mut CONFIG_REVISION: u32 = 0;
 
+/// Current configuration (a `Copy` snapshot; the game never mutates it in place).
 pub fn config() -> GameConfig {
     unsafe { *addr_of_mut!(CONFIG) }
 }
@@ -115,6 +144,11 @@ pub fn set_config(value: GameConfig) {
     }
 }
 
+/// Monotonic revision of the live configuration, starting at `0`.
+///
+/// `abi/config.rs` exposes it as `config_revision` so `www/app.js` can write
+/// `localStorage["openkonung.cfg"]` only after an Ok or toggle actually changed
+/// something.
 pub fn revision() -> u32 {
     unsafe { *addr_of_mut!(CONFIG_REVISION) }
 }
@@ -123,6 +157,7 @@ pub fn revision() -> u32 {
 mod tests {
     use super::*;
 
+    /// The remake starts at 800x600 with every option word set to 1.
     #[test]
     fn default_is_800_with_every_flag_on() {
         let c = GameConfig::DEFAULT;
@@ -131,6 +166,7 @@ mod tests {
         assert_eq!(c.to_bytes().len(), CONFIG_LEN);
     }
 
+    /// An unrecognised `+00` word is replaced by `0x111`, never by the 800 mode.
     #[test]
     fn invalid_video_mode_falls_back_to_640() {
         let mut bytes = GameConfig::DEFAULT.to_bytes();
@@ -139,6 +175,7 @@ mod tests {
         assert_eq!(c.video_mode, VIDEO_640);
     }
 
+    /// Seven words at the verified offsets round-trip through the 28-byte file.
     #[test]
     fn bytes_roundtrip_in_verified_order() {
         let c = GameConfig {

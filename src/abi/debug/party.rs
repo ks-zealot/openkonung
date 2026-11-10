@@ -1,4 +1,4 @@
-//! Party diagnostics.
+//! Party (recruited companion) diagnostics.
 
 use super::super::*;
 
@@ -7,6 +7,9 @@ use super::super::*;
 // --------------------------------------------------------------------------
 
 /// Number of recruited companions (party slots `1..`), or 0 when no game.
+///
+/// This excludes the protagonist, who is held separately in
+/// `PlayableApp::player`; it counts the original reserved group 0 beyond slot 0.
 #[no_mangle]
 pub extern "C" fn debug_party_count() -> u32 {
     runtime_mut()
@@ -17,6 +20,9 @@ pub extern "C" fn debug_party_count() -> u32 {
 }
 
 /// Source `Entity` id of recruited companion `i`, or `0xFFFFFFFF`.
+///
+/// The id indexes the `Game.N` Entity table, which is how the smoke checks that
+/// the recruit opcode `0x123` (`FUN_00431820`) appended the right NPC.
 #[no_mangle]
 pub extern "C" fn debug_party_member_id(i: u32) -> u32 {
     runtime_mut()

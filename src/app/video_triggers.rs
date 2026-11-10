@@ -15,6 +15,10 @@ use super::*;
 use crate::video::{self, VideoAfter, VideoClip};
 
 impl PlayableApp {
+    /// `FUN_00436214` case 0: play `GAMEOVER.FLM` once when the leader is dead.
+    ///
+    /// `leader[+4] & 0x80` is the game-over flag; it is set only after the movie
+    /// request was queued, so a failed request is retried on the next frame.
     pub(super) fn check_game_over_video(&mut self) {
         if self.game_over || !self.player.dead {
             return;

@@ -2,11 +2,13 @@
 
 use super::*;
 
+/// Read the shipped `konung.res`, or `None` when it is absent.
 fn konung() -> Option<Vec<u8>> {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../konung.res");
     std::fs::read(&p).ok()
 }
 
+/// Both font headers carry first byte `0x20`, fallback `4` and 209 glyph slots.
 #[test]
 fn table_landmarks() {
     let Some(d) = konung() else {
@@ -23,6 +25,8 @@ fn table_landmarks() {
     assert_eq!(large.glyph_count(), 0xD1);
 }
 
+/// Latin and CP866 Cyrillic glyphs decode at their documented sizes, and the
+/// space glyph is null so it advances by the fallback width.
 #[test]
 fn latin_and_cyrillic_decode_with_expected_sizes() {
     let Some(d) = konung() else { return };
@@ -40,6 +44,8 @@ fn latin_and_cyrillic_decode_with_expected_sizes() {
     assert_eq!(small.measure(" "), 4);
 }
 
+/// The font is proportional and `measure` returns exactly the advance `draw`
+/// produces for the same string.
 #[test]
 fn widths_are_variable_and_measure_matches_draw() {
     let Some(d) = konung() else { return };
@@ -57,6 +63,8 @@ fn widths_are_variable_and_measure_matches_draw() {
     }
 }
 
+/// Transparent scanline skips leave destination pixels untouched while the
+/// glyph body is written opaque.
 #[test]
 fn transparent_skip_does_not_overwrite_destination() {
     let Some(d) = konung() else { return };

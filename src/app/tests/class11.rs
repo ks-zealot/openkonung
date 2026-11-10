@@ -3,10 +3,20 @@
 use super::super::*;
 use super::common::*;
 
+/// Return the first item-instance id whose instance class/subtype matches.
+///
+/// Scans the loaded `Game.1` instance table (`1..8192`), so a test can locate a
+/// shipped quest item without hard-coding an id. Returns `None` when the save has
+/// no such instance.
 fn find_item(app: &PlayableApp, class: u8, subtype: u8) -> Option<u16> {
     (1..8192u16).find(|&id| app.world.res.item_class_subtype(id) == Some((class, subtype)))
 }
 
+/// Allocate a synthetic item instance of `(class, subtype)` in a free slot.
+///
+/// Fills the record with condition 0, modifier index -1 (none), durability `1.0`
+/// in both halves, poison 0 and the given `flags` word (`+0x0E`; bit 0 is the
+/// unidentified marker). Panics only if the 8192-entry table is full.
 fn alloc(app: &mut PlayableApp, class: u8, subtype: u8, flags: u16) -> u16 {
     app.world
         .res
@@ -14,6 +24,10 @@ fn alloc(app: &mut PlayableApp, class: u8, subtype: u8, flags: u16) -> u16 {
         .expect("free item instance")
 }
 
+/// Make `id` the protagonist's only bag item, in inventory slot 0.
+///
+/// Resets the inventory owner/scroll/hand and zeroes all 32 slots first, so a
+/// right-click on slot 0 reaches exactly that instance.
 fn put_in_first_slot(app: &mut PlayableApp, id: u16) {
     app.inventory_owner = crate::inventory::InventoryOwner::Protagonist;
     app.inventory_scroll = 0;
@@ -22,10 +36,14 @@ fn put_in_first_slot(app: &mut PlayableApp, id: u16) {
     app.player.inventory[0] = id;
 }
 
+/// Right-click inventory slot 0 and report whether the dispatcher handled it.
+///
+/// This is the path `FUN_00414DE4` is reached through in the real UI.
 fn use_first_slot(app: &mut PlayableApp) -> bool {
     app.right_click_inventory_slot(0)
 }
 
+/// A class-11 subtype-0 lost-map item is routed by `FUN_00414DE4` and consumed.
 #[test]
 fn c1_routes_lost_map_item_through_the_dispatcher() {
     let Some(mut app) = build_party_app() else {
@@ -41,6 +59,7 @@ fn c1_routes_lost_map_item_through_the_dispatcher() {
     assert_eq!(app.world.res.item_class(map), Some(0xFF));
 }
 
+/// Subtypes with no `FUN_00414DE4` case are not consumed and leave the hand empty.
 #[test]
 fn c1_leaves_unimplemented_subtypes_inert() {
     let Some(mut app) = build_party_app() else {
@@ -65,6 +84,10 @@ fn c1_leaves_unimplemented_subtypes_inert() {
     }
 }
 
+/// The shovel arms the dig cursor, is never consumed, and the next world click disarms it.
+///
+/// `FUN_0042260C` resets `_DAT_0081D660` from 7 back to 4, which is what the test
+/// checks after `world_move`.
 #[test]
 fn e1_shovel_arms_the_dig_cursor_and_is_not_consumed() {
     let Some(mut app) = build_party_app() else {
@@ -85,6 +108,7 @@ fn e1_shovel_arms_the_dig_cursor_and_is_not_consumed() {
     assert!(!app.dig_armed);
 }
 
+/// The dispatcher rejects any item whose class is not 11 and leaves it in place.
 #[test]
 fn c1_rejects_non_class11_items() {
     let Some(mut app) = build_party_app() else {
@@ -106,6 +130,10 @@ fn c1_rejects_non_class11_items() {
     assert!(app.world.res.item_class(id).is_some());
 }
 
+/// Subtype 11 is a passive artefact: unusable, never consumed, and worth -10 kg.
+///
+/// Its class-11 weight entry `0xD8F0` is `-10000` as an `i16`, and `FUN_0041B7E4`
+/// sign-extends it, so the carried total drops by 10 kg while it is in the bag.
 #[test]
 fn c1_lunar_son_is_passive_and_reduces_carried_weight() {
     let Some(mut app) = build_party_app() else {
@@ -150,6 +178,10 @@ fn c1_lunar_son_is_passive_and_reduces_carried_weight() {
     assert_eq!(app.player.inventory[0], moon);
 }
 
+/// Each skill book raises its skill to its cap, prints its message and is consumed.
+///
+/// Subtypes 1..5 map to healing (cap 500), building (5), smithing (4), trade (100)
+/// and identification (100).
 #[test]
 fn c2_skill_books_apply_their_caps_and_messages() {
     let Some(mut app) = build_party_app() else {
@@ -215,6 +247,10 @@ fn c2_skill_books_apply_their_caps_and_messages() {
     }
 }
 
+/// The strength, XP, charisma and relic subtypes apply their fixed deltas and are consumed.
+///
+/// Strength and charisma move the current half only, subtype 10 adds 200 XP while
+/// AUTO is off, and subtype 38 writes `Entity+0xD3 = 0x46` on the leader.
 #[test]
 fn c2_strength_xp_charisma_and_relics() {
     let Some(mut app) = build_party_app() else {
@@ -260,6 +296,7 @@ fn c2_strength_xp_charisma_and_relics() {
     }
 }
 
+/// The identify scroll clears the unidentified bit on the carried items and raises identification by one (cap 100).
 #[test]
 fn c2_identify_scroll_clears_flags_and_raises_leader_skill() {
     let Some(mut app) = build_party_app() else {
@@ -281,6 +318,11 @@ fn c2_identify_scroll_clears_flags_and_raises_leader_skill() {
     assert_eq!(app.world.res.item_class(scroll), Some(0xFF));
 }
 
+/// Wine snapshots the current stats, starts a 150-frame effect and applies its deltas.
+///
+/// The timer is `30 * 5` frames of dexterity; dexterity drops 30 -> 15 while
+/// charisma/strength/endurance rise 10 -> 15, and `saved_dexterity` keeps the
+/// pre-drink value for the restore pass.
 #[test]
 fn c2_wine_applies_the_temporary_buff() {
     let Some(mut app) = build_party_app() else {
@@ -306,6 +348,7 @@ fn c2_wine_applies_the_temporary_buff() {
     assert_eq!(app.world.res.item_class(wine), Some(0xFF));
 }
 
+/// The birch-bark letter sets bit `0x80` of quest slot 0, prints its line and is consumed.
 #[test]
 fn c2_birch_bark_letter_activates_quest_slot_zero() {
     let Some(mut app) = build_party_app() else {
@@ -324,6 +367,7 @@ fn c2_birch_bark_letter_activates_quest_slot_zero() {
     assert_eq!(app.world.res.item_class(letter), Some(0xFF));
 }
 
+/// The torch is reusable and its reveal is cleared on map entry by `FUN_0043ADF0`.
 #[test]
 fn c2_torch_is_reusable_and_resets_on_map_entry() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -347,6 +391,10 @@ fn c2_torch_is_reusable_and_resets_on_map_entry() {
     assert!(!app.torch_reveal);
 }
 
+/// Put `id` on the cursor as a protagonist-held item.
+///
+/// `try_craft_held_at` reads the held id and its owner, so the craft tests do not
+/// need a real drag.
 fn hold(app: &mut PlayableApp, id: u16) {
     app.held_item = Some(crate::inventory::HeldItem {
         id,
@@ -355,6 +403,9 @@ fn hold(app: &mut PlayableApp, id: u16) {
     });
 }
 
+/// The duplicator becomes a byte-identical copy of the target and returns to the bag.
+///
+/// The target instance is left untouched; only the held instance is rewritten.
 #[test]
 fn c3_duplicator_copies_the_target_onto_the_held_item() {
     let Some(mut app) = build_party_app() else {
@@ -392,6 +443,7 @@ fn c3_duplicator_copies_the_target_onto_the_held_item() {
     );
 }
 
+/// Hilt on blade forges the class-2 subtype-0x1B sword, consumes the hilt and grants 30 XP.
 #[test]
 fn c3_ancient_sword_parts_forge_the_class2_sword() {
     let Some(mut app) = build_party_app() else {
@@ -428,6 +480,7 @@ fn c3_ancient_sword_parts_forge_the_class2_sword() {
     assert!(app.held_item.is_none());
 }
 
+/// Right part on left part yields the combined subtype 41, consumes the held part and grants 100 XP.
 #[test]
 fn c3_amulet_parts_combine_and_consumed_part_disappears() {
     let Some(mut app) = build_party_app() else {
@@ -460,6 +513,7 @@ fn c3_amulet_parts_combine_and_consumed_part_disappears() {
     assert_eq!(app.player.available_xp, xp + 100);
 }
 
+/// An invalid amulet pair is rejected without consuming either part and stays in hand.
 #[test]
 fn c3_invalid_amulet_pair_is_rejected_without_consuming() {
     let Some(mut app) = build_party_app() else {
@@ -487,6 +541,10 @@ fn c3_invalid_amulet_pair_is_rejected_without_consuming() {
     assert!(app.held_item.is_some());
 }
 
+/// Append a synthetic, fully collision-free location `id`.
+///
+/// The location has no data/props/gates and an all-zero 320x160 collision grid, so
+/// every cell is passable; it is registered in `world.loc_index` for travel.
 fn add_free_location(app: &mut PlayableApp, id: u32) {
     use crate::loc::Location;
     let loc = Location {
@@ -504,6 +562,10 @@ fn add_free_location(app: &mut PlayableApp, id: u32) {
     app.world.loc_index.insert(id, index);
 }
 
+/// The resurrection item revives a dead world actor at full health and consumes itself.
+///
+/// The runtime death row is cleared, `Entity+0x04` bit `0x80` is reset and
+/// `hp_internal` returns to its full 1600.
 #[test]
 fn c4_resurrection_revives_a_dead_world_actor() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -549,6 +611,7 @@ fn c4_resurrection_revives_a_dead_world_actor() {
     assert_eq!(app.world.res.item_class(revive), Some(0xFF));
 }
 
+/// The magnet moves another group's money and whole inventory to the leader and is consumed.
 #[test]
 fn c4_magnet_moves_other_group_money_and_items() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -593,6 +656,7 @@ fn c4_magnet_moves_other_group_money_and_items() {
     assert_eq!(app.world.res.item_class(magnet), Some(0xFF));
 }
 
+/// Subtype 14 teleports to location 28 at cell (184, 18) facing 1 and is not consumed.
 #[test]
 fn c4_orb_teleports_and_is_reusable() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -613,6 +677,7 @@ fn c4_orb_teleports_and_is_reusable() {
     assert_eq!(app.world.res.item_class(orb), Some(11));
 }
 
+/// The map orb opens the world map and is reusable.
 #[test]
 fn c4_map_orb_opens_the_world_map() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -629,6 +694,7 @@ fn c4_map_orb_opens_the_world_map() {
     assert_eq!(app.world.res.item_class(orb), Some(11));
 }
 
+/// The conditional key teleports only from its authored cell, to (68, 13) facing 2, and is reusable.
 #[test]
 fn c4_conditional_key_teleports_only_at_its_cell() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -652,6 +718,7 @@ fn c4_conditional_key_teleports_only_at_its_cell() {
     assert_eq!(app.world.res.item_class(key), Some(11));
 }
 
+/// The skeleton lamp kills every actor of the other groups in the location and is consumed.
 #[test]
 fn c4_skeleton_lamp_kills_other_groups() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -677,6 +744,10 @@ fn c4_skeleton_lamp_kills_other_groups() {
     assert_eq!(app.world.res.item_class(lamp), Some(0xFF));
 }
 
+/// The copper mirror flips a buried (negative-money) ground record positive and is consumed.
+///
+/// A buried record stays in the active marker pool but is never drawn; flipping the
+/// sign is what lets `FUN_0042532C` draw it and the pickup path accept it.
 #[test]
 fn c4_mirror_reactivates_negative_ground_records() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -713,6 +784,7 @@ fn c4_mirror_reactivates_negative_ground_records() {
     assert_eq!(app.world.res.item_class(mirror), Some(0xFF));
 }
 
+/// The whistle scatters object-family actors by issuing them a move, and is reusable.
 #[test]
 fn c4_whistle_scatters_object_actors() {
     let Some(mut app) = build_party_app_with_free_location() else {
@@ -754,6 +826,10 @@ fn c4_whistle_scatters_object_actors() {
     assert_eq!(app.world.res.item_class(whistle), Some(11));
 }
 
+/// The doll sets `Entity+0xD2 = 0x13` on living actors of other groups only, and is consumed.
+///
+/// Death rows and the player's own group (including party members) are skipped;
+/// the authored `Game.N` entity row is updated together with the cached actor.
 #[test]
 fn c1_doll_sets_npc_state_and_is_consumed() {
     let Some(mut app) = build_party_app_with_free_location() else {

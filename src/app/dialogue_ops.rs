@@ -31,28 +31,56 @@ const ITEM_INSTANCE_SIZE: usize = 16;
 const ITEM_INSTANCE_COUNT: usize = 8192;
 
 /// Owned mutable snapshot of the state a dialog program can read or change.
+///
+/// Built by [`QuestContext::from_app`] before a page is evaluated and written
+/// back once by [`QuestContext::apply_to_app`], so the immutable
+/// `world.res.quest` borrow and the mutable game state never overlap.
 pub(super) struct QuestContext {
+    /// Protagonist record: money, XP, HP, stats, equipment and the runtime
+    /// `+0xD0/+0xD2/+0xD3` quest fields.
     pub player: PlayerCharacter,
+    /// Committed runtime cell x (`Entity+0x08`) at dialogue time.
     pub player_x: f64,
+    /// Committed runtime cell y (`Entity+0x0A`) at dialogue time.
     pub player_y: f64,
+    /// Runtime `B7` flag words (300 slots, bit `0x80` = set).
     pub quest_flags: Vec<u32>,
+    /// The 20 settlement records, including waypoints and target lists.
     pub settlements: Vec<Settlement>,
+    /// Per-settlement merchant stock/restock state.
     pub settlement_trade: Vec<SettlementTrade>,
+    /// Parsed `Game.N` group/entity tables (the mutable world population).
     pub tables: Option<GameTables>,
+    /// Recruited companions (reserved group 0 minus the protagonist).
     pub party: Vec<PartyMember>,
+    /// Party selection set (`0x81A814`); `[0]` is the protagonist.
     pub party_selected: [bool; crate::hud::PARTY_CELLS],
+    /// Active ground markers on the current map (WorldObject pool).
     pub active_world_objects: Vec<ActiveWorldObject>,
+    /// Raw `Game.N` item-instance table (8192 x 16 bytes), patched in place by
+    /// the item ops.
     pub item_table: Vec<u8>,
+    /// Combat LCG, so chance opcodes share the original random stream.
     pub rng: OriginalRng,
+    /// `Entity` index of the NPC the dialogue belongs to.
     pub npc_entity: usize,
+    /// Location the dialogue is running in.
     pub current_map: u32,
+    /// Monotonic 60 ms original-frame counter (apprentice elapsed-time gains).
     pub world_frame: u64,
+    /// Set by opcode `0x113`; the caller opens interface mode 7 afterwards.
     pub trade_request: Option<usize>,
+    /// Opcodes that hit the catch-all arm, for diagnostics.
     pub unknown_ops: Vec<u16>,
 }
 
 impl QuestContext {
     /// Build the snapshot for a dialogue with `npc_entity`.
+    ///
+    /// Every mutable container is cloned (player, flags, settlements, merchant
+    /// stocks, group/entity tables, party, ground markers, the raw item table
+    /// and the combat LCG), so the program can be evaluated while `world.res`
+    /// stays immutably borrowed.
     pub fn from_app(app: &PlayableApp, npc_entity: usize) -> QuestContext {
         QuestContext {
             player: app.player,
@@ -77,6 +105,11 @@ impl QuestContext {
 
     /// Apply the snapshot back to the live game. Population is invalidated when
     /// actor tables, settlements or the party changed.
+    ///
+    /// Also re-selects the protagonist if a program cleared the whole selection
+    /// set, and opens interface mode 7 when `0x113` asked for a trade. The item
+    /// table is written back through [`crate::res::Res::set_save_game`] so the
+    /// decoders see the patched instances.
     pub fn apply_to_app(self, app: &mut PlayableApp) {
         let tables_changed = app.tables.as_ref() != self.tables.as_ref();
         let party_changed = app.party != self.party;
@@ -108,12 +141,17 @@ impl QuestContext {
 
     // --- B7 flags ---------------------------------------------------------
 
+    /// Set `B7[index]` bit `0x80` (active). Mirrors an `ActionStep::SetFlag`
+    /// word (`0x8000` set, `0x2000` clear); `FUN_00434FE8` only ever tests
+    /// this bit.
     fn set_flag(&mut self, index: usize) {
         if let Some(w) = self.quest_flags.get_mut(index) {
             *w |= 0x80;
         }
     }
 
+    /// Clear `B7[index]` bit `0x80` (an `ActionStep::ClearFlag` word, which
+    /// carries neither `0x8000` nor `0x2000`).
     fn clear_flag(&mut self, index: usize) {
         if let Some(w) = self.quest_flags.get_mut(index) {
             *w &= !0x80;
@@ -122,48 +160,65 @@ impl QuestContext {
 
     // --- Settlement helpers ----------------------------------------------
 
+    /// Index into `settlements` of the record for the current location.
     fn settlement_index(&self) -> Option<usize> {
         self.settlements
             .iter()
             .position(|s| s.loc_id as u32 == self.current_map)
     }
 
+    /// Current location's settlement, if it has one.
     fn settlement(&self) -> Option<&Settlement> {
         self.settlement_index()
             .and_then(|i| self.settlements.get(i))
     }
 
+    /// Mutable current-location settlement, if it has one.
     fn settlement_mut(&mut self) -> Option<&mut Settlement> {
         let i = self.settlement_index()?;
         self.settlements.get_mut(i)
     }
 
+    /// `Settlement+0x18` target entry `index` (`+0x00 key`, `+0x01 state`,
+    /// `+0x02 prop`, `+0x06 timer`), or `None` past the end of the list.
     fn target(&self, index: usize) -> Option<&SettlementTarget> {
         self.settlement()?.targets.get(index)
     }
 
+    /// Predicate shared by `0x13B`/`0x13C`/`0x13D`/`0x140`/`0x142`/`0x143`:
+    /// the target's state byte is exactly `3` (built/completed).
     fn target_state_is_3(&self, index: usize) -> bool {
         self.target(index).map(|t| t.state == 3).unwrap_or(false)
     }
 
+    /// `Settlement+0x00`/`+0x01`: the target-list base and count bytes that
+    /// `0x147`/`0x169`/`0x157` use to reach the trailing "building" targets.
     fn target_base(&self) -> Option<(u8, u8)> {
         self.settlement().map(|s| (s.target_base0, s.target_base1))
     }
 
+    /// Row `index` of the settlement target record table
+    /// (`crate::constants::exe_tables::SETTLEMENT_TARGET_TABLE`, records
+    /// `0x458A02 + key*0x40`) as `(required building skill, timer value)`; a
+    /// missing row reads `(0, 0)`.
     fn requirement(index: usize) -> (u16, u16) {
         *SETTLEMENT_REQUIREMENT.get(index).unwrap_or(&(0, 0))
     }
 
+    /// Target `index` its key byte (`SettlementTarget+0x00`), which selects the
+    /// requirement-table row.
     fn target_key(&self, index: usize) -> Option<usize> {
         self.target(index).map(|t| t.key as usize)
     }
 
     // --- Actors / groups --------------------------------------------------
 
+    /// Canonical `Game.N` `Entity` for `id`, ignoring the party overlay.
     fn entity(&self, id: usize) -> Option<&crate::population::Entity> {
         self.tables.as_ref()?.entities.get(id)
     }
 
+    /// Party member first (it shadows its source row), then the table entity.
     fn entity_or_party(&self, id: usize) -> Option<&crate::population::Entity> {
         self.party
             .iter()
@@ -172,6 +227,7 @@ impl QuestContext {
             .or_else(|| self.entity(id))
     }
 
+    /// Mutable [`Self::entity_or_party`].
     fn entity_or_party_mut(&mut self, id: usize) -> Option<&mut crate::population::Entity> {
         if let Some(pos) = self.party.iter().position(|m| m.entity.index == id) {
             return Some(&mut self.party[pos].entity);
@@ -179,23 +235,28 @@ impl QuestContext {
         self.tables.as_mut()?.entities.get_mut(id)
     }
 
+    /// The dialogue NPC's live record.
     fn npc(&self) -> Option<&crate::population::Entity> {
         self.entity_or_party(self.npc_entity)
     }
 
+    /// Mutable [`Self::npc`].
     fn npc_mut(&mut self) -> Option<&mut crate::population::Entity> {
         let id = self.npc_entity;
         self.entity_or_party_mut(id)
     }
 
+    /// True when the dialogue NPC has already been recruited (`0x15E`).
     fn npc_in_party(&self) -> bool {
         self.party.iter().any(|m| m.entity.index == self.npc_entity)
     }
 
+    /// Raw `Game.N` `Group` record by table index.
     fn group_record_by_index(&self, index: usize) -> Option<&Group> {
         self.tables.as_ref()?.groups.get(index)
     }
 
+    /// First object/enemy group (`class_1e & 0x40`) authored for `loc`.
     fn object_group_for_location(&self, loc: u16) -> Option<&Group> {
         self.tables
             .as_ref()?
@@ -204,6 +265,8 @@ impl QuestContext {
             .find(|g| g.loc_id as u16 == loc && g.class_1e & 0x40 != 0)
     }
 
+    /// Entity ids owned by group `index` (its contiguous `first_entity..
+    /// first_entity + entity_count` range), or empty for an invalid range.
     fn group_entity_ids_by_index(&self, index: usize) -> Vec<usize> {
         let Some(g) = self.group_record_by_index(index) else {
             return Vec::new();
@@ -261,6 +324,9 @@ impl QuestContext {
             .unwrap_or(true)
     }
 
+    /// Highest building skill (`Entity+0x46`) among the settlement group's
+    /// members, excluding recruited party members. `0x146` compares it with
+    /// `>= 5` and the target predicates use it as the construction progress.
     fn settlement_group_building(&mut self) -> u16 {
         let Some(group_index) = self.settlement().map(|s| s.group_id as usize) else {
             return 0;
@@ -274,6 +340,14 @@ impl QuestContext {
             .unwrap_or(0)
     }
 
+    /// `FUN_004313B0` party skill scan used by the predicate opcodes
+    /// `0x116`/`0x117`/`0x118`/`0x119` (param 4/1/3/2).
+    ///
+    /// A companion matches when its `archetype & 0x38` role bits equal
+    /// `param << 3`, or when the derived skill clears the original threshold
+    /// (healing `> 100`, trade `> 0x1E`, smithing `> 4`, strength `> 10` and
+    /// melee mastery `> 10`). The protagonist is not scanned: the original
+    /// starts the loop at party member 1.
     fn skill_check(&mut self, param: u8) -> bool {
         let ids = self.party_ids();
         // `FUN_004313B0` scans party group 0 from member 1; the protagonist is
@@ -315,6 +389,10 @@ impl QuestContext {
         false
     }
 
+    /// First party companion that satisfies skill slot `slot`, the helper the
+    /// `0x159`..`0x15C` settle ops use to pick the specialist to station.
+    ///
+    /// Same matching rules as [`Self::skill_check`].
     fn find_skill_member(&mut self, slot: u8) -> Option<usize> {
         let ids = self.party_ids();
         for &id in &ids {
@@ -343,6 +421,11 @@ impl QuestContext {
 
     // --- Items ------------------------------------------------------------
 
+    /// Decode one item instance from the raw table: `(class +0x00,
+    /// subtype +0x03, flags +0x0E)`.
+    ///
+    /// Returns `None` for id `0`, an out-of-range offset, or a consumed slot
+    /// (signed class `0xFF`). The equipment flag ops use `flags`.
     fn item_instance(&self, id: u16) -> Option<(u8, u8, u16)> {
         if id == 0 {
             return None;
@@ -360,6 +443,9 @@ impl QuestContext {
         Some((class, subtype, flags))
     }
 
+    /// True when the protagonist's 32 inventory slots hold an instance of
+    /// `(class, subtype)` (checked by the `0x139`/`0x13E`/`0x149`/`0x158`
+    /// item predicates and the `HasPartyItem` low family).
     fn inventory_contains(&self, class: u8, subtype: u8) -> bool {
         self.player.inventory.iter().any(|&id| {
             self.item_instance(id)
@@ -368,6 +454,7 @@ impl QuestContext {
         })
     }
 
+    /// Slot index of the first inventory instance matching `(class, subtype)`.
     fn inventory_slot(&self, class: u8, subtype: u8) -> Option<usize> {
         self.player.inventory.iter().position(|&id| {
             self.item_instance(id)
@@ -376,6 +463,11 @@ impl QuestContext {
         })
     }
 
+    /// Allocate the first free item-instance slot (signed class `< 0`) and
+    /// stamp `class`/`subtype` into it.
+    ///
+    /// Slot `0` is never used (the original treats id `0` as "no item"), and
+    /// the whole 16-byte record is zeroed before the two bytes are written.
     fn alloc_item(&mut self, class: u8, subtype: u8) -> Option<u16> {
         if self.item_table.len() < ITEM_INSTANCE_COUNT * ITEM_INSTANCE_SIZE {
             return None;
@@ -392,6 +484,10 @@ impl QuestContext {
         None
     }
 
+    /// Allocate an instance and put it in the first free inventory slot.
+    ///
+    /// Like the original, the free-slot test happens **before** the allocation
+    /// so a full bag never burns an instance id.
     fn add_inventory_item(&mut self, class: u8, subtype: u8) -> bool {
         // The original checks for a free slot before allocating the instance.
         let Some(slot) = crate::inventory::free_inventory_slot(&self.player.inventory) else {
@@ -404,6 +500,8 @@ impl QuestContext {
         true
     }
 
+    /// Consume one inventory instance of `(class, subtype)`: mark it class
+    /// `0xFF` and close the hole by shifting the remaining slots down.
     fn remove_inventory_item(&mut self, class: u8, subtype: u8) -> bool {
         let Some(slot) = self.inventory_slot(class, subtype) else {
             return false;
@@ -422,6 +520,12 @@ impl QuestContext {
         true
     }
 
+    /// Drop item instance `id` onto the protagonist's current cell as a ground
+    /// marker (`source = usize::MAX` marks a synthesized, unsourced record that
+    /// the respawn pass must not try to clone).
+    ///
+    /// Used when a granted item cannot fit in the bag, so a quest reward is
+    /// still obtainable.
     fn drop_item_at_player(&mut self, id: u16) {
         if id == 0 {
             return;
@@ -436,6 +540,9 @@ impl QuestContext {
         });
     }
 
+    /// True when any equipped item - the six main slots or the special slot -
+    /// has instance flag `bit` set (`0x144` tests bit `1`, the unidentified
+    /// marker).
     fn equipment_has_flag(&self, bit: u16) -> bool {
         self.player
             .equipment
@@ -527,6 +634,12 @@ impl QuestContext {
         true
     }
 
+    /// `0x14B` (`FUN_0041BA08`): clear the unidentified bit (`+0x0E & 1`) on
+    /// every item the protagonist carries and bank `+1` identification per
+    /// item, clamped to 100.
+    ///
+    /// Scans equipment (6), special, inventory (32) and additional (5) slots in
+    /// that order.
     fn recalc_identification(&mut self) {
         let mut ids: Vec<u16> = Vec::new();
         ids.extend_from_slice(&self.player.equipment);
@@ -553,6 +666,13 @@ impl QuestContext {
 
     // --- Party / world actors --------------------------------------------
 
+    /// `0x123` (`FUN_00431820`): recruit the NPC into the reserved party group.
+    ///
+    /// Before the join the apprentice's elapsed-time profession gain is applied
+    /// (see the inline trace), then the entity moves to group 0, its own
+    /// settlement waypoint owner is cleared, and a fresh motion record is
+    /// seeded at its authored cell. The new member is auto-selected into the
+    /// party selection set.
     fn recruit_entity(&mut self, id: usize) -> bool {
         if self.party.iter().any(|m| m.entity.index == id) {
             return true;
@@ -651,6 +771,10 @@ impl QuestContext {
         true
     }
 
+    /// Remove a companion from the party and shift the selection cells down.
+    ///
+    /// The entity stays in the `Game.N` table; callers that want the NPC back
+    /// in the world (settling) restore its group afterwards.
     fn dismiss_entity(&mut self, id: usize) -> bool {
         let Some(index) = self.party.iter().position(|m| m.entity.index == id) else {
             return false;
@@ -664,6 +788,10 @@ impl QuestContext {
         true
     }
 
+    /// Remove `id` from the party (if present) and from its `Game.N` group.
+    ///
+    /// The `0x16B` "the NPC leaves" op: unlike `0x14C` the actor is not moved
+    /// into a settlement, it disappears from the population.
     fn remove_world_entity(&mut self, id: usize) -> bool {
         self.dismiss_entity(id);
         self.detach_table_entity(id)
@@ -898,6 +1026,12 @@ impl QuestContext {
         true
     }
 
+    /// `0x159`..`0x15C` (`FUN_00431654`): station the party specialist for role
+    /// `slot` at its settlement waypoint.
+    ///
+    /// Fails when the waypoint already has an owner or no companion matches the
+    /// role skill; on success the member leaves the party and is written back
+    /// into the settlement group as the role holder.
     fn prepare_ally(&mut self, slot: u8) -> bool {
         let Some(settlement) = self.settlement() else {
             return false;
@@ -952,6 +1086,11 @@ impl QuestContext {
 
     // --- Programs ---------------------------------------------------------
 
+    /// Run one `B5` action program (`FUN_00434BB8`) end to end.
+    ///
+    /// The words are decoded by `crate::script::action_steps` into flag
+    /// sets/clears and opcodes, then applied in order against this snapshot;
+    /// `PROGRAM_END` terminates the program.
     pub fn run_action_program(&mut self, quest: &QuestData, id: u16) {
         let words = quest.action_program(id);
         for step in action_steps(&words) {
@@ -1284,6 +1423,9 @@ impl QuestContext {
         }
     }
 
+    /// `0x151`..`0x157`: true when target `target_index` is still untouched
+    /// (`state == 0 && timer == 0`) and the settlement's highest building
+    /// skill covers the requirement table's first value.
     fn requirement_predicate(&mut self, target_index: usize) -> bool {
         let Some(s) = self.settlement() else {
             return false;
@@ -1298,6 +1440,9 @@ impl QuestContext {
         self.settlement_group_building() >= required
     }
 
+    /// `0x163`..`0x169`: start target `target_index` by copying the second
+    /// value of its requirement-table row into `SettlementTarget+0x06`
+    /// (the countdown the settlement pass decrements).
     fn write_target_timer(&mut self, target_index: usize) -> bool {
         let Some(key) = self.target_key(target_index) else {
             return false;

@@ -1,9 +1,20 @@
 //! Fallback human variant selection.
+//!
+//! A Game.res variant record is human when its archetype byte at `+0x04` lacks
+//! the object bit, its base-graphics index at `+0x3F` addresses a parsed human
+//! block, and its palette offset at `+0x41` selects one of the 256 palettes.
 
 use super::super::*;
 use crate::constants::combat::OBJECT_ARCHETYPE_BIT;
 
 impl Res {
+    /// Pick a human variant id for the frontend hero preview.
+    ///
+    /// With `Some(vid)` the request is validated and either returned unchanged
+    /// or rejected with `None` - it is never silently substituted. With `None`
+    /// the first variant is chosen that is human, has a valid base block, at
+    /// least one non-empty equipment slot (`+0x45`, six `u16` ids) and an
+    /// aligned in-range palette offset.
     pub fn find_fallback_human(&self, requested: Option<usize>) -> Option<usize> {
         if let Some(vid) = requested {
             if vid < GAME_VARIANT_COUNT {

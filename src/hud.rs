@@ -19,6 +19,13 @@
 //! - The party panel is a **2 columns x 5 rows = 10** cell grid measured from
 //!   the decoded `INTR[3]` (each visible "wide frame" is two cells sharing a
 //!   single 1px middle border).
+//!
+//! Per-frame order: `compose` draws the `INTR[3]` overlay, the seven-icon strip,
+//! the arrow caps, the empty slot backgrounds, the item icons, the AUTO button
+//! and finally each portrait with its selection marker and HP bar;
+//! `draw_game_hud` resolves the inventory icons and class-12 stack badges around
+//! that pass, and `draw_hover_text` paints the lower-panel description over the
+//! bottom bar.
 
 use crate::res::{blit, Img, Res};
 

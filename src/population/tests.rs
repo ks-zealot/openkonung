@@ -2,15 +2,18 @@
 
 use super::*;
 
+/// An all-zero buffer just long enough for every Entity record.
 fn empty_game() -> Vec<u8> {
     vec![0u8; ENTITY_END]
 }
 
+/// Little-endian `u16` write used by the fixtures.
 fn set_u16(data: &mut [u8], o: usize, v: u16) {
     data[o] = (v & 0xFF) as u8;
     data[o + 1] = (v >> 8) as u8;
 }
 
+/// Little-endian `u32` write used by the fixtures.
 fn set_u32(data: &mut [u8], o: usize, v: u32) {
     data[o] = (v & 0xFF) as u8;
     data[o + 1] = ((v >> 8) & 0xFF) as u8;
@@ -18,6 +21,7 @@ fn set_u32(data: &mut [u8], o: usize, v: u32) {
     data[o + 3] = ((v >> 24) & 0xFF) as u8;
 }
 
+/// Fill the fields of `Group[index]` that the location setup reads.
 fn write_group(data: &mut [u8], index: usize, first: u16, count: u8, loc: u8, class: u8) {
     let o = GROUP_OFF + index * GROUP_STRIDE;
     set_u16(data, o, first);
@@ -26,6 +30,7 @@ fn write_group(data: &mut [u8], index: usize, first: u16, count: u8, loc: u8, cl
     data[o + 0x1E] = class;
 }
 
+/// Fill the header + position fields of `Entity[index]`.
 fn write_entity(data: &mut [u8], index: usize, kind: u8, grp: u8, x: u16, y: u16) {
     let o = ENTITY_OFF + index * ENTITY_STRIDE;
     data[o] = kind;
@@ -34,6 +39,8 @@ fn write_entity(data: &mut [u8], index: usize, kind: u8, grp: u8, x: u16, y: u16
     set_u16(data, o + 0x0A, y);
 }
 
+/// Each group field decodes from its own offset, including both interleaved
+/// rectangles.
 #[test]
 fn group_field_offsets_are_exact() {
     let mut data = empty_game();
@@ -82,6 +89,8 @@ fn group_field_offsets_are_exact() {
     assert_eq!(g.class_1e, 0x1E);
 }
 
+/// Every Entity header/position/dialogue/visual field decodes from its exact
+/// offset in the unaligned `0x2A69A` base table.
 #[test]
 fn entity_field_offsets_are_exact_including_unaligned_base() {
     let mut data = empty_game();
@@ -120,6 +129,8 @@ fn entity_field_offsets_are_exact_including_unaligned_base() {
     assert_eq!(e.palette_offset, 0xDEAD_BEEF);
 }
 
+/// The empty range at the table end and the last single-entity range are valid;
+/// one past the end and a start beyond the table are rejected by variant.
 #[test]
 fn entity_range_boundaries() {
     // Empty range at the very end is valid.
@@ -162,6 +173,7 @@ fn entity_range_boundaries() {
     ));
 }
 
+/// A zeroed group with just the given source index.
 fn empty_group(index: usize) -> Group {
     Group {
         index,
@@ -181,6 +193,8 @@ fn empty_group(index: usize) -> Group {
     }
 }
 
+/// Diagnosis lists only the requested location and preserves source group and
+/// entity ids plus the authored coordinates.
 #[test]
 fn diagnose_filters_location_and_preserves_ids() {
     let mut data = empty_game();
@@ -206,6 +220,8 @@ fn diagnose_filters_location_and_preserves_ids() {
     assert!(r.valid_class);
 }
 
+/// An out-of-table entity range is reported as an error and yields no entities,
+/// never a clipped slice.
 #[test]
 fn diagnose_reports_invalid_range_without_clipping() {
     let mut data = empty_game();
@@ -219,6 +235,7 @@ fn diagnose_reports_invalid_range_without_clipping() {
     assert!(reports[0].entities.is_empty());
 }
 
+/// Group 0 is reported, flagged reserved, and still carries its entities.
 #[test]
 fn reserved_group_zero_is_flagged() {
     let mut data = empty_game();
@@ -232,6 +249,7 @@ fn reserved_group_zero_is_flagged() {
     assert_eq!(reports[0].entities.len(), 1);
 }
 
+/// Setup filtering excludes reserved group 0 and every `+0x1E == 0` group.
 #[test]
 fn active_entities_excludes_group_zero_and_inactive_class() {
     let mut data = empty_game();
@@ -249,6 +267,8 @@ fn active_entities_excludes_group_zero_and_inactive_class() {
     assert_eq!(active[0].group_id, 2);
 }
 
+/// A buffer shorter than the Group table fails; a buffer long enough for
+/// Groups but not Entities fails only the Entity parse.
 #[test]
 fn truncated_buffers_error() {
     let short = vec![0u8; 16];
@@ -262,6 +282,8 @@ fn truncated_buffers_error() {
     assert!(parse_entities(&mid).is_err());
 }
 
+/// Entity 1999, the last record, is fully readable including its `u32`
+/// palette offset.
 #[test]
 fn last_entity_is_readable() {
     let mut data = empty_game();
@@ -277,6 +299,8 @@ fn last_entity_is_readable() {
     assert_eq!(e.palette_offset, 0xCAFE_F00D);
 }
 
+/// The stats block, six equipment slots and 32 inventory slots decode from
+/// their exact `Entity+0x..` offsets.
 #[test]
 fn entity_stats_equipment_inventory_offsets() {
     let mut data = empty_game();
@@ -338,6 +362,8 @@ fn entity_stats_equipment_inventory_offsets() {
     assert_eq!(e.inventory[31], 331);
 }
 
+/// The five additional ids (`+0xB2`) and the special id (`+0xCC`) decode into
+/// their own fields.
 #[test]
 fn entity_additional_and_special_equipment_offsets() {
     let mut data = empty_game();
@@ -351,11 +377,15 @@ fn entity_additional_and_special_equipment_offsets() {
     assert_eq!(entities[9].special_equipment, 0x1234);
 }
 
+/// The shipped `Game.1`, or `None` when it is absent from the install.
 fn game1() -> Option<Vec<u8>> {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../Game.1");
     std::fs::read(&p).ok()
 }
 
+/// Two known `Game.1` records keep their authored stats and equipment, proving
+/// the parser against real data (entity 277 the waypoint owner, 539 the
+/// recruitable companion).
 #[test]
 fn real_game1_entity_277_and_539_regression() {
     let Some(data) = game1() else {
@@ -403,6 +433,7 @@ fn real_game1_entity_277_and_539_regression() {
     assert_eq!(e.equipment, [0, 0, 745, 746, 747, 748]);
 }
 
+/// The diagnostic block prints the authored entity fields verbatim.
 #[test]
 fn real_game1_entity_debug_block() {
     let Some(data) = game1() else { return };
@@ -427,6 +458,8 @@ fn real_game1_entity_debug_block() {
     }
 }
 
+/// The location-4 settlement waypoints carry the authored role dialogue ids and
+/// home positions used by the citizen AI and prop targeting.
 #[test]
 fn real_game1_settlement_waypoints_are_homes() {
     let Some(data) = game1() else {

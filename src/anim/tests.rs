@@ -2,6 +2,7 @@
 
 use super::*;
 
+/// Each stance selects the paired row: idle 0/6, walk 1/7, attack 2/8, death 3/9.
 #[test]
 fn stance_actions_are_paired() {
     assert_eq!(idle_action(false), 6);

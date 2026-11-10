@@ -124,6 +124,8 @@ pub fn ambient(location: u32, slot: u32) -> u16 {
 mod tests {
     use super::*;
 
+    /// Human action rows map to the documented clip ids, with the 95% idle gate
+    /// and the leader-only walk clip.
     #[test]
     fn human_table_matches_original_cases() {
         assert_eq!(human_action(3, 0, true, 0), Some(34)); // death
@@ -137,6 +139,7 @@ mod tests {
         assert_eq!(human_action(0, 0, true, 95), None);
     }
 
+    /// Archetype 65 yields bank base 56 and the `+0..+4` action offsets.
     #[test]
     fn monster_bank_matches_arch65() {
         // 65*8 - 0x1D0 = 56.
@@ -150,11 +153,13 @@ mod tests {
         assert_eq!(monster_action(65, 2, 0), Some(60));
     }
 
+    /// Human archetypes (the `0x40` bit clear) have no monster bank at all.
     #[test]
     fn non_object_archetype_has_no_monster_bank() {
         assert_eq!(monster_action(0x04, 2, 0), None);
     }
 
+    /// Item class `2` - incoming or displaced - selects clip `1` instead of `11`.
     #[test]
     fn equipment_class_two_selects_one() {
         assert_eq!(equip_main(1, None), 11);
@@ -162,6 +167,7 @@ mod tests {
         assert_eq!(equip_main(1, Some(2)), 1);
     }
 
+    /// Each location owns eight consecutive ambient ids starting at `0x100`.
     #[test]
     fn ambient_banks_are_eight_clips_per_location() {
         assert_eq!(ambient(1, 0), 0x100);

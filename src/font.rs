@@ -42,9 +42,12 @@ pub use crate::constants::exe_tables::SMALL_FONT_OFF;
 use crate::constants::exe_tables::FONT_DGROUP_FILE;
 use crate::constants::exe_tables::FONT_DGROUP_VA;
 
+/// Selector for one of the three original font tables.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OriginalFont {
+    /// Small interface font (`0x58BC34`), used for HUD text and item details.
     Small,
+    /// Large font (`0x57B73C`), used for names and window headings.
     Large,
     /// Small-font highlight/selected variant (`0x58B8F0`), used by the dialog
     /// renderer for the currently selected option.
@@ -55,14 +58,24 @@ pub enum OriginalFont {
 /// original scanline skipped.
 #[derive(Clone, Debug)]
 pub struct Glyph {
+    /// Glyph width in pixels.
     pub width: u16,
+    /// Glyph height in pixels.
     pub height: u16,
+    /// `width * height * 4` RGBA bytes, row-major.
     pub rgba: Vec<u8>,
 }
 
+/// One original proportional font: the byte-indexed glyph table.
+///
+/// `glyphs[i]` is the CP866 byte `first_char + i`; a null glyph pointer keeps
+/// `None` and advances by the fallback width.
 pub struct FontTable {
+    /// First CP866 byte the table covers (`0x20` in both shipped fonts).
     first_char: u8,
+    /// Advance used for missing/out-of-range glyphs (`4` in both fonts).
     fallback: i32,
+    /// Decoded glyphs in byte order.
     glyphs: Vec<Option<Glyph>>,
 }
 
@@ -96,18 +109,25 @@ impl FontTable {
         })
     }
 
+    /// First CP866 byte covered by this table (the header byte at `+0x00`).
     pub fn first_char(&self) -> u8 {
         self.first_char
     }
 
+    /// Advance used when a character has no glyph (header `u16` at `+0x02`).
     pub fn fallback_width(&self) -> i32 {
         self.fallback
     }
 
+    /// Number of byte slots in the table (header count at `+0x01`).
     pub fn glyph_count(&self) -> usize {
         self.glyphs.len()
     }
 
+    /// Glyph for a Unicode character, resolved through CP866.
+    ///
+    /// `None` for characters outside CP866, bytes below `first_char`, beyond the
+    /// table length, or with a null glyph pointer.
     pub fn glyph(&self, ch: char) -> Option<&Glyph> {
         let b = char_to_cp866(ch)?;
         let idx = b as i32 - self.first_char as i32;
@@ -117,6 +137,7 @@ impl FontTable {
         self.glyphs[idx as usize].as_ref()
     }
 
+    /// Per-glyph advance: the glyph width, or the fallback width when missing.
     fn advance(&self, ch: char) -> i32 {
         match self.glyph(ch) {
             Some(g) => g.width as i32,
@@ -157,10 +178,16 @@ impl FontTable {
     }
 }
 
+/// Convert a `konung.res` DGROUP VA to a file offset.
 fn va_to_file(va: u32) -> usize {
     (FONT_DGROUP_FILE as i64 + (va as i64 - FONT_DGROUP_VA as i64)) as usize
 }
 
+/// Decode one glyph record addressed by VA.
+///
+/// Record: `[u16 width][u16 height][u16 row_size[height]][scanlines]`. Returns
+/// `None` when the record header/row table is out of bounds, the dimensions are
+/// zero or absurd, or a row runs past the image.
 fn decode_glyph(data: &[u8], va: u32) -> Option<Glyph> {
     let fo = va_to_file(va);
     if fo + 4 > data.len() {
@@ -219,6 +246,9 @@ fn decode_glyph(data: &[u8], va: u32) -> Option<Glyph> {
     })
 }
 
+/// Blit one glyph at `(ox, oy)`, skipping transparent pixels and clipping to
+/// the destination. `rgb_override` recolours every opaque pixel (highlight
+/// variant); otherwise the glyph's own RGB is copied.
 fn blit_glyph(
     dst: &mut [u8],
     dw: usize,
@@ -258,7 +288,9 @@ fn blit_glyph(
 
 /// Both original fonts, parsed once from `konung.res`.
 pub struct Fonts {
+    /// Small interface font (`SMALL_FONT_OFF`, VA `0x58BC34`).
     pub small: Option<FontTable>,
+    /// Large font (`LARGE_FONT_OFF`, VA `0x57B73C`).
     pub large: Option<FontTable>,
     /// Highlight/selected small-font variant (`0x58B8F0`).
     pub highlighted: Option<FontTable>,
@@ -274,6 +306,7 @@ impl Fonts {
         }
     }
 
+    /// Parse the small, large and highlighted font tables from `konung.res`.
     pub fn parse(konung: &[u8]) -> Fonts {
         Fonts {
             small: FontTable::parse(konung, SMALL_FONT_OFF),
@@ -282,6 +315,7 @@ impl Fonts {
         }
     }
 
+    /// The requested font, or `None` when it was not parsed.
     pub fn get(&self, font: OriginalFont) -> Option<&FontTable> {
         match font {
             OriginalFont::Small => self.small.as_ref(),
@@ -290,10 +324,13 @@ impl Fonts {
         }
     }
 
+    /// Canonical text width in pixels; `0` when the font is absent.
     pub fn measure(&self, font: OriginalFont, text: &str) -> i32 {
         self.get(font).map(|t| t.measure(text)).unwrap_or(0)
     }
 
+    /// Draw `text` with the requested font and return the advance width; `0`
+    /// when the font is absent (nothing is drawn).
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,

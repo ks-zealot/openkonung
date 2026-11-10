@@ -20,10 +20,17 @@
 //! ```
 
 /// One horizontal run of pixels, `x1` inclusive.
+///
+/// The accumulator stores runs in the order the masks were added, never merged:
+/// overlapping body + equipment masks therefore darken a shared pixel once per
+/// mask, exactly like the original run lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
+    /// Screen scanline (`y`), already offset by the mask's row.
     pub row: i32,
+    /// First covered pixel column, inclusive.
     pub x0: i32,
+    /// Last covered pixel column, inclusive.
     pub x1: i32,
 }
 
@@ -146,6 +153,8 @@ mod tests {
         (p, 0)
     }
 
+    /// A skip byte then a short literal run becomes one clipped span on the
+    /// mask's row.
     #[test]
     fn a_single_row_run_becomes_one_span() {
         let (payload, off) = mask(4, &[&[0x82, 0x02, 0x00]]);
@@ -161,6 +170,8 @@ mod tests {
         );
     }
 
+    /// A run straddling the right clip edge is truncated, and a mask entirely
+    /// outside the clip reports failure and emits nothing.
     #[test]
     fn runs_are_clipped_to_the_viewport() {
         let (payload, off) = mask(8, &[&[0x04, 0x00]]);
@@ -187,6 +198,7 @@ mod tests {
         assert!(out2.is_empty());
     }
 
+    /// Only rows inside the clip's y range contribute spans.
     #[test]
     fn rows_outside_the_clip_are_skipped() {
         let (payload, off) = mask(2, &[&[0x02, 0x00], &[0x02, 0x00]]);
@@ -196,6 +208,8 @@ mod tests {
         assert_eq!(out[0].row, 11);
     }
 
+    /// A zero width or height in the mask header is rejected instead of
+    /// producing an empty successful pass.
     #[test]
     fn a_zero_size_mask_is_rejected() {
         let payload = [0u8; 8];
@@ -203,6 +217,8 @@ mod tests {
         assert!(!add_mask(&payload, 0, 0, 0, (0, 0, 799, 599), &mut out));
     }
 
+    /// `darken` halves RGB inside the spans, leaves alpha and every pixel
+    /// outside them untouched, and never touches other scanlines.
     #[test]
     fn darken_halves_every_channel_of_the_spans_only() {
         let mut frame = vec![200u8; 8 * 4 * 2];

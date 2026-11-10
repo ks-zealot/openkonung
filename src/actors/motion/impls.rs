@@ -8,10 +8,14 @@ impl RuntimeActor {
         self.entity.index
     }
 
+    /// True when the position was assigned at runtime (the authored cell was
+    /// `(0,0)`), false when the saved cell is authoritative.
     pub fn is_runtime(&self) -> bool {
         matches!(self.placement, ActorPlacement::Runtime { .. })
     }
 
+    /// 1-based placement attempt that produced a runtime cell, or `None` for a
+    /// persisted actor.
     pub fn attempts(&self) -> Option<u8> {
         match self.placement {
             ActorPlacement::Persisted => None,

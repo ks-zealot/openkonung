@@ -41,6 +41,7 @@ pub const FLAG_SLOTS: usize = 300;
 /// Discovered world-map location flags (`0x81CF80`).
 pub const DISCOVERED_LEN: usize = 56;
 
+/// Save metadata: which Game profile, hero identity and location to restore.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SaveMeta {
     /// `Game.N` suffix used by this save (0/1/2).
@@ -51,47 +52,87 @@ pub struct SaveMeta {
     pub current_map: u32,
 }
 
+/// Persisted protagonist record; mirrors the authored `Entity[0]` gameplay
+/// fields (level/money/stats/container tables) plus the runtime temporary-effect
+/// backup.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlayerSave {
+    /// `Entity+0x04` character class.
     pub class: CharacterClass,
+    /// `Entity+0x33` level.
     pub level: u8,
+    /// `Entity+0x34` i32 money.
     pub money: i32,
+    /// `Entity+0x38` available/free XP.
     pub available_xp: u32,
+    /// `Entity+0x3C` invested XP.
     pub invested_xp: u32,
+    /// `Entity+0x40` melee mastery.
     pub melee_mastery: u16,
+    /// `Entity+0x42` trade skill.
     pub trade: u16,
+    /// `Entity+0x44` archery mastery.
     pub archery_mastery: u16,
+    /// `Entity+0x46` building skill.
     pub building: u16,
+    /// `Entity+0x48` healing skill.
     pub healing: u16,
+    /// `Entity+0x4A` identification skill.
     pub identification: u16,
+    /// `Entity+0x4C` smithing skill.
     pub smithing: u16,
+    /// `Entity+0x54` dexterity base.
     pub dexterity_base: u16,
+    /// `Entity+0x56` dexterity current.
     pub dexterity_current: u16,
+    /// `Entity+0x58` charisma base.
     pub charisma_base: u16,
+    /// `Entity+0x5A` charisma current.
     pub charisma_current: u16,
+    /// `Entity+0x5E` strength base.
     pub strength_base: u16,
+    /// `Entity+0x60` strength current.
     pub strength_current: u16,
+    /// `Entity+0x62` endurance base.
     pub endurance_base: u16,
+    /// `Entity+0x64` endurance current.
     pub endurance_current: u16,
+    /// `Entity+0x66..+0x71` six main equipment item ids.
     pub equipment: [u16; 6],
+    /// `Entity+0x72..+0xB1` 32 inventory item ids.
     pub inventory: [u16; 32],
+    /// `Entity+0xB2..+0xBB` five additional equipment item ids.
     pub additional_equipment: [u16; 5],
+    /// `Entity+0xCC` special/ammo item id.
     pub special_equipment: u16,
+    /// `Entity+0x5C` HP in the internal 16x scale (1600 = full).
     pub hp_internal: u16,
+    /// `Entity+0x50` periodic (poison) damage.
     pub periodic_damage: u16,
+    /// `Entity+0x4E` innate armor rating.
     pub base_armor: u16,
+    /// `Entity+0x12` raw byte (active weapon slot).
     pub raw_0x12: u8,
+    /// `Entity+0x03` flags (`0x04` battle stance, `0x80` dead).
     pub flags_b: u8,
+    /// Whether the protagonist is dead (`flags_b & 0x80`).
     pub dead: bool,
+    /// `Entity+0xCE` temporary-effect timer in logic frames.
     pub temp_effect_timer: u16,
+    /// `Entity+0xCA` temporary-effect id.
     pub temp_effect_id: u16,
+    /// `Entity+0xBC` saved dexterity current.
     pub saved_dexterity: u16,
+    /// `Entity+0xBE` saved charisma current.
     pub saved_charisma: u16,
+    /// `Entity+0xC0` saved strength current.
     pub saved_strength: u16,
+    /// `Entity+0xC2` saved endurance current.
     pub saved_endurance: u16,
 }
 
 impl PlayerSave {
+    /// Copy the live protagonist into the persisted record.
     pub fn from_player(p: &PlayerCharacter) -> PlayerSave {
         PlayerSave {
             class: p.class,
@@ -133,6 +174,12 @@ impl PlayerSave {
         }
     }
 
+    /// Rebuild a `PlayerCharacter` with the immutable hero identity for
+    /// `hero_index`, or `None` when that hero id does not exist.
+    ///
+    /// Runtime dialogue/interface fields are reset (`Entity+0xD0 = 0xFF`,
+    /// `+0xD2 = 0`, `+0xD3 = 0`) because they live in [`SaveExtra`], not in
+    /// this record.
     pub fn into_player(self, hero_index: u32) -> Option<PlayerCharacter> {
         let h = hero::hero(hero_index)?;
         Some(PlayerCharacter {
@@ -183,34 +230,55 @@ impl PlayerSave {
 /// One map's runtime population cache.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PopulationSave {
+    /// Location id this cache belongs to.
     pub loc_id: u32,
+    /// Per-location population/motion build (placed actors and their path
+    /// state), restored verbatim instead of re-running spawn placement.
     pub build: PopulationBuild,
 }
 
 /// Complete persistent game state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SaveGame {
+    /// Save metadata (Game profile, hero identity, current location).
     pub meta: SaveMeta,
+    /// Persisted protagonist gameplay fields.
     pub player: PlayerSave,
-    /// Player committed runtime cell and facing (`Entity+0x08/+0x0A/+0x01`).
+    /// Player committed runtime cell x (`Entity+0x08`, grid column).
     pub player_x: f64,
+    /// Player committed runtime cell y (`Entity+0x0A`, grid row, `0..=159`).
     pub player_y: f64,
+    /// Player facing direction code `0..=7` (`Entity+0x01`).
     pub player_dir: i32,
+    /// Full `Group[200]` table (200 records).
     pub groups: Vec<Group>,
+    /// Full `Entity[2000]` table (2000 records, index == position).
     pub entities: Vec<Entity>,
+    /// `Settlement[20]` records with waypoints and target lists.
     pub settlements: Vec<Settlement>,
+    /// Per-settlement merchant stock/restock state.
     pub settlement_trade: Vec<SettlementTrade>,
+    /// `Game.N +0x21900` WorldObject sources (500 records).
     pub world_object_sources: Vec<WorldObjectSource>,
+    /// Active ground-marker pool rebuilt from the sources.
     pub active_world_objects: Vec<ActiveWorldObject>,
+    /// Cached runtime population for every visited location.
     pub population: Vec<PopulationSave>,
+    /// Recruited companions (party slot 1..n; slot 0 is the protagonist).
     pub party: Vec<crate::actors::PartyMember>,
+    /// HUD selection state per party slot.
     pub party_selected: Vec<bool>,
     /// Full `B7` slots (300 x u32), including journal lines.
     pub quest_flags: Vec<u32>,
+    /// Discovered world-map location mask (`0x81CF80`, 56 bytes).
     pub discovered_locations: Vec<u8>,
+    /// Logic frame counter (`timeGetTime`-driven 60 ms frames).
     pub world_frame: u64,
+    /// Verbatim 8192 x 16-byte item-instance table from the loaded `Game.N`.
     pub item_table: Vec<u8>,
+    /// In-flight projectiles (100-entry pool subset).
     pub projectiles: Vec<Projectile>,
+    /// Combat/item RNG state so a load continues the same sequence.
     pub rng: OriginalRng,
 }
 
@@ -243,17 +311,24 @@ pub struct GroupExtra {
 /// Version-2 group extras (no growth fields). Used only to decode old payloads.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct GroupExtraV2 {
+    /// `+0x1D` group activity byte.
     pub(crate) activity_1d: u8,
+    /// `DAT_0067C0A9[group*0x20] = 1` marker set by quest `0x112`.
     pub(crate) visited: bool,
 }
 
 /// Version-2 envelope extras: the same fields the shipped v2 build wrote.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct SaveExtraV2 {
+    /// Protagonist `Entity+0xD0` dialogue id.
     pub(crate) player_dialogue_id: u8,
+    /// Protagonist `Entity+0xD2` interface-mode byte.
     pub(crate) player_interface_mode_d2: u8,
+    /// Protagonist `Entity+0xD3` state byte.
     pub(crate) player_state_d3: u8,
+    /// Per-settlement runtime fields (`Settlement[20]`).
     pub(crate) settlements: Vec<SettlementExtra>,
+    /// Per-group runtime fields (`Group[200]`, without growth fields).
     pub(crate) groups: Vec<GroupExtraV2>,
 }
 
@@ -261,18 +336,26 @@ pub(crate) struct SaveExtraV2 {
 /// differ.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct SaveEnvelopeV2 {
+    /// Unchanged game state block.
     pub(crate) game: SaveGame,
+    /// v2 runtime/quest extras.
     pub(crate) extra: SaveExtraV2,
 }
 
 /// Version-3 envelope extras: the same fields the shipped v3 build wrote.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct SaveExtraV3 {
+    /// Protagonist `Entity+0xD0` dialogue id.
     pub(crate) player_dialogue_id: u8,
+    /// Protagonist `Entity+0xD2` interface-mode byte.
     pub(crate) player_interface_mode_d2: u8,
+    /// Protagonist `Entity+0xD3` state byte.
     pub(crate) player_state_d3: u8,
+    /// Per-settlement runtime fields.
     pub(crate) settlements: Vec<SettlementExtra>,
+    /// Per-group runtime fields, now with growth counters.
     pub(crate) groups: Vec<GroupExtra>,
+    /// `Entity` index the protagonist was loaded from.
     pub(crate) leader_entity_index: u32,
 }
 
@@ -280,7 +363,9 @@ pub(crate) struct SaveExtraV3 {
 /// differ.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct SaveEnvelopeV3 {
+    /// Unchanged game state block.
     pub(crate) game: SaveGame,
+    /// v3 runtime/quest extras.
     pub(crate) extra: SaveExtraV3,
 }
 
@@ -288,12 +373,19 @@ pub(crate) struct SaveEnvelopeV3 {
 /// (before the NPC `Entity+0xD2` map).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct SaveExtraV4 {
+    /// Protagonist `Entity+0xD0` dialogue id.
     pub(crate) player_dialogue_id: u8,
+    /// Protagonist `Entity+0xD2` interface-mode byte.
     pub(crate) player_interface_mode_d2: u8,
+    /// Protagonist `Entity+0xD3` state byte.
     pub(crate) player_state_d3: u8,
+    /// Per-settlement runtime fields.
     pub(crate) settlements: Vec<SettlementExtra>,
+    /// Per-group runtime fields.
     pub(crate) groups: Vec<GroupExtra>,
+    /// Per-settlement apprentice timestamps (`Settlement+0x3FC/400/404`).
     pub(crate) apprentice_start: Vec<[i32; 3]>,
+    /// `Entity` index the protagonist was loaded from.
     pub(crate) leader_entity_index: u32,
 }
 
@@ -301,7 +393,9 @@ pub(crate) struct SaveExtraV4 {
 /// differ.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct SaveEnvelopeV4 {
+    /// Unchanged game state block.
     pub(crate) game: SaveGame,
+    /// v4 runtime/quest extras.
     pub(crate) extra: SaveExtraV4,
 }
 
@@ -309,10 +403,15 @@ pub(crate) struct SaveEnvelopeV4 {
 /// `SaveGame`, so a v1 payload still decodes as a bare `SaveGame`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SaveExtra {
+    /// Protagonist `Entity+0xD0` dialogue id (`0xFF` = none).
     pub player_dialogue_id: u8,
+    /// Protagonist `Entity+0xD2` interface-mode byte.
     pub player_interface_mode_d2: u8,
+    /// Protagonist `Entity+0xD3` state byte.
     pub player_state_d3: u8,
+    /// Per-settlement runtime fields, one record per `Settlement`.
     pub settlements: Vec<SettlementExtra>,
+    /// Per-group runtime fields, one record per `Group`.
     pub groups: Vec<GroupExtra>,
     /// Per-settlement apprentice training timestamps (`Settlement+0x3FC/400/404`).
     /// Empty means all zero.
@@ -326,6 +425,8 @@ pub struct SaveExtra {
 }
 
 impl Default for SaveExtra {
+    /// Neutral extras for a v1 payload: no dialogue (`0xFF`), zero interface
+    /// state, and empty per-record tables (applied as "no overrides").
     fn default() -> Self {
         SaveExtra {
             // `Entity+0xD0 = 0xFF` is "no dialogue" for the protagonist.
@@ -344,11 +445,16 @@ impl Default for SaveExtra {
 /// Versioned save envelope. v2 = `SaveGame` + `SaveExtra`; v1 = bare `SaveGame`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SaveEnvelope {
+    /// The full game-state block (same layout since v1).
     pub game: SaveGame,
+    /// Quest/runtime additions; defaults when decoding a v1 payload.
     pub extra: SaveExtra,
 }
 
 impl SaveEnvelope {
+    /// Check every fixed-size table against its expected count before a save is
+    /// applied (profile/hero id, 200 groups, 2000 entities, 20 settlements,
+    /// item table, discovered mask, 300 B7 slots).
     pub fn validate(&self) -> Result<(), String> {
         self.game.validate()?;
         if !self.extra.settlements.is_empty()
@@ -588,6 +694,8 @@ impl SaveGame {
 mod tests {
     use super::*;
 
+    /// A payload whose magic or version is not OpenKonung is rejected before any
+    /// decompression.
     #[test]
     fn header_rejects_foreign_payloads() {
         assert!(SaveEnvelope::decode(b"nope").is_err());

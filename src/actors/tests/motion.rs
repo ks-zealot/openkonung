@@ -4,6 +4,9 @@ use super::super::*;
 
 use super::common::*;
 
+/// On the shipped `Game.1`/`Konung.4` data, loc-4 home-waypoint owners (e.g. the
+/// waypoint owner Entity 277) stay put while their unowned group-mates wander
+/// inside rectangle A.
 #[test]
 fn real_game1_group23_owners_stay_non_owners_wander() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -72,6 +75,8 @@ fn real_game1_group23_owners_stay_non_owners_wander() {
     }
 }
 
+/// `FUN_0043881C` is a Chebyshev distance with a `+1` on the larger axis when
+/// the smaller axis exceeds 1.
 #[test]
 fn follow_distance_matches_original_grid_metric() {
     // FUN_0043881c
@@ -82,6 +87,9 @@ fn follow_distance_matches_original_grid_metric() {
     assert_eq!(follow_distance((0, 0), (1, 5)), 5);
 }
 
+/// A companion at least `FOLLOW_DISTANCE` cells away issues a route and settles
+/// once it is closer than that; a follower nearer than the threshold never
+/// starts walking.
 #[test]
 fn followers_walk_toward_a_distant_leader_and_stop_when_close() {
     let collision = free_collision();

@@ -81,10 +81,12 @@ fn table_for(class: u8) -> Option<(u32, usize, u32)> {
     }
 }
 
+/// Convert a `konung.res` DGROUP VA to a file offset.
 fn va_to_file(va: u32) -> usize {
     (ITEM_DGROUP_FILE as i64 + (va as i64 - ITEM_DGROUP_VA as i64)) as usize
 }
 
+/// Read a little-endian `f32` at `o`. Panics when `o + 4` is out of bounds.
 fn rd_f32(b: &[u8], o: usize) -> f32 {
     f32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
 }
@@ -96,16 +98,28 @@ fn rd_f32(b: &[u8], o: usize) -> f32 {
 /// separately; it is not the damage modifier.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ItemInstance {
+    /// `+0x00` class byte: selects the prototype table (`0..=5|12`, `6..=8`,
+    /// `9`, `10..=11`); a negative value marks a free/consumed slot.
     pub class: u8,
+    /// `+0x01` condition/quality tier (`i8`); `-1` means "no condition bonus".
     pub condition: i8,
+    /// `+0x02` weapon-modifier table index (`i8`, `-1` = none), read by
+    /// `FUN_0041AEA8`.
     pub modifier_index: i8,
+    /// `+0x03` subtype byte: the prototype index inside the class table.
     pub subtype: u8,
+    /// `+0x04` `f32` current durability/quality (also the low half of the
+    /// quantity word).
     pub current_durability: f32,
+    /// `+0x08` `f32` maximum durability.
     pub max_durability: f32,
     /// Raw `u32` at `+0x04`. For class 12 (ammo) and class 9 (potions/jars)
     /// this is the stack/charge quantity, not an IEEE float.
     pub quantity: u32,
+    /// `+0x0C` poison/charge word (`FUN_0041DAB0` case 6 writes it).
     pub poison: u16,
+    /// `+0x0E` flags word; bit 0 is the unidentified marker toggled by
+    /// `FUN_0041BA08`.
     pub flags: u16,
 }
 
@@ -113,7 +127,9 @@ pub struct ItemInstance {
 /// rating and name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ItemInfo {
+    /// Instance class (`+0x00`) this template belongs to.
     pub class: u8,
+    /// Instance subtype (`+0x03`), the record index inside the class table.
     pub subtype: u8,
     /// INTR sprite index (from the original template record at `+0x02`).
     pub icon: u16,
@@ -157,7 +173,11 @@ pub struct ItemInfo {
 }
 
 /// Parsed item-template database sourced from `konung.res`.
+///
+/// Holds a private copy of the whole `konung.res` image so every table lookup is
+/// a plain VA-to-file offset read; no per-class state is pre-decoded.
 pub struct ItemDb {
+    /// The `konung.res` bytes every method addresses through `va_to_file`.
     konung: Vec<u8>,
 }
 

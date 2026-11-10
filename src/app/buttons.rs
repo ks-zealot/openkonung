@@ -1,4 +1,21 @@
 //! The original HUD button actions (`FUN_0042260C` left-button codes 1..=7).
+//!
+//! The seven-icon strip `0x81CF68[0..7]` is hit-tested by
+//! `crate::hud::button_at` (the exact `FUN_00438900` row/run tables); a hit
+//! resolves to one of the `crate::hud::CODE_*` commands, and this module
+//! reproduces what each original handler does:
+//!
+//! | code | icon | original handler | effect |
+//! |------|------|------------------|--------|
+//! | 1 | weapon plaque | `FUN_004216DC(-1)` | cycle the active main weapon slot |
+//! | 2 | stance | `FUN_00421554` | battle/peace for the selected units |
+//! | 3 | map | `FUN_0042CBD0(4)` | world map (interface mode 5) |
+//! | 4 | halt | `FUN_0042246C` | stop the selected units |
+//! | 5 | engage | `FUN_00421458` | battle stance + attack nearest hostile |
+//! | 6 | quest log | `FUN_004242BC` | mode 2 |
+//! | 7 | character | `FUN_00424330` | mode 3 |
+//!
+//! Each press also flashes its icon (`0x81CF68[i] |= 0x80`) via `hud_press`.
 
 use super::*;
 

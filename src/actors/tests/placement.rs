@@ -4,6 +4,8 @@ use super::super::*;
 
 use super::common::*;
 
+/// Rectangle A reduces to `center=(x1+x2+1)/2, half=(x2-x1)/2`, and a degenerate
+/// rectangle yields exactly its own cell.
 #[test]
 fn spawn_center_half_matches_original_formula() {
     // Real g27 rect A.
@@ -43,6 +45,7 @@ fn spawn_center_half_matches_original_formula() {
     );
 }
 
+/// Every generated candidate stays within `center +/- half` on both axes.
 #[test]
 fn candidates_stay_within_center_and_half() {
     let g = group(
@@ -67,6 +70,8 @@ fn candidates_stay_within_center_and_half() {
     }
 }
 
+/// On an all-free table the first candidate is accepted, so `attempts == 1` and
+/// the cell matches the raw candidate.
 #[test]
 fn collision_validator_accepts_first_free_candidate() {
     let g = group(
@@ -89,6 +94,8 @@ fn collision_validator_accepts_first_free_candidate() {
     assert_eq!(raw, generate_spawn_candidate(&g, &mut location_rng(1)));
 }
 
+/// Bounds are inclusive on `0..=319` / `0..=159`, the index is `x*160 + y`, and
+/// only the low 12 collision bits block a cell.
 #[test]
 fn collision_validator_bounds_and_index() {
     let mut c = free_collision();
@@ -108,6 +115,8 @@ fn collision_validator_bounds_and_index() {
     assert!(!validate_spawn_candidate(319, 159, &c));
 }
 
+/// A fully blocked rectangle A yields `PlacementError`; there is no centre
+/// fallback.
 #[test]
 fn placement_fails_when_rect_area_is_blocked() {
     let g = group(
@@ -131,6 +140,8 @@ fn placement_fails_when_rect_area_is_blocked() {
     assert!(place_entity(&g, &mut rng, &blocked).is_err());
 }
 
+/// An always-rejecting predicate stops after exactly 100 attempts and renders
+/// the documented `placement_failed_after_100_attempts` message.
 #[test]
 fn place_with_fails_after_exactly_100_attempts() {
     let g = group(

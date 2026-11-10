@@ -21,6 +21,11 @@
 //!   (`0x46035C`/`0x460360`: 640 → (470,127), 800 → (570,160)).
 //! - The held item is hidden from the equipment slots and previewed at
 //!   `(167,322)` @640 / `(215,393)` @800 (`0x465C44`/`0x465C48`).
+//!
+//! Draw order inside the window, back to front: `INTR[2]` background,
+//! the six main slots, the five additional slots, the special slot, the paper
+//! doll, the held-item preview, then the name/class line and every stat value.
+//! The party panel and inventory strip stay visible underneath.
 
 use crate::character::{can_raise_any, stat_cost, stat_growth_cap, CharacterClass, PrimaryStat};
 use crate::inventory::{item_weight, OwnerSnapshot};
@@ -36,25 +41,45 @@ pub const RAISE_ICON: usize = 171;
 /// currently selected entity's action/direction/frame).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PaperDollPose {
+    /// Animation row (`Entity+0x00`), `0..=9` on the human table.
     pub action: usize,
+    /// `Entity+0x01` direction, `0..=7`.
     pub direction: u8,
+    /// Frame index inside the current action row (`Entity+0x10`).
     pub frame: usize,
 }
 
 /// Everything the screen needs to render one protagonist or companion.
+///
+/// The fields are the raw `Entity`/`PlayerCharacter` values the original
+/// renderer reads, not resolved sprites: `draw` re-resolves each item template
+/// and icon from the live resource bundle so a changed item shows up at once.
 #[derive(Clone, Debug, Default)]
 pub struct CharacterSheet {
+    /// `Entity+0xD4` CP866 name-table index (table `0x45E71C`).
     pub name_id: u8,
+    /// `Entity+0x04` class/archetype byte (class-name table `0x45ADC0`).
     pub class: u8,
+    /// Six main-equipment item-instance ids (`Entity+0x66`; `0` = empty).
     pub equipment: [u16; 6],
+    /// Five additional-equipment item-instance ids (`0` = empty).
     pub additional: [u16; 5],
+    /// The single special-slot item-instance id (`0` = empty).
     pub special: u16,
+    /// The 32 carried item-instance ids.
     pub inventory: [u16; 32],
+    /// `Entity+0x12` active weapon slot: `0` axe, `1` bow, else sword. Also
+    /// selects the slot 0/2 overlap branch and the paper doll's "in hand" variant.
     pub raw_0x12: u8,
+    /// `Entity+0x03`; bit `0x04` (`anim::FLAG_BATTLE`) selects battle stance.
     pub flags_b: u8,
+    /// `Entity+0xD6` body visual index inside the GRAPH block.
     pub visual_index: u8,
+    /// Palette id (`Entity+0xD8` palette offset divided by 512).
     pub palette_id: i32,
+    /// Stat/health/experience snapshot copied from the live member.
     pub snapshot: OwnerSnapshot,
+    /// Pose the paper doll renders (the member's current live frame).
     pub pose: PaperDollPose,
 }
 
@@ -68,6 +93,10 @@ const PAPER_DOLL_POS_800: (i32, i32) = (570, 160);
 const HELD_POS_640: (i32, i32) = (167, 322);
 const HELD_POS_800: (i32, i32) = (215, 393);
 
+/// Paper-doll body origin in logical screen coordinates for a logical width.
+///
+/// The original reads the per-resolution pair from DGROUP `0x46035C`/`0x460360`
+/// with stride `0x10` and selector `0x81D644`; 640 -> (470,127), 800 -> (570,160).
 pub fn paper_doll_position(logical_w: i32) -> (i32, i32) {
     if resolution_selector(logical_w) == 0 {
         PAPER_DOLL_POS_640
@@ -122,10 +151,20 @@ const ADDITIONAL_640: [(i32, i32); 5] = [(181, 44), (166, 157), (317, 157), (199
 const SPECIAL_800: (i32, i32) = (295, 232);
 const SPECIAL_640: (i32, i32) = (245, 199);
 
+/// Top-left of one main-equipment icon slot, already in the storage->visual
+/// order `[3,4,3,0,1,2]`; `slot` is clamped to 5.
+///
+/// `sel` is [`resolution_selector`] (`0` = 640x480, `1` = 800x600). Slots 0 and
+/// 2 deliberately share a position because only one of them is drawn.
 pub fn main_base(sel: usize, slot: usize) -> (i32, i32) {
     let table = if sel == 0 { &MAIN_640 } else { &MAIN_800 };
     table[slot.min(5)]
 }
+
+/// Center of one additional-equipment icon cell; `slot` is clamped to 4.
+///
+/// `sel` is [`resolution_selector`]. The icon is blitted centered on this
+/// point, unlike the main slots which are blitted from their top-left corner.
 pub fn additional_center(sel: usize, slot: usize) -> (i32, i32) {
     let table = if sel == 0 {
         &ADDITIONAL_640
@@ -134,6 +173,8 @@ pub fn additional_center(sel: usize, slot: usize) -> (i32, i32) {
     };
     table[slot.min(4)]
 }
+
+/// Top-left of the single special-equipment icon, for a [`resolution_selector`].
 pub fn special_base(sel: usize) -> (i32, i32) {
     if sel == 0 {
         SPECIAL_640
@@ -145,14 +186,19 @@ pub fn special_base(sel: usize) -> (i32, i32) {
 /// One clickable region of the character screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScreenHit {
+    /// One of the six main-equipment storage slots.
     Main(usize),
+    /// One of the five additional-equipment satellites.
     Additional(usize),
+    /// The single special-equipment slot.
     Special,
+    /// One visible inventory cell of the bottom strip.
     Inventory(usize),
     /// The icon-only "level up" row (`FUN_00410B08(entity, 0)` / command 0).
     RaiseLevel,
     /// One of the four stat rows in the "raise" column (command 3/5/2/6).
     Raise(PrimaryStat),
+    /// The point is not on any interactive control.
     None,
 }
 
@@ -366,6 +412,13 @@ fn text_center(logical_w: i32) -> i32 {
     }
 }
 
+/// Draw the name and class line, then every stat value.
+///
+/// The name (`0x45E71C` table) and class (`0x45ADC0` table) use the original
+/// **large** font, centered on the gameplay region; both y anchors are derived
+/// from the per-resolution label rows (`110`/`126` @640, `138`/`158` @800) and
+/// scaled by `height / 640`. When the name table has no entry the stats are
+/// still drawn.
 fn draw_text(
     frame: &mut [u8],
     fw: usize,
@@ -485,6 +538,11 @@ const VALUE_800: [(i32, i32); 25] = [
 const TABLE2_640: [(i32, i32); 5] = [(578, 70), (573, 110), (573, 126), (573, 145), (573, 162)];
 const TABLE2_800: [(i32, i32); 5] = [(722, 89), (716, 138), (716, 158), (716, 181), (716, 203)];
 
+/// `Entity+0x04` class byte to the five playable classes, or `None` for every
+/// other value (monsters and battle-only archetypes have no sheet class).
+///
+/// Note the mapping is not a contiguous range: `2` Merchant, `3` Hunter,
+/// `4` Chief, `5` Warrior.
 fn class_from_entity(class: u8) -> Option<CharacterClass> {
     match class {
         2 => Some(CharacterClass::Merchant),
@@ -651,6 +709,12 @@ pub fn level_up_available(sheet: &CharacterSheet) -> bool {
     )
 }
 
+/// Cost shown in the «поднять» column for one stat: `0` when the level cap
+/// (`0x45B0AB` via `stat_growth_cap`) is already reached, otherwise the tier
+/// cost when `available_xp` covers it.
+///
+/// This is the remake's port of `FUN_00410B08` for commands 2/3/5/6; a zero
+/// result means "draw nothing", never "free".
 fn needed_raise(
     class: CharacterClass,
     stat: PrimaryStat,

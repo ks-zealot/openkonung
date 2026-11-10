@@ -1,9 +1,13 @@
-//! Lighting diagnostics for the headless smoke.
+//! Lighting and shadow-pass diagnostics for the headless smokes.
 
 use crate::*;
 
 /// One span rectangle of the last shadow pass: `field` 0 = row, 1 = x0,
 /// 2 = x1. Returns `-1` when the index is out of range.
+///
+/// The spans are the per-scanline run lists the original keeps in
+/// `DAT_004C6B50` and darkens in `FUN_0043D247`; the smoke uses them to prove
+/// the shadow pass covered the expected pixels.
 #[no_mangle]
 pub extern "C" fn debug_shadow_span(index: u32, field: u32) -> i32 {
     runtime_mut()
@@ -25,6 +29,9 @@ pub extern "C" fn debug_shadow_spans() -> u32 {
 }
 
 /// Set the live game's world frame (u64 split into two u32 halves).
+///
+/// The world frame drives the ambient lighting curve
+/// (`frame % 0x5460`), so the smoke can jump to any time of day.
 #[no_mangle]
 pub extern "C" fn debug_set_world_frame(lo: u32, hi: u32) {
     if let Some(g) = runtime_mut().game.as_deref_mut() {
@@ -32,7 +39,7 @@ pub extern "C" fn debug_set_world_frame(lo: u32, hi: u32) {
     }
 }
 
-/// World frame low/high halves (diagnostics).
+/// World frame low 32 bits (diagnostics); the high half is not exposed.
 #[no_mangle]
 pub extern "C" fn debug_world_frame_lo() -> u32 {
     runtime_mut()
