@@ -24,10 +24,9 @@ use crate::coords::{
     entity_to_local_px, entity_to_local_px_f, local_px_to_entity, step_by_direction,
 };
 use crate::edges::{Edge, Pair};
-use crate::loc::prop_to_local_px;
 use crate::population::{GameTables, Settlement};
-use crate::render::{scale_image, LayerCounts, World, WorldSprite};
-use crate::res::{blit, fill_ellipse, fill_rect, line, Img};
+use crate::render::{World, WorldSprite};
+use crate::res::{blit, fill_rect, Img};
 use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 
 mod buttons;
@@ -35,10 +34,8 @@ mod camera;
 mod class11;
 mod combat;
 mod cursor;
-mod debug_overlay;
 mod dialogue_exec;
 mod dialogue_ops;
-mod graph;
 mod hover;
 mod input;
 mod inventory;
@@ -47,7 +44,6 @@ mod map;
 mod party;
 mod player;
 mod population;
-mod portals;
 mod quest_log;
 mod save;
 mod settlement_defense;
@@ -62,8 +58,6 @@ mod trade;
 mod video_triggers;
 mod world_draw;
 mod world_items;
-
-use self::portals::*;
 
 pub use crate::constants::render::VIRTUAL_H;
 pub use crate::constants::render::VIRTUAL_W;
@@ -114,11 +108,6 @@ pub struct TextItem {
 /// slight over-estimate so wrapping errs on the safe side.
 fn text_px(s: &str, scale: f32) -> i32 {
     (s.chars().count() as f32 * 14.0 * scale * 0.62).ceil() as i32
-}
-
-/// True while a marker is close enough to the 800x600 play view to be labelled.
-fn on_screen(x: i32, y: i32) -> bool {
-    (-8..=VIRTUAL_W + 8).contains(&x) && (-8..=VIRTUAL_H + 8).contains(&y)
 }
 
 /// Greedy word wrap to at most `max_px` virtual pixels per line, hard-splitting
@@ -184,16 +173,13 @@ pub struct PlayableApp {
     /// Which shipped start/variant is loaded (`Game.0`/`Game.1`/`Game.2`).
     pub profile: u32,
     location_names: Vec<String>,
-    debug_ids: bool,
 
     /// Current location: the 1-based `Konung.N` index (`0x81D5xx` in the
     /// original); every population, settlement and transition query is
     /// filtered on it.
     pub current_map: u32,
-    /// Node id highlighted in the transition-graph view (not the world map).
+    /// Node id selected in the world map.
     pub selected: Option<u32>,
-    /// Transition-graph screen (`H`/`Backspace`) replaces the gameplay view.
-    pub mode_graph: bool,
 
     /// One authoritative runtime player: hero identity + class + the
     /// character-creation values copied from the final [`crate::character::CharacterBuild`].
@@ -228,12 +214,6 @@ pub struct PlayableApp {
     player_active: bool,
     anim_time: f64,
     teleport_cooldown: f64,
-    last_teleport: Option<(u32, u32, usize)>,
-    /// Last teleport failure (destination not loaded), surfaced on the HUD.
-    teleport_error: Option<String>,
-    /// Toggle the canonical transition debug overlay (trigger rects, arrival
-    /// points, rec / from->to, visual 244/245 gate props). Cosmetic only.
-    teleport_debug: bool,
 
     // Phase C1 population (Game.N Group/Entity tables). Pending `(0,0)`
     // entities are deferred to C2; no runtime placement/AI is implemented.
@@ -241,8 +221,6 @@ pub struct PlayableApp {
     /// Parsed `Game.N` settlements (citizen home/role waypoints, `+0x3D0`).
     pub(crate) settlements: Vec<Settlement>,
     population_cache: HashMap<u32, PopulationBuild>,
-    population_debug: bool,
-    population_rejected: Vec<String>,
 
     /// Authored `Game.N +0x21900` WorldObject source records (500 Ã— 0x40).
     world_object_sources: Vec<WorldObjectSource>,
@@ -263,12 +241,7 @@ pub struct PlayableApp {
     /// trigger is latched once so it is not requested every frame.
     pub(super) game_over: bool,
 
-    // R2 render-layer diagnostics.
-    layer_debug: bool,
-    layer_counts: LayerCounts,
-    props_drawn: usize,
-    actors_drawn: usize,
-    /// Spans emitted by the last shadow pass (`FUN_0043C040`), for diagnostics.
+    // Shadow spans, exposed by the `debug_shadow_span*` ABI.
     shadow_spans: usize,
     /// Last shadow spans (bounded), for the `debug_shadow_span*` ABI.
     shadow_debug: Vec<crate::render::spans::Span>,
@@ -276,13 +249,6 @@ pub struct PlayableApp {
     detail_pan: [f64; 2],
     camera_follow: bool,
     camera_follow_strength: f64,
-
-    portal_bindings: HashMap<u32, Vec<PortalBinding>>,
-
-    // graph view
-    graph_zoom: f64,
-    graph_pan: [f64; 2],
-    node_rects: HashMap<u32, (i32, i32, i32, i32)>,
 
     // presentation
     /// 800x600 RGBA framebuffer, row-major, read by `frame_ptr`/`frame_w`/`frame_h`.
@@ -486,10 +452,8 @@ impl PlayableApp {
             layout,
             profile,
             location_names,
-            debug_ids: false,
             current_map: start_map,
             selected: Some(start_map),
-            mode_graph: false,
             player,
             player_x: start_x,
             player_y: start_y,
@@ -502,14 +466,9 @@ impl PlayableApp {
             player_active: false,
             anim_time: 0.0,
             teleport_cooldown: 0.0,
-            last_teleport: None,
-            teleport_error: None,
-            teleport_debug: false,
             tables,
             settlements,
             population_cache: HashMap::new(),
-            population_debug: false,
-            population_rejected: Vec::new(),
             world_object_sources,
             active_world_objects: Vec::new(),
             world_frame: 0,
@@ -518,19 +477,11 @@ impl PlayableApp {
             pickup_message: None,
             pickup_message_t: 0.0,
             game_over: false,
-            layer_debug: false,
-            layer_counts: LayerCounts::default(),
-            props_drawn: 0,
-            actors_drawn: 0,
             shadow_spans: 0,
             shadow_debug: Vec::new(),
             detail_pan: [0.0, 0.0],
             camera_follow: true,
             camera_follow_strength: 11.0,
-            portal_bindings: HashMap::new(),
-            graph_zoom: 1.0,
-            graph_pan: [0.0, 0.0],
-            node_rects: HashMap::new(),
             frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H * 4) as usize],
             texts: Vec::new(),
             sounds: Vec::new(),
@@ -597,11 +548,9 @@ impl PlayableApp {
         // New games start with the 56-byte mask cleared (`FUN_00436214` case 8
         // memsets `0x81CF80`); locations are revealed only by map items.
         app.sweep_all_owners();
-        app.rebuild_portal_bindings();
         app.apply_settlement_props();
         app.rebuild_world_objects();
         app.center_camera_on_player(true, 0.0);
-        app.fit_graph();
         app
     }
 
@@ -624,8 +573,7 @@ impl PlayableApp {
     /// the timed HUD/pickup/trade messages, then run the gameplay passes
     /// (`tick_ambient_sound` -> population -> actor AI -> player -> party ->
     /// combat -> movie trigger -> temporary potion effects -> camera follow)
-    /// and finally draw either the world (`draw_detail`) or the transition
-    /// graph (`draw_graph`).
+    /// and finally draw the world (`draw_detail`).
     ///
     /// `dt` is wall-clock seconds from the shell. Sounds queued below are
     /// drained by the shell before the next call, which is why the queue is
@@ -656,89 +604,18 @@ impl PlayableApp {
                 self.trade_message = None;
             }
         }
-        if !self.mode_graph {
-            self.tick_ambient_sound();
-            self.ensure_population(self.current_map);
-            self.update_actors(dt);
-            self.update_player(dt);
-            self.update_party(dt);
-            self.update_combat(dt);
-            self.check_game_over_video();
-            self.tick_temp_effects(dt);
-            if self.camera_follow {
-                self.center_camera_on_player(false, dt);
-            }
-            self.draw_detail();
-        } else {
-            self.draw_graph();
+        self.tick_ambient_sound();
+        self.ensure_population(self.current_map);
+        self.update_actors(dt);
+        self.update_player(dt);
+        self.update_party(dt);
+        self.update_combat(dt);
+        self.check_game_over_video();
+        self.tick_temp_effects(dt);
+        if self.camera_follow {
+            self.center_camera_on_player(false, dt);
         }
-    }
-}
-/// Stroke an axis-aligned ellipse outline into an RGBA framebuffer.
-///
-/// Used only by the portal debug overlay; `thickness > 1` stamps a filled
-/// square at every sampled point so the ring stays visible at small radii.
-fn ellipse_outline(
-    dst: &mut [u8],
-    dw: usize,
-    dh: usize,
-    cx: f32,
-    cy: f32,
-    rx: f32,
-    ry: f32,
-    thickness: i32,
-    c: [u8; 4],
-) {
-    let steps = ((rx.max(ry) * 4.0) as i32).clamp(16, 512);
-    let mut prev: Option<(i32, i32)> = None;
-    for i in 0..=steps {
-        let a = 2.0 * std::f32::consts::PI * i as f32 / steps as f32;
-        let x = (cx + rx * a.cos()).round() as i32;
-        let y = (cy + ry * a.sin()).round() as i32;
-        if let Some((px, py)) = prev {
-            line(dst, dw, dh, px, py, x, y, c);
-        }
-        if thickness > 1 {
-            fill_rect(
-                dst,
-                dw,
-                dh,
-                x - thickness / 2,
-                y - thickness / 2,
-                thickness,
-                thickness,
-                c,
-            );
-        }
-        prev = Some((x, y));
-    }
-}
-
-/// Stroke a one-pixel rectangle outline into an RGBA framebuffer.
-///
-/// Debug-only helper (portal/layer overlays, transition-graph node borders);
-/// `w`/`h` are the outer size and must be at least 1.
-fn rect_outline(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h: i32, c: [u8; 4]) {
-    fill_rect(dst, dw, dh, x, y, w, 1, c);
-    fill_rect(dst, dw, dh, x, y + h - 1, w, 1, c);
-    fill_rect(dst, dw, dh, x, y, 1, h, c);
-    fill_rect(dst, dw, dh, x + w - 1, y, 1, h, c);
-}
-
-/// Helper because `i32::from_f64` is not stable in all contexts here.
-///
-/// Rounds half away from zero via `f64::round`, matching the C
-/// `(int)(v + 0.5)` / truncation behaviour the graph and HUD layout code
-/// needs; it is not a general-purpose lossless conversion.
-trait FromF64 {
-    /// Round `v` to the nearest `i32`.
-    fn from_f64(v: f64) -> i32;
-}
-impl FromF64 for i32 {
-    /// `v.round() as i32`; out-of-range values saturate like every other
-    /// `as` cast in Rust.
-    fn from_f64(v: f64) -> i32 {
-        v.round() as i32
+        self.draw_detail();
     }
 }
 

@@ -148,7 +148,7 @@ impl PlayableApp {
         if base != 4 {
             return base;
         }
-        if self.mode_graph || crate::video::is_pending() {
+        if crate::video::is_pending() {
             return base;
         }
         // Modal screens (`_DAT_0081D610 != 0`) keep the base cursor.

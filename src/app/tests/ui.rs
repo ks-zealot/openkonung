@@ -127,9 +127,9 @@ fn cursor_class_mapping_matches_original_jump_table() {
     assert_eq!(cursor_for_class(12), 2);
 }
 
-/// A right-click on empty ground issues a move and never toggles the graph view.
+/// A right-click on empty ground issues a move.
 #[test]
-fn right_click_moves_and_no_longer_toggles_graph() {
+fn right_click_moves() {
     let Some(mut app) = build_test_app() else {
         eprintln!("skipping: original resources not present");
         return;
@@ -138,11 +138,9 @@ fn right_click_moves_and_no_longer_toggles_graph() {
     app.pointer_down(1, 500.0, 300.0);
     assert!(app.target.is_some(), "left-click moves");
     // Right-click also moves when no actor is under the cursor (original
-    // right-button branch, command code 0) and must NOT toggle the graph view.
+    // right-button branch, command code 0).
     app.target = None;
-    assert!(!app.mode_graph);
     app.pointer_down(3, 500.0, 300.0);
-    assert!(!app.mode_graph, "right-click no longer opens the graph");
     assert!(
         app.target.is_some(),
         "right-click moves when no actor is targeted"
@@ -174,7 +172,7 @@ fn tab_toggles_protagonist_battle_stance() {
 /// Wrapped lines never exceed the requested pixel width, and a long header still wraps.
 #[test]
 fn wrap_to_px_keeps_every_line_within_width() {
-    let s = "OpenKonung v15 | Старый лагерь | hero:Dragomir Game.1 | 800x600 native camera | pal:33 | portals:4 | C follow | H graph | D ids | P pop | L layers | T portals | cell=(72,34)";
+    let s = "Long sample text with several words that has to wrap onto more than one line when the available width is limited to the virtual screen edge";
     let lines = wrap_to_px(s, 1.0, VIRTUAL_W - 16);
     assert!(lines.len() > 1, "long header must wrap");
     for l in &lines {

@@ -104,7 +104,6 @@ impl PlayableApp {
         self.player_attack_target = None;
         self.player_attack_ranged = false;
         self.center_camera_on_player(true, 0.0);
-        self.fit_graph();
     }
 
     /// Diagnostic: protagonist has an active walk segment or queued route.
@@ -255,18 +254,9 @@ impl PlayableApp {
                 let e = self.edges[ei].clone();
                 let dst = e.to;
                 let facing = self.player_dir;
-                if self.travel_to_map(e.from, dst, e.arrival()[0], e.arrival()[1], facing, e.rec) {
-                    self.last_teleport = Some((e.from, dst, e.rec));
-                    self.teleport_error = None;
-                } else {
-                    // Loud diagnostic instead of a silent skip: the transition
-                    // fired but its destination Konung.N is not loaded.
-                    let msg = format!(
-                        "TELEPORT BLOCKED rec={} {} -> {} : destination Konung.{} not loaded",
-                        e.rec, e.from, dst, dst
-                    );
-                    eprintln!("{}", msg);
-                    self.teleport_error = Some(msg);
+                if !self.travel_to_map(e.from, dst, e.arrival()[0], e.arrival()[1], facing, e.rec) {
+                    // The transition fired but its destination Konung.N is not
+                    // loaded; keep the trigger from retrying every frame.
                     self.teleport_cooldown = 0.9;
                 }
             }
@@ -279,12 +269,12 @@ impl PlayableApp {
     /// its arrival cell (`+05/+07`) and meta/facing (`+02`).
     pub(super) fn travel_to_map(
         &mut self,
-        from: u32,
+        _from: u32,
         dst: u32,
         ax: i32,
         ay: i32,
         facing: i32,
-        rec: usize,
+        _rec: usize,
     ) -> bool {
         if !self.world.loc_index.contains_key(&dst) {
             return false;
@@ -321,8 +311,6 @@ impl PlayableApp {
         self.rebuild_world_objects();
         self.dialog = None;
         self.teleport_cooldown = 0.9;
-        self.last_teleport = Some((from, dst, rec));
-        self.teleport_error = None;
         self.fit_detail();
         if self.camera_follow {
             self.center_camera_on_player(true, 0.0);

@@ -3,27 +3,6 @@
 use super::*;
 
 impl PlayableApp {
-    /// User-facing location label: the original name for Konung.N, falling back
-    /// to `Konung.N` when the table entry is missing/empty. In debug mode the
-    /// numeric id is appended: `Родники [Konung.1]`.
-    pub(super) fn label(&self, id: u32) -> String {
-        let name = if id >= 1 {
-            self.location_names.get((id - 1) as usize)
-        } else {
-            None
-        };
-        match name {
-            Some(n) if !n.is_empty() => {
-                if self.debug_ids {
-                    format!("{} [Konung.{}]", n, id)
-                } else {
-                    n.clone()
-                }
-            }
-            _ => format!("Konung.{}", id),
-        }
-    }
-
     // --- drawing ---
 
     /// Queue one text run for the overlay pass at virtual `(x, y)`.
@@ -51,14 +30,5 @@ impl PlayableApp {
             cy += line_h;
         }
         cy
-    }
-
-    /// Emit `s` shifted left/shrunk so its right edge stays on screen (keeps
-    /// marker labels attached to their marker when they sit near the right edge).
-    pub(super) fn text_clamped(&mut self, x: i32, y: i32, rgb: u32, scale: f32, s: String) {
-        let w = text_px(&s, scale);
-        let x = x.min((VIRTUAL_W - 4 - w).max(2)).max(2);
-        let y = y.min(VIRTUAL_H - 16).max(0);
-        self.text(x, y, rgb, scale, s);
     }
 }

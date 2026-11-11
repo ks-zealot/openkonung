@@ -93,10 +93,7 @@ impl PlayableApp {
     /// Resolve every already-positioned non-player actor (live action/frame from
     /// [`ActorMotion`], same Entity projection as the protagonist) into `out` for
     /// the dynamic depth pass.
-    /// Visual-resolution failures are returned with an explicit reason; no actor
-    /// is silently skipped.
-    pub(super) fn collect_actor_sprites(&mut self, out: &mut Vec<WorldSprite>) -> Vec<String> {
-        let mut rejected: Vec<String> = Vec::new();
+    pub(super) fn collect_actor_sprites(&mut self, out: &mut Vec<WorldSprite>) {
         let loc_id = self.current_map;
         if let Some(pop) = self.population_cache.get(&loc_id) {
             for a in &pop.actors {
@@ -146,22 +143,10 @@ impl PlayableApp {
                             }),
                         });
                     }
-                    Err(reason) => rejected.push(format!(
-                        "entity={} group={} raw_pos=({},{}) archetype=0x{:02X} facing={} visual_index={} palette_offset=0x{:X} reason={}",
-                        a.source_entity_id(),
-                        a.source_group_id,
-                        a.entity.x,
-                        a.entity.y,
-                        a.entity.archetype,
-                        a.entity.facing,
-                        a.entity.visual_index,
-                        a.entity.palette_offset,
-                        reason
-                    )),
+                    Err(_) => {}
                 }
             }
         }
-        rejected
     }
 
     /// The non-player actor whose drawn sprite covers virtual `(mx, my)`, as

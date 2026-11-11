@@ -212,15 +212,12 @@ impl PlayableApp {
 
         // Reset transient interaction/UI/combat state.
         self.selected = Some(self.current_map);
-        self.mode_graph = false;
         self.target = None;
         self.player_path.clear();
         self.player_step_t = 0.0;
         self.player_active = false;
         self.anim_time = 0.0;
         self.teleport_cooldown = 0.0;
-        self.last_teleport = None;
-        self.teleport_error = None;
         self.world_frame_accum = 0.0;
         self.temp_effect_accum = 0.0;
         self.party_step_t = 0.0;

@@ -13,13 +13,9 @@ impl PlayableApp {
     /// 3. ground shadows (`FUN_0043C040`/`FUN_0043D247`) while the `shadows`
     ///    config word is set;
     /// 4. the projectile pool, then ambient and `LIGHTS.N` lighting;
-    /// 5. portal rings at the canonical trigger cells, the click marker, the
-    ///    protagonist marker and the `FUN_0042532C` ground-object pass;
+    /// 5. the `FUN_0042532C` ground-object pass;
     /// 6. the HUD, then the interface modes (map, quest log, exchange, character
     ///    screen, dialogue), the hover text and finally the game-drawn cursor.
-    ///
-    /// A sprite frame that cannot be resolved is recorded in
-    /// `population_rejected` instead of being silently skipped.
     pub(super) fn draw_detail(&mut self) {
         self.texts.clear();
         let fw = VIRTUAL_W as usize;
@@ -46,19 +42,17 @@ impl PlayableApp {
         self.ensure_population(self.current_map);
 
         // Static background: base terrain (both byte layers) + GRAPH placements.
-        self.layer_counts =
-            self.world
-                .draw_background(&mut self.frame, fw, fh, self.current_map, iox, ioy);
+        self.world
+            .draw_background(&mut self.frame, fw, fh, self.current_map, iox, ioy);
 
         // Dynamic depth pass: props + NPC/mob actors + protagonist, ordered by
         // projected anchor. The exact original depth key is unresolved (§25);
         // this is a documented provisional anchor sort (never raw Entity x/y).
         let mut sprites: Vec<WorldSprite> = self.world.collect_props(self.current_map);
-        self.props_drawn = sprites.len();
-        let mut rejected = self.collect_actor_sprites(&mut sprites);
+        self.collect_actor_sprites(&mut sprites);
         // Recruited companions render in the same dynamic depth pass and follow
         // the leader (`update_party`).
-        rejected.extend(self.collect_party_sprites(&mut sprites));
+        self.collect_party_sprites(&mut sprites);
 
         // Protagonist through the canonical Entity visual path (animated). The
         // sprite is drawn from the pre-step (render) cell; the per-frame anchor
@@ -84,17 +78,8 @@ impl PlayableApp {
                     frame: pose_frame,
                 }),
             }),
-            Err(reason) => rejected.push(format!(
-                "player hero={} visual_index={} palette_offset=0x{:X} facing={} reason={}",
-                self.player.hero.name,
-                self.player.hero.visual_index,
-                self.player.hero.palette_offset,
-                self.player_dir,
-                reason
-            )),
+            Err(_) => {}
         }
-        self.population_rejected = rejected;
-        self.actors_drawn = sprites.len().saturating_sub(self.props_drawn);
 
         // `FUN_00426384` + `FUN_0043C040` + `FUN_0043D247`: actor, equipped-item
         // overlay and projectile ground shadows. Gated by the `shadows` config
@@ -181,85 +166,6 @@ impl PlayableApp {
         // Day/night ambient + LIGHTS maps are applied to the finished world
         // (terrain/entities/props/projectiles) before the interface overlays.
         self.apply_world_lighting(&sprites, iox, ioy);
-
-        // Live portals: drawn at the CANONICAL source trigger (center of the
-        // transition trigger rectangle) through the normal Entity/runtime-grid
-        // render transform, so the visible ring is exactly the cell gameplay
-        // tests. The associated 244/245 gate center is debug-only (T overlay).
-        for b in self.outgoing(self.current_map) {
-            let (lx, ly) = entity_to_local_px_f(b.trigger[0], b.trigger[1]);
-            let sx = iox + lx.round() as i32;
-            let sy = ioy + ly.round() as i32;
-            if -30 <= sx && sx <= VIRTUAL_W + 30 && -30 <= sy && sy <= VIRTUAL_H + 30 {
-                fill_ellipse(
-                    &mut self.frame,
-                    fw,
-                    fh,
-                    sx as f32,
-                    sy as f32,
-                    18.0,
-                    7.0,
-                    [58, 61, 58, 255],
-                );
-                ellipse_outline(
-                    &mut self.frame,
-                    fw,
-                    fh,
-                    sx as f32,
-                    sy as f32,
-                    18.0,
-                    7.0,
-                    2,
-                    [150, 155, 145, 255],
-                );
-                ellipse_outline(
-                    &mut self.frame,
-                    fw,
-                    fh,
-                    sx as f32,
-                    sy as f32,
-                    12.0,
-                    4.0,
-                    1,
-                    [94, 99, 92, 255],
-                );
-                let to = self.edges[b.edge].to;
-                let dest = self.label(to);
-                self.text_clamped(sx + 20, sy - 8, 0xAF_F0C3, 1.0, format!("->{}", dest));
-            }
-        }
-
-        if let Some((tx, ty)) = self.target {
-            let (x, y) = entity_to_local_px_f(tx, ty);
-            let sx = iox + x.round() as i32;
-            let sy = ioy + y.round() as i32;
-            ellipse_outline(
-                &mut self.frame,
-                fw,
-                fh,
-                sx as f32,
-                sy as f32,
-                6.0,
-                6.0,
-                1,
-                [255, 220, 80, 255],
-            );
-        }
-
-        // protagonist position marker (overlay; sprite already drawn in depth pass)
-        let pax = iox + plx.round() as i32;
-        let pay = ioy + ply.round() as i32;
-        ellipse_outline(
-            &mut self.frame,
-            fw,
-            fh,
-            pax as f32,
-            pay as f32,
-            3.0,
-            3.0,
-            1,
-            [255, 245, 120, 255],
-        );
 
         // Game.N WorldObject pass (`FUN_0042532C` marker pass). The original
         // draws this after terrain/entities/party rings and outside the depth
@@ -551,58 +457,8 @@ impl PlayableApp {
 
         if let Some(msg) = self.pickup_message.clone() {
             if self.pickup_message_t > 0.0 {
-                self.text_wrapped(12, 34, 0xFF_E0A0, 1.0, msg);
+                self.text_wrapped(12, 10, 0xFF_E0A0, 1.0, msg);
             }
-        }
-
-        let portals = self.outgoing(self.current_map).len();
-        let cur = self.label(self.current_map);
-        let hdr = format!(
-            "OpenKonung v15 | {} | hero:{} Game.{} | 800x600 native camera | pal:{} | portals:{} | V follow | C char | H graph | D ids | P pop | L layers | T portals",
-            cur, self.player.hero.name, self.profile, self.player.palette_id(), portals
-        );
-        let hdr = if self.teleport_debug {
-            format!(
-                "{} | cell=({},{})",
-                hdr,
-                self.player_x.round() as i32,
-                self.player_y.round() as i32
-            )
-        } else {
-            hdr
-        };
-        let mut hy = self.text_wrapped(12, 10, 0xEB_F5EB, 1.0, hdr);
-        hy = self.text_wrapped(
-            12,
-            hy + 2,
-            0xC8_D8C8,
-            1.0,
-            "SPACE стойка | A атака | F стоп | 1/2/3 оружие | M карта | Q журнал | C/I герой | V камера | Home центр"
-                .to_string(),
-        );
-        if let Some((a, b, r)) = self.last_teleport {
-            let an = self.label(a);
-            let bn = self.label(b);
-            hy = self.text_wrapped(
-                12,
-                hy,
-                0xBE_DCC3,
-                1.0,
-                format!("last teleport {}->{} r{}", an, bn, r),
-            );
-        }
-        if let Some(err) = self.teleport_error.clone() {
-            hy = self.text_wrapped(12, hy, 0xFF_6B6B, 1.0, err);
-        }
-
-        if self.teleport_debug {
-            self.draw_portal_debug(hy + 4);
-        }
-        if self.population_debug {
-            self.draw_population_debug();
-        }
-        if self.layer_debug {
-            self.draw_layer_debug();
         }
     }
 }

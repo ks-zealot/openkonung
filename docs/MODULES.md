@@ -39,16 +39,13 @@ module root; a matching sibling directory holds its subsystems and its
 | File | Responsibility |
 |---|---|
 | `camera.rs` | Camera follow/zoom/pan, window↔virtual mapping, resize handling. |
-| `portals.rs` | Cosmetic transition↔visual-gate binding and matching (map ring/label; `T` overlay). |
 | `population.rs` | `Game.N` population integration (placement, actor sprite collection, entity debug). |
 | `player.rs` | Player targeting/pathing, per-cell stepping, protagonist animation frame. |
-| `text.rs` | Text overlay helpers (label, wrap, clamp). |
+| `text.rs` | Timed status-message text helpers (wrap). |
 | `world_draw.rs` | `draw_detail`: terrain + props + actors + WorldObject marker pass compositing. |
 | `world_items.rs` | WorldObject location rebuild, right-click pickup, inventory/weight rules, herb respawn. |
-| `debug_overlay.rs` | Debug overlays: portals (`T`), render layers (`L`), population (`P`). |
-| `graph.rs` | World-graph view (`H`): spring layout, fit, draw, labels. |
 | `input.rs` | Pointer/key/wheel handling, hover, party-cell hit-testing, character-screen toggles. |
-| `tests.rs` | App-level tests (character screen, menu/click-through, portal matching, text wrap). |
+| `tests.rs` | App-level tests (character screen, menu/click-through, text wrap). |
 
 ## `res/` — resource decoding
 

@@ -520,14 +520,12 @@ gating. Keys act immediately on each DOM event.
 | `I` - open character window (mode 3, `FUN_00424330`) | `I` and `C` both toggle the character screen | **implemented** |
 | `M` - world map toggle (mode 5) | `toggle_map` | **implemented** |
 | `Q` - quest-log (mode 2, `FUN_004242BC`) | `toggle_quest_log` | **implemented** |
-| `T` — trade toggle | `teleport_debug` | **repurposed** |
 | `S` (Ctrl) — toggle `_81D564` | **unbound** | **missing** |
 | `0`,`4`–`9`, `B`–`H`, `J`, `X`, `Z`, `L`, `~`, numpad `*`/`+`/`-` | **unbound** | **missing** (original: debug/`_81D764`/`_81D634`) |
 | TAB `0x09` - cycle party selection / open detail | stance alias (`toggle_selected_battle_stance`); portrait clicks select | **repurposed** |
 | — | `C` — toggle character screen | **remake-only** (original uses `I`) |
 | — | `V` — toggle camera follow | **remake-only** |
-| — | `H` / Backspace — toggle graph view | **remake-only** |
-| — | `D`,`P`,`L` (game debug toggles), `R` (`clear_caches`), `K` (frontend region debug) | **remake-only** debug |
+| — | `R` (`clear_caches`), `K` (frontend region debug) | **remake-only** debug |
 
 Structural differences to remember when checking “parity”:
 

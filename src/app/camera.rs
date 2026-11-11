@@ -78,11 +78,11 @@ impl PlayableApp {
     /// Record a new host canvas size (`Event` resize / initial layout).
     ///
     /// Snaps the camera back onto the player because the letterbox scale
-    /// changed; the graph view keeps its own zoom/pan untouched.
+    /// changed.
     pub fn on_resize(&mut self, w: i32, h: i32) {
         self.host_w = w.max(1);
         self.host_h = h.max(1);
-        if !self.mode_graph && self.camera_follow {
+        if self.camera_follow {
             self.center_camera_on_player(true, 0.0);
         }
     }

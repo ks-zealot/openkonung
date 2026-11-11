@@ -29,9 +29,7 @@ impl PlayableApp {
                 true
             }
             crate::hud::CODE_STANCE => {
-                if !self.mode_graph {
-                    self.toggle_selected_battle_stance();
-                }
+                self.toggle_selected_battle_stance();
                 true
             }
             crate::hud::CODE_MAP => {
@@ -60,9 +58,6 @@ impl PlayableApp {
 
     /// `FUN_00424330` entry (same as the remake's `C` binding).
     pub(super) fn toggle_character_screen(&mut self) {
-        if self.mode_graph {
-            return;
-        }
         self.queue_sound(crate::sound::events::UI_CLICK);
         self.character_screen = !self.character_screen;
         if self.character_screen {

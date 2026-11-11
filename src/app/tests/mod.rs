@@ -9,7 +9,6 @@ mod map;
 mod movement;
 mod ops;
 mod party;
-mod portals;
 mod save;
 mod settlement;
 mod sound;

@@ -223,10 +223,8 @@ impl PlayableApp {
     }
 
     /// Resolve every recruited companion for the dynamic depth pass, using the
-    /// same Entity projection as the other actors. Visual-resolution failures
-    /// are returned with an explicit reason.
-    pub(super) fn collect_party_sprites(&mut self, out: &mut Vec<WorldSprite>) -> Vec<String> {
-        let mut rejected: Vec<String> = Vec::new();
+    /// same Entity projection as the other actors.
+    pub(super) fn collect_party_sprites(&mut self, out: &mut Vec<WorldSprite>) {
         let PlayableApp { world, party, .. } = self;
         for m in party.iter() {
             match world.res.actor_frame_state(
@@ -261,16 +259,8 @@ impl PlayableApp {
                         }),
                     });
                 }
-                Err(reason) => rejected.push(format!(
-                    "companion entity={} archetype=0x{:02X} visual_index={} palette_offset=0x{:X} reason={}",
-                    m.entity.index,
-                    m.entity.archetype,
-                    m.entity.visual_index,
-                    m.entity.palette_offset,
-                    reason
-                )),
+                Err(_) => {}
             }
         }
-        rejected
     }
 }

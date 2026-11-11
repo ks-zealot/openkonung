@@ -77,40 +77,14 @@ function frameStats() {
 for (let i = 0; i < 5; i++) wasm.step(0.016);
 console.log('detail frame', frameStats());
 
+// No diagnostic overlay text is drawn during ordinary gameplay.
 const textCount = wasm.text_count();
-const dec = new TextDecoder();
-const lines = [];
-for (let i = 0; i < textCount; i++) {
-  const ptr = wasm.text_ptr(i);
-  const len = wasm.text_len(i);
-  if (ptr && len < 300) {
-    lines.push(dec.decode(new Uint8Array(mem.buffer, ptr, len)));
-  }
-}
-console.log('hud/text items:', textCount);
-for (const l of lines.slice(0, 6)) console.log('  |', l);
-const hud = lines.join(' | ');
-console.log('HUD shows Dragomir start name "Старый лагерь":', hud.includes('Старый лагерь'));
-console.log('HUD shows hero Dragomir / Game.1:', hud.includes('hero:Dragomir Game.1'));
+console.log('overlay text items:', textCount);
 
 // Click to walk (centre of a 1600x1200 host -> virtual 800x600).
 wasm.pointer_down(1, 1100, 500);
 wasm.pointer_up(1, 1100, 500);
 for (let i = 0; i < 30; i++) wasm.step(0.016);
 console.log('after-click frame', frameStats());
-
-// Graph view.
-wasm.key_down(72);
-for (let i = 0; i < 2; i++) wasm.step(0.016);
-console.log('graph frame', frameStats());
-console.log('graph text items:', wasm.text_count());
-const glabels = [];
-for (let i = 0; i < wasm.text_count(); i++) {
-  const ptr = wasm.text_ptr(i);
-  const len = wasm.text_len(i);
-  if (ptr && len && len < 300) glabels.push(dec.decode(new Uint8Array(mem.buffer, ptr, len)));
-}
-console.log('graph label sample:');
-for (const l of glabels.slice(1, 6)) console.log('   ', l);
 
 console.log('SMOKE OK');

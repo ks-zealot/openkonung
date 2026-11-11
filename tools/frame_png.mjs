@@ -212,7 +212,3 @@ await save('trade.png');
 await saveRegion('trade_rows.png', 100, 0, 700, 600);
 wasm.debug_trade_cancel();
 for (let i = 0; i < 2; i++) wasm.step(0.016);
-
-wasm.key_down(72);
-for (let i = 0; i < 3; i++) wasm.step(0.016);
-await save('graph.png');

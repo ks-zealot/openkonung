@@ -129,7 +129,7 @@ impl PlayableApp {
     ///
     /// `None` outside interface mode 0 (world) or when nothing is hovered.
     pub(super) fn hover_panel_text(&mut self) -> Option<String> {
-        if self.mode_graph || self.drag || crate::video::is_pending() {
+        if self.drag || crate::video::is_pending() {
             return None;
         }
         // `_DAT_0081D610 == 0`: world mode only. Dialog/trade/windows keep their

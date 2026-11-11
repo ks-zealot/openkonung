@@ -239,7 +239,7 @@ impl PlayableApp {
         // (`FUN_00424D8C`; additive with Shift) and is consumed. It must not
         // issue a world movement command. The character screen is not opened by
         // this click (original: opened by a command) — use `C` instead.
-        if button == 1 && !self.mode_graph {
+        if button == 1 {
             // Original HUD button strip (`0x81CF68`). The command compiler
             // returns codes 1..=7 before the world/inventory commands.
             if self.held_item.is_none() {
@@ -285,33 +285,10 @@ impl PlayableApp {
             }
         }
         if button == 1 {
-            // Left button: select a graph node, or move the party. Left-click
+            // Left button: move the party (or drop the carried item). Left-click
             // never opens a dialogue — the original talks on the right button
             // (`FUN_0042260C`, `_DAT_0081D5B0 & 1` = UI commands + move only).
-            if self.mode_graph {
-                let v = self.window_to_virtual(x, y);
-                if let Some((vx, vy)) = v {
-                    let hit = self
-                        .node_rects
-                        .iter()
-                        .find(|(_, r)| {
-                            vx >= r.0 as f64
-                                && vx < (r.0 + r.2) as f64
-                                && vy >= r.1 as f64
-                                && vy < (r.1 + r.3) as f64
-                        })
-                        .map(|(k, _)| *k);
-                    if let Some(lid) = hit {
-                        self.current_map = lid;
-                        self.selected = Some(lid);
-                        self.mode_graph = false;
-                        self.target = None;
-                        self.player_interact = false;
-                        self.rebuild_world_objects();
-                        self.fit_detail();
-                    }
-                }
-            } else if self.held_item.is_some() {
+            if self.held_item.is_some() {
                 // Original command 0: left-clicking the world while carrying an
                 // item drops it at the source owner's cell (`FUN_004138C8`).
                 self.drop_held_on_ground();
@@ -322,19 +299,17 @@ impl PlayableApp {
             self.last_mouse = (x, y);
         } else if button == 3 {
             // Right button: use an inventory item, otherwise world interaction.
-            if !self.mode_graph {
-                if let Some(slot) = self.hovered_slot {
-                    if self.held_item.is_none() {
-                        self.right_click_inventory_slot(slot);
-                        self.drag = false;
-                        self.last_mouse = (x, y);
-                        return;
-                    }
+            if let Some(slot) = self.hovered_slot {
+                if self.held_item.is_none() {
+                    self.right_click_inventory_slot(slot);
+                    self.drag = false;
+                    self.last_mouse = (x, y);
+                    return;
                 }
-                self.world_interact(x, y);
-                self.drag = false;
-                self.last_mouse = (x, y);
             }
+            self.world_interact(x, y);
+            self.drag = false;
+            self.last_mouse = (x, y);
         } else if button == 2 {
             self.camera_follow = false;
             self.drag = true;
@@ -509,21 +484,12 @@ impl PlayableApp {
             let dy = y - self.last_mouse.1;
             self.last_mouse = (x, y);
             self.hovered_slot = None;
-            if self.mode_graph {
-                self.graph_pan[0] += dx;
-                self.graph_pan[1] += dy;
-            } else {
-                let (_, _, _, _, sc) = self.window_game_rect();
-                self.detail_pan[0] += dx / sc.max(1e-6);
-                self.detail_pan[1] += dy / sc.max(1e-6);
-            }
+            let (_, _, _, _, sc) = self.window_game_rect();
+            self.detail_pan[0] += dx / sc.max(1e-6);
+            self.detail_pan[1] += dy / sc.max(1e-6);
             return;
         }
-        if self.mode_graph {
-            self.hovered_slot = None;
-        } else {
-            self.update_hover(x, y);
-        }
+        self.update_hover(x, y);
     }
 
     /// Read-only HUD hover: which visible inventory cell is under the cursor.
@@ -546,8 +512,7 @@ impl PlayableApp {
         });
     }
 
-    /// Mouse wheel: zoom the transition graph, or scroll the visible inventory
-    /// strip by one slot.
+    /// Mouse wheel: scroll the visible inventory strip by one slot.
     ///
     /// The strip only scrolls while the pointer hovers a slot, and the offset is
     /// clamped to `INVENTORY_SLOTS - visible_slots` so the window never runs off
@@ -555,11 +520,6 @@ impl PlayableApp {
     /// wheel.
     pub fn wheel(&mut self, delta: f64) {
         if self.trade.is_some() {
-            return;
-        }
-        if self.mode_graph {
-            let factor = 1.2f64.powf(delta);
-            self.graph_zoom = (self.graph_zoom * factor).clamp(0.04, 3.0);
             return;
         }
         if self.hovered_slot.is_some() {
@@ -582,11 +542,7 @@ impl PlayableApp {
     /// `FUN_00421554` stance, `A` = `FUN_00421458` engage (Shift+A selects all),
     /// `1`/`2`/`3` = `FUN_004216DC` weapon slots 2/0/1, `F` = `FUN_0042246C`
     /// halt, `C`/`I` = `FUN_00424330` character screen, `V` camera follow,
-    /// `Home` re-centre, `H`/`Backspace` the transition-graph viewer, and
-    /// `D`/`P`/`L`/`T`/`R` are remake diagnostics (ids/overlays/cache).
-    ///
-    /// No arm mutates the world through `mode_graph`, so gameplay commands are
-    /// ignored while the graph screen is up.
+    /// `Home` re-centre, and `R` clears the world caches.
     pub fn key_down(&mut self, code: u32) {
         // Exchange captures the keyboard: Escape cancels/returns the offers.
         if self.trade.is_some() {
@@ -634,95 +590,49 @@ impl PlayableApp {
             KEY_Q => {
                 self.toggle_quest_log();
             }
-            KEY_H => {
-                if !self.mode_graph {
-                    self.mode_graph = true;
-                    self.selected = None;
-                } else {
-                    self.mode_graph = false;
-                    self.selected = Some(self.current_map);
-                    self.fit_detail();
-                }
-            }
-            KEY_BACKSPACE => {
-                if !self.mode_graph {
-                    self.mode_graph = true;
-                    self.selected = None;
-                }
-            }
             // SPACE — original `FUN_00421554` battle/peace stance toggle.
             KEY_SPACE | KEY_TAB => {
-                if !self.mode_graph {
-                    self.toggle_selected_battle_stance();
-                }
+                self.toggle_selected_battle_stance();
             }
             // A — original `FUN_00421458` party battle-engage. Shift+A selects
             // every visible party unit instead (the original Shift+A branch).
             KEY_A => {
-                if !self.mode_graph {
-                    if self.shift_down {
-                        self.select_all_party();
-                    } else {
-                        self.party_engage();
-                    }
+                if self.shift_down {
+                    self.select_all_party();
+                } else {
+                    self.party_engage();
                 }
             }
             // 1/2/3 — original `FUN_004216DC`: select weapon slot 2/0/1.
             KEY_1 => {
-                if !self.mode_graph {
-                    self.select_weapon_slot(2);
-                }
+                self.select_weapon_slot(2);
             }
             KEY_2 => {
-                if !self.mode_graph {
-                    self.select_weapon_slot(0);
-                }
+                self.select_weapon_slot(0);
             }
             KEY_3 => {
-                if !self.mode_graph {
-                    self.select_weapon_slot(1);
-                }
-            }
-            KEY_D => {
-                self.debug_ids = !self.debug_ids;
-            }
-            KEY_P => {
-                self.population_debug = !self.population_debug;
-            }
-            KEY_L => {
-                self.layer_debug = !self.layer_debug;
-            }
-            KEY_T => {
-                self.teleport_debug = !self.teleport_debug;
+                self.select_weapon_slot(1);
             }
             // F — original `FUN_0042246C` party halt (camera fit is Home now).
             KEY_F => {
-                if !self.mode_graph {
-                    self.party_halt();
-                }
+                self.party_halt();
             }
             KEY_HOME => {
-                if !self.mode_graph {
-                    self.fit_detail();
-                    if self.camera_follow {
-                        self.center_camera_on_player(true, 0.0);
-                    }
+                self.fit_detail();
+                if self.camera_follow {
+                    self.center_camera_on_player(true, 0.0);
                 }
             }
             // `C` / `I` toggle the character screen (the original opens it via
             // `FUN_00424330`, bound to VK_I; C is the remake alias).
             KEY_C | KEY_I => {
-                if !self.mode_graph {
-                    self.toggle_character_screen();
-                }
+                self.toggle_character_screen();
             }
             // `V` toggles camera follow (moved off `C`).
             KEY_V => {
-                if !self.mode_graph {
-                    self.camera_follow = !self.camera_follow;
-                    if self.camera_follow {
-                        self.center_camera_on_player(true, 0.0);
-                    }
+                self.camera_follow = !self.camera_follow;
+                if self.camera_follow {
+                    self.center_camera_on_player(true, 0.0);
                 }
             }
             KEY_R => {
