@@ -34,6 +34,9 @@ impl PlayableApp {
             self.player_ranged_frame = 0;
             self.player_ranged_frames = 0;
             self.player_ranged_fired = false;
+            // The right-click order is persistent (`Entity+0x02 = 0x41/0x44`):
+            // the unit keeps re-acquiring after each kill (`FUN_0041E2D4`).
+            self.player_engaged = true;
             if ranged {
                 self.player_path.clear();
                 self.player_active = false;
@@ -66,6 +69,8 @@ impl PlayableApp {
                 m.motion.target = None;
                 m.motion.walking = false;
                 m.motion.render_cell = m.motion.cell;
+                // Persistent engage order (`Entity+0x02 & 0x01`).
+                m.motion.engaged = true;
                 ordered = true;
             }
         }
@@ -75,52 +80,46 @@ impl PlayableApp {
         ordered
     }
 
-    /// `FUN_00421458` party engage: order the **whole party** (not only the
-    /// current selection) onto `target`.
-    pub(in crate::app) fn order_party_attack(&mut self, target: CombatTarget) -> bool {
-        if self.player.dead {
-            return false;
-        }
-        self.set_all_party_battle();
+    /// `FUN_00421458` party engage: write the **persistent engage order** on
+    /// every living party unit (not only the current selection).
+    ///
+    /// The original clears `Entity+0x06` and writes `Entity+0x02 = 0x41` (melee)
+    /// or `0x44` (bow + ammo, approach mode) and assigns **no target**. The next
+    /// idle tick runs `FUN_0041E2D4`, which picks the nearest hostile group
+    /// member around the leader (`FUN_0041FB64`/`FUN_00420190`) and keeps
+    /// re-acquiring after every kill until none is left. Battle stance is set by
+    /// the caller (`set_all_party_battle`, the same routine's `+0x03 |= 4`).
+    pub(in crate::app) fn order_party_engage(&mut self) {
         if !self.player.dead {
-            let ranged = self.ranged_ready(CombatTarget::Player, false);
-            self.player_attack_target = Some(target);
+            self.player_attack_target = None;
             self.player_attack_frame = 0;
             self.player_attack_frames = 0;
-            self.player_attack_ranged = ranged;
+            self.player_attack_ranged = false;
             self.player_ranged_frame = 0;
             self.player_ranged_frames = 0;
             self.player_ranged_fired = false;
+            self.player_engaged = true;
             self.target = None;
             self.player_path.clear();
             self.player_active = false;
             self.player_render_x = self.player_x;
             self.player_render_y = self.player_y;
         }
-        let party_ranged: Vec<bool> = (0..self.party.len())
-            .map(|i| self.ranged_ready(CombatTarget::Party(i), false))
-            .collect();
-        for (i, m) in self.party.iter_mut().enumerate() {
+        for m in self.party.iter_mut() {
             if m.motion.dead {
                 continue;
             }
-            let ranged = party_ranged.get(i).copied().unwrap_or(false);
-            m.motion.combat_target = Some(target);
+            m.motion.combat_target = None;
             m.motion.attack_frames = 0;
             m.motion.frame = 0;
-            m.motion.ranged_order = ranged;
+            m.motion.ranged_order = false;
             m.motion.ranged_fired = false;
+            m.motion.engaged = true;
             m.motion.path.clear();
             m.motion.target = None;
             m.motion.walking = false;
             m.motion.render_cell = m.motion.cell;
         }
-        if let CombatTarget::World(id) = target {
-            self.engage_world_group(id, CombatTarget::Player);
-        } else {
-            self.wake_combatant_group(target, CombatTarget::Player);
-        }
-        true
     }
 
     /// Prop/object order (`FUN_0042260C` branch 2b): only ranged-ready units

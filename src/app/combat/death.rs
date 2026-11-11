@@ -24,6 +24,7 @@ impl PlayableApp {
                 self.player.hp_internal = 0;
                 self.player.dead = true;
                 self.player_attack_target = None;
+                self.player_engaged = false;
                 self.player_attack_frame = 0;
                 self.player_death_frame = 0;
                 let battle = crate::anim::battle_from_flags(self.player.flags_b);
@@ -69,6 +70,8 @@ impl PlayableApp {
                     m.entity.stats.hp_internal = 0;
                     m.motion.dead = true;
                     m.motion.combat_target = None;
+                    m.motion.engaged = false;
+                    m.motion.ranged_order = false;
                     m.motion.path.clear();
                     m.motion.walking = false;
                     m.motion.render_cell = m.motion.cell;

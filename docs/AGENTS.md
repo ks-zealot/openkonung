@@ -282,8 +282,11 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   every selected, living unit enters/leaves battle according to the first
   selected unit's stance; unselected members are untouched (`TAB` remains a
   remake alias). `A` runs `FUN_00421458` party engage: all party units enter
-  battle stance and the nearest awake/attacking hostile within 12 cells is
-  ordered; movement is preserved (the original does not halt). `F` runs
+  battle stance and the **persistent engage order** (`Entity+0x02 & 0x01`, with
+  `Entity+0x06` cleared) is written on every living member; the original
+  assigns no concrete target. Each ordered unit then re-acquires through
+  `FUN_0041E2D4` on its next tick (see below). Movement is preserved (the
+  original does not halt). `F` runs
   `FUN_0042246C` party halt; camera fit moved to `Home`. Keys `1/2/3` select
   weapon slots `2/0/1` (`FUN_004216DC`), `I`/`C` toggle the character screen,
   `M`/`Q` the map/quest log, `V` camera follow. The browser maps physical
@@ -293,6 +296,26 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   retaliation is implemented for the leader and companions: an idle unit
   acquires an adjacent object-family actor already targeting it and enters
   battle stance, so a party walking through an aggroed group fights back.
+  **Persistent engage order / chain kills (implemented):** `FUN_0041E2D4`
+  (called from `FUN_0041ECC8` while `Entity+0x02 & 0x01` is set and the
+  approach bit `0x04` is clear) re-acquires after every kill instead of
+  stopping. When the current target is dead (action row `3`/`9`) or gone it
+  calls `FUN_0041FB64(own group)` for the nearest hostile group around the
+  party leader - same location, not the party group, class != `0x53`, and
+  either an object/monster group (`class & 0x80 == 0`) or a citizen group
+  woken to activity `1`; for the party group (`class & 0x20`, `Game.N` group 0
+  = `0x20`) the search area is the leader +/- `(r + r/2)`, `r = 20/9` at
+  800x600 (`_DAT_0081D6E0`/`_DAT_0081D6A4`) -> **+/-30 x, +/-13 y** - then
+  `FUN_00420190` (nearest member no engaged party unit already targets) with
+  the `FUN_00420098` plain-nearest fallback. No candidate clears the order
+  (`+0x02 &= 0xFE`). Archer orders (`0x44`) re-pick through `FUN_00410E84`
+  (first visible member of the nearest hostile group with a clear
+  `FUN_0041130C` line of fire). Implemented as `app/combat/acquire.rs`,
+  `ActorMotion::engaged` (serde-skipped: the remake save has no order byte,
+  load derives it from a live `combat_target`) and `PlayableApp::player_engaged`;
+  right-click attack orders set the same bit, and `SPACE`-to-peace (`& 0xFA`)
+  and `F` halt (`0x60`) clear it. This is why a recruited companion ordered
+  onto an ant group keeps killing the next ant after each kill.
   **Tick rate (verified):** the original frame budget is **60 ms** (`konung.res`
   `0x42b32f` `MOV [0x81d5c8],0x3C`; limiter `0x42b61a`; `timeGetTime`), so the
   game advances one animation/logic frame per 60 ms (~16.67 Hz; the periodic

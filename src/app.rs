@@ -357,6 +357,10 @@ pub struct PlayableApp {
     pub(super) combat_frame: u64,
     /// Protagonist melee target (`None` = not fighting).
     pub(super) player_attack_target: Option<crate::combat::CombatTarget>,
+    /// Protagonist persistent engage order (`Entity+0x02 & 0x01`, `FUN_00421458`
+    /// / right-click). Keeps `FUN_0041E2D4` re-acquiring the next hostile after
+    /// a kill until no enemy group is left around the leader.
+    pub(super) player_engaged: bool,
     /// Current frame inside the protagonist attack cycle.
     pub(super) player_attack_frame: u8,
     /// Protagonist attack-cycle length for the current stance.
@@ -525,6 +529,7 @@ impl PlayableApp {
             sound_rng: crate::combat::OriginalRng::new(0x534F_554E),
             combat_frame: 0,
             player_attack_target: None,
+            player_engaged: false,
             player_attack_frame: 0,
             player_attack_frames: 1,
             player_attack_ranged: false,

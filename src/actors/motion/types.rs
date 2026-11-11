@@ -59,6 +59,17 @@ pub struct ActorMotion {
     pub citizen: bool,
     /// Current melee target. `None` for ordinary citizens/wanderers.
     pub combat_target: Option<crate::combat::CombatTarget>,
+    /// Persistent engage order (`Entity+0x02 & 0x01`, the `'A'` order written by
+    /// `FUN_00421458`/`FUN_0042260C`). While set, a unit that loses its target
+    /// re-acquires the next hostile of the nearest enemy group around the leader
+    /// (`FUN_0041E2D4`/`FUN_0041FB64`/`FUN_00420190`); the order clears when no
+    /// hostile remains, on halt (`0x60`), on peace (`& 0xFA`) or on death.
+    ///
+    /// Runtime-only: the original persists it in `Entity+0x02`, but the remake
+    /// save payload has no order byte, so `#[serde(skip)]` keeps the bincode
+    /// layout unchanged and load derives it from a live `combat_target`.
+    #[serde(skip)]
+    pub engaged: bool,
     /// Cycle length for the active attack: melee row `5`
     /// (`FUN_0041EB48`/`FUN_004123BC` case 5) or ranged row `4`.
     pub attack_frames: u8,

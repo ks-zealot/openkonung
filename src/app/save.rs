@@ -189,6 +189,13 @@ impl PlayableApp {
             }
         }
         self.party = save.party;
+        // The persistent engage order (`Entity+0x02 & 0x01`) is runtime-only in
+        // the remake (`ActorMotion::engaged` is skipped by serde), so derive it
+        // from a live restored target: an in-progress fight keeps fighting and
+        // still re-acquires after its kill.
+        for m in self.party.iter_mut() {
+            m.motion.engaged = m.motion.combat_target.is_some();
+        }
         self.quest_flags = save.quest_flags;
         self.discovered_locations = [0; DISCOVERED_LEN];
         let n = discovered.len().min(DISCOVERED_LEN);
@@ -244,6 +251,7 @@ impl PlayableApp {
         self.combat_step_t = 0.0;
         self.combat_frame = self.world_frame;
         self.player_attack_target = None;
+        self.player_engaged = false;
         self.player_attack_frame = 0;
         self.player_attack_frames = 1;
         self.player_attack_ranged = false;

@@ -75,6 +75,11 @@ impl PlayableApp {
                     self.player.flags_b |= crate::anim::FLAG_BATTLE;
                 } else {
                     self.player.flags_b &= !crate::anim::FLAG_BATTLE;
+                    // `Entity+0x02 &= 0xFA`: peace clears the engage/approach
+                    // order, so `FUN_0041E2D4` stops re-acquiring hostiles.
+                    self.player_engaged = false;
+                    self.player_attack_target = None;
+                    self.player_attack_ranged = false;
                 }
                 self.anim_time = 0.0;
             }
@@ -105,6 +110,10 @@ impl PlayableApp {
                 m.entity.flags_b |= crate::anim::FLAG_BATTLE;
             } else {
                 m.entity.flags_b &= !crate::anim::FLAG_BATTLE;
+                // `Entity+0x02 &= 0xFA`: peace clears the engage/approach order.
+                m.motion.engaged = false;
+                m.motion.combat_target = None;
+                m.motion.ranged_order = false;
             }
             let battle = crate::anim::battle_from_flags(m.entity.flags_b);
             let action = if action_row == crate::anim::ACT_BATTLE_ATTACK

@@ -3,6 +3,7 @@
 
 use super::super::*;
 use super::common::*;
+use crate::actors::{ActorMotion, PartyMember};
 use crate::combat::CombatTarget;
 use crate::population::{Entity, EntityStats, GameTables, Group, Rect};
 
@@ -306,9 +307,55 @@ fn mo_walk_completion_seeds_entity_0x12_delay() {
     assert!(saw_delay, "M/O walk completion never seeded Entity+0x12");
 }
 
-/// `A` puts the leader in battle stance and orders the nearest awake hostile world actor.
+/// Two ants in synthetic group 1 plus an optional companion, so the persistent
+/// engage order's re-acquisition pass (`FUN_0041E2D4`) can be exercised.
+fn ant_pair_app(leader: (i32, i32), companion: Option<(i32, i32)>) -> Option<PlayableApp> {
+    let mut app = build_party_move_app()?;
+    let rect = Rect {
+        x1: 10,
+        x2: 20,
+        y1: 10,
+        y2: 20,
+    };
+    let mut groups = vec![Group::default(); 200];
+    for (i, g) in groups.iter_mut().enumerate() {
+        g.index = i;
+    }
+    groups[1] = group(1, 10, 2, 0x41, rect);
+    let mut entities = vec![entity(0, 0, 0, 0, 0, 0); 2000];
+    for (i, e) in entities.iter_mut().enumerate() {
+        e.index = i;
+    }
+    entities[10] = entity(10, 0, 0x41, 1, 16, 15);
+    entities[11] = entity(11, 0, 0x41, 1, 18, 15);
+    app.tables = Some(GameTables { groups, entities });
+    app.population_cache.clear();
+    app.current_map = 1;
+    app.ensure_population(1);
+    app.player_x = leader.0 as f64;
+    app.player_y = leader.1 as f64;
+    app.player_render_x = app.player_x;
+    app.player_render_y = app.player_y;
+    app.player.dead = false;
+    app.party.clear();
+    if let Some(cell) = companion {
+        app.party.push(PartyMember {
+            entity: entity(20, 0, 0x00, 0, cell.0 as u16, cell.1 as u16),
+            motion: ActorMotion {
+                cell,
+                render_cell: cell,
+                ..Default::default()
+            },
+        });
+        app.party_selected[1] = true;
+    }
+    Some(app)
+}
+
+/// `A` writes the persistent engage order and clears the concrete target; the
+/// next leader tick acquires the nearest hostile group member (`FUN_0041E2D4`).
 #[test]
-fn engage_button_orders_nearest_awake_hostile() {
+fn engage_button_writes_persistent_order_and_acquires_next_tick() {
     let Some(mut app) = synthetic_app(entity(10, 0, 0x41, 1, 15, 15), 0x41) else {
         return;
     };
@@ -323,14 +370,126 @@ fn engage_button_orders_nearest_awake_hostile() {
     );
     app.player_attack_target = None;
     app.party_engage();
-    assert_eq!(
-        app.player_attack_target,
-        Some(CombatTarget::World(10)),
-        "engage did not order the nearest awake hostile"
-    );
     assert!(
         crate::anim::battle_from_flags(app.player.flags_b),
         "engage must put the leader in battle stance"
+    );
+    assert!(
+        app.player_engaged,
+        "engage must write the persistent order bit"
+    );
+    assert_eq!(
+        app.player_attack_target, None,
+        "the original engage order assigns no concrete target"
+    );
+    app.update_player_combat();
+    assert_eq!(
+        app.player_attack_target,
+        Some(CombatTarget::World(10)),
+        "the first ordered tick must acquire the nearest hostile"
+    );
+}
+
+/// An engaged companion keeps killing the next ant after each kill instead of
+/// stopping after one (`FUN_0041E2D4`/`FUN_0041FB64`/`FUN_00420190`).
+#[test]
+fn companion_reacquires_the_next_ant_after_a_kill() {
+    let Some(mut app) = ant_pair_app((20, 15), Some((17, 15))) else {
+        return;
+    };
+    app.party_engage();
+    assert!(app.party[0].motion.engaged);
+    app.update_party_combat();
+    assert_eq!(
+        app.party[0].motion.combat_target,
+        Some(CombatTarget::World(10))
+    );
+    // First ant dies: the engaged companion must pick the next one.
+    app.population_cache
+        .get_mut(&1)
+        .unwrap()
+        .motion
+        .get_mut(&10)
+        .unwrap()
+        .dead = true;
+    app.update_party_combat();
+    assert_eq!(
+        app.party[0].motion.combat_target,
+        Some(CombatTarget::World(11)),
+        "engaged companion stopped after a single kill"
+    );
+    // Last ant dies: no hostile group left, the order ends.
+    app.population_cache
+        .get_mut(&1)
+        .unwrap()
+        .motion
+        .get_mut(&11)
+        .unwrap()
+        .dead = true;
+    app.update_party_combat();
+    assert_eq!(app.party[0].motion.combat_target, None);
+    assert!(
+        !app.party[0].motion.engaged,
+        "the order must clear when no hostile remains"
+    );
+}
+
+/// The leader uses the same persistent order and re-acquires after a kill.
+#[test]
+fn leader_reacquires_the_next_ant_after_a_kill() {
+    let Some(mut app) = ant_pair_app((17, 15), None) else {
+        return;
+    };
+    app.party_engage();
+    app.update_player_combat();
+    assert_eq!(app.player_attack_target, Some(CombatTarget::World(10)));
+    app.population_cache
+        .get_mut(&1)
+        .unwrap()
+        .motion
+        .get_mut(&10)
+        .unwrap()
+        .dead = true;
+    app.update_player_combat();
+    assert_eq!(
+        app.player_attack_target,
+        Some(CombatTarget::World(11)),
+        "engaged leader stopped after a single kill"
+    );
+    app.population_cache
+        .get_mut(&1)
+        .unwrap()
+        .motion
+        .get_mut(&11)
+        .unwrap()
+        .dead = true;
+    app.update_player_combat();
+    assert_eq!(app.player_attack_target, None);
+    assert!(!app.player_engaged);
+}
+
+/// `FUN_0041FB64` only searches the leader's +/-30x/13y area: a hostile group
+/// beyond it never enters the order.
+#[test]
+fn reacquisition_ignores_hostiles_outside_the_leader_area() {
+    let Some(mut app) = ant_pair_app((20, 15), Some((17, 15))) else {
+        return;
+    };
+    for (id, cell) in [(10, (200, 100)), (11, (210, 100))] {
+        app.population_cache
+            .get_mut(&1)
+            .unwrap()
+            .motion
+            .get_mut(&id)
+            .unwrap()
+            .cell = cell;
+    }
+    app.party_engage();
+    app.update_party_combat();
+    assert_eq!(app.party[0].motion.combat_target, None);
+    assert!(
+        !app.party[0].motion.engaged,
+        "a hostile outside the leader area must not start a fight"
     );
 }
 

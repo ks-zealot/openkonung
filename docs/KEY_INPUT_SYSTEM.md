@@ -515,7 +515,7 @@ gating. Keys act immediately on each DOM event.
 | ESC `0x1B` — screen/menu switch, close interface window, resume | ESC closes the dialogue or the character screen; otherwise `request_menu` (`abi` → `OpenMenu`; frontend ESC → `Resume`/`Quit`) | partial match (menu open/close); remake also closes its character screen |
 | SPACE `0x20` - toggle battle/peace stance (`FUN_00421554`) | `toggle_selected_battle_stance` | **implemented** |
 | `1`/`2`/`3` - select weapon slot (2/0/1, `FUN_004216DC`) | `select_weapon_slot(2/0/1)` | **implemented** |
-| `A` - party battle-engage / Shift+A select-all | `party_engage` / `select_all_party` | **implemented** (nearest awake hostile within 12 cells; no halt) |
+| `A` - party battle-engage / Shift+A select-all | `party_engage` / `select_all_party` | **implemented** (battle stance + persistent engage order, no target assigned; `FUN_0041E2D4` re-acquires on the next tick; no halt) |
 | `F` - party halt (`FUN_0042246C`) | `party_halt`; camera fit moved to `Home` | **implemented** |
 | `I` - open character window (mode 3, `FUN_00424330`) | `I` and `C` both toggle the character screen | **implemented** |
 | `M` - world map toggle (mode 5) | `toggle_map` | **implemented** |

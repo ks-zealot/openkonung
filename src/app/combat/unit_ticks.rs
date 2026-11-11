@@ -68,6 +68,36 @@ impl PlayableApp {
         if self.player.dead {
             return;
         }
+        // `FUN_0041E2D4`: the leader's persistent engage order also re-acquires
+        // the next hostile after a kill (the original runs the same group-0
+        // actor logic for entity 0).
+        if self.player_engaged {
+            let missing = self
+                .player_attack_target
+                .map_or(true, |t| self.combatant_dead(t));
+            if missing && !self.player_active && self.player_path.is_empty() {
+                let pc = (self.player_x.round() as i32, self.player_y.round() as i32);
+                let ranged = self.ranged_ready(CombatTarget::Player, false);
+                match self.acquire_next_hostile(CombatTarget::Player, pc, ranged) {
+                    Some(target) => {
+                        self.player_attack_target = Some(target);
+                        self.player_attack_frame = 0;
+                        self.player_attack_frames = 0;
+                        self.player_attack_ranged = ranged;
+                        self.player_ranged_frame = 0;
+                        self.player_ranged_frames = 0;
+                        self.player_ranged_fired = false;
+                        self.target = None;
+                    }
+                    None => {
+                        // `+0x02 &= 0xFE`: no hostile left, the order ends.
+                        self.player_engaged = false;
+                        self.player_attack_target = None;
+                        self.player_attack_ranged = false;
+                    }
+                }
+            }
+        }
         // `FUN_0041EB48`: an idle unit automatically acquires an adjacent
         // enemy that is already targeting it. This is the original retaliation
         // path that lets the party fight back while walking through a mob
@@ -204,9 +234,57 @@ impl PlayableApp {
     /// retaliation applies to idle members, and the resulting attacks, arrow
     /// spawns and action sounds are queued so they can be applied after the
     /// mutable party borrow ends.
-    pub(super) fn update_party_combat(&mut self) {
+    pub(in crate::app) fn update_party_combat(&mut self) {
         if self.party.is_empty() {
             return;
+        }
+        // `FUN_0041E2D4`: a unit holding the persistent engage order re-acquires
+        // the next hostile after its target dies (or leaves the map). The
+        // original runs this from `FUN_0041ECC8` on the idle/walk tick, one
+        // member at a time, so an earlier member's fresh target is already
+        // visible to `FUN_00420190` for the next one. A unit still walking
+        // finishes its current segment first.
+        for i in 0..self.party.len() {
+            let needs_target = match self.party.get(i) {
+                Some(m) => {
+                    !m.motion.dead
+                        && m.motion.engaged
+                        && !m.motion.walking
+                        && m.motion
+                            .combat_target
+                            .map_or(true, |t| self.combatant_dead(t))
+                }
+                None => false,
+            };
+            if !needs_target {
+                continue;
+            }
+            let cell = self.party[i].motion.cell;
+            let ranged = self.ranged_ready(CombatTarget::Party(i), false);
+            let target = self.acquire_next_hostile(CombatTarget::Party(i), cell, ranged);
+            let Some(m) = self.party.get_mut(i) else {
+                continue;
+            };
+            match target {
+                Some(target) => {
+                    m.motion.combat_target = Some(target);
+                    m.motion.attack_frames = 0;
+                    m.motion.frame = 0;
+                    m.motion.ranged_order = ranged;
+                    m.motion.ranged_fired = false;
+                    m.motion.path.clear();
+                    m.motion.target = None;
+                    m.motion.walking = false;
+                    m.motion.render_cell = m.motion.cell;
+                }
+                None => {
+                    // `+0x02 &= 0xFE`: no hostile left, the order ends.
+                    m.motion.combat_target = None;
+                    m.motion.engaged = false;
+                    m.motion.ranged_order = false;
+                    m.motion.ranged_fired = false;
+                }
+            }
         }
         let loc = self.current_map;
         let player_cell = (self.player_x.round() as i32, self.player_y.round() as i32);

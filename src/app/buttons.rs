@@ -11,7 +11,7 @@
 //! | 2 | stance | `FUN_00421554` | battle/peace for the selected units |
 //! | 3 | map | `FUN_0042CBD0(4)` | world map (interface mode 5) |
 //! | 4 | halt | `FUN_0042246C` | stop the selected units |
-//! | 5 | engage | `FUN_00421458` | battle stance + attack nearest hostile |
+//! | 5 | engage | `FUN_00421458` | battle stance + persistent engage order |
 //! | 6 | quest log | `FUN_004242BC` | mode 2 |
 //! | 7 | character | `FUN_00424330` | mode 3 |
 //!
@@ -115,6 +115,7 @@ impl PlayableApp {
             self.player_step_t = 0.0;
             self.player_attack_target = None;
             self.player_attack_ranged = false;
+            self.player_engaged = false;
         }
         for (i, m) in self.party.iter_mut().enumerate() {
             if self.party_selected.get(i + 1).copied().unwrap_or(false) {
@@ -123,15 +124,19 @@ impl PlayableApp {
                 m.motion.walking = false;
                 m.motion.combat_target = None;
                 m.motion.ranged_order = false;
+                // `FUN_0042246C` writes `Entity+0x02 = 0x60`, clearing the
+                // engage/approach bits.
+                m.motion.engaged = false;
             }
         }
     }
 
-    /// `FUN_00421458`: put **every** party unit into battle stance and engage
-    /// the nearest active hostile. The original only writes the order byte and
-    /// clears the target words; the remake resolves a concrete target so the
-    /// button has a visible effect and lets `A` start a fight without a manual
-    /// right-click. Movement is not cancelled (the original does not halt).
+    /// `FUN_00421458`: put **every** party unit into battle stance and write the
+    /// persistent engage order (`Entity+0x02 = 0x41` melee / `0x44` bow, target
+    /// words cleared). The next idle tick's `FUN_0041E2D4` acquires the nearest
+    /// hostile group member around the leader, and each unit keeps re-acquiring
+    /// after every kill until none is left. Movement is not cancelled (the
+    /// original does not halt).
     pub(super) fn party_engage(&mut self) {
         self.queue_sound(crate::sound::events::UI_CLICK);
         let any = !self.player.dead || self.party.iter().any(|m| !m.motion.dead);
@@ -139,15 +144,7 @@ impl PlayableApp {
             return;
         }
         self.set_all_party_battle();
-        match self.nearest_engage_target() {
-            Some(target) => {
-                self.order_party_attack(target);
-            }
-            None => {
-                self.combat_message = Some("Нет врагов поблизости".to_string());
-                self.combat_message_t = 1.5;
-            }
-        }
+        self.order_party_engage();
     }
 
     /// Original `FUN_004216DC(n)` direct weapon-slot selection (keys 1/2/3,
@@ -210,48 +207,6 @@ impl PlayableApp {
                 break;
             }
         }
-    }
-
-    /// Nearest live object/monster within the engage radius whose group is
-    /// awake or that is already targeting the party.
-    fn nearest_engage_target(&self) -> Option<crate::combat::CombatTarget> {
-        const ENGAGE_RADIUS: i32 = 12;
-        let loc = self.current_map;
-        let player = (self.player_x.round() as i32, self.player_y.round() as i32);
-        let pop = self.population_cache.get(&loc)?;
-        let tables = self.tables.as_ref();
-        let mut best: Option<(i32, usize)> = None;
-        for a in pop.actors.iter() {
-            if a.entity.archetype & 0x40 == 0 {
-                continue;
-            }
-            let Some(m) = pop.motion.get(&a.entity.index) else {
-                continue;
-            };
-            if m.dead {
-                continue;
-            }
-            let awake = tables
-                .and_then(|t| t.groups.get(a.source_group_id))
-                .map(|g| g.activity_1d == 1)
-                .unwrap_or(false);
-            let targeting_party = matches!(
-                m.combat_target,
-                Some(crate::combat::CombatTarget::Player)
-                    | Some(crate::combat::CombatTarget::Party(_))
-            );
-            if !awake && !targeting_party {
-                continue;
-            }
-            let d = crate::actors::follow_distance(player, m.cell);
-            if d > ENGAGE_RADIUS {
-                continue;
-            }
-            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
-                best = Some((d, a.entity.index));
-            }
-        }
-        best.map(|(_, id)| crate::combat::CombatTarget::World(id))
     }
 }
 

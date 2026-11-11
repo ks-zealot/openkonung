@@ -245,7 +245,7 @@ interface commands that share it):
 | `2` | — | `FUN_00421554` | **selected-unit battle/peace stance toggle** (`+0x00 ∓6`, `+0x03 ^= 0x04`; first selected decides direction) |
 | `3` | — | inline | open **world map** / interface mode 4 (`FUN_00428E98`, sound `FUN_0042A13C(4)`, `FUN_0042CBD0(4)`; mode 5 → close) |
 | `4` | — | `FUN_0042246C` | **party halt/stand** (`+0x02 = 0x60`, `+0x14 = 0xFF`, members ≥ 1) |
-| `5` | — | `FUN_00421458` | **party battle-engage** (battle stance on, `+0x02 = 'D'/'A'` by `+0x12`, queue cleared) |
+| `5` | — | `FUN_00421458` | **party battle-engage** (battle stance on, `+0x02 = 'D'/'A'` by `+0x12`, `+0x06` cleared, queue cleared; no target is assigned - `FUN_0041E2D4` re-acquires on the next tick and after every kill) |
 | `6` | — | `FUN_004242BC` | toggle **quest-log** window (`FUN_0042CBD0(1)` → mode 2) |
 | `7` | — | `FUN_00424330` | toggle **character/member** screen (`FUN_0042CBD0(2)` → mode 3) |
 | `8`..`0xD` | — | `FUN_0041E450(n)` | **equip the selected item into main slot** `Entity+0x66+2n` (`n` = 4 / 0·2 / 5 / 3 / 1 / 0xC) |

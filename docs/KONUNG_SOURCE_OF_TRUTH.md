@@ -1604,6 +1604,25 @@ Two recovered details used by the remake:
   branch, not generic patrol. Citizen groups keep their authored `0x1D = 0x80`
   (mode 0 clears only `class & 0x40`) and do not enter the `FUN_004168a4`
   waypoint/wander branch until woken to `1`.
+- **Party re-acquisition / persistent engage order (`FUN_0041e2d4`,
+  `FUN_0041ecc8`, `FUN_0041fb64`, `FUN_00420190`, `FUN_00420098`,
+  `FUN_00410e84`).** The melee order bytes `0x41`/`0x44` written by
+  `FUN_00421458` and the right-click branch of `FUN_0042260c` are persistent:
+  `FUN_0041ecc8` calls `FUN_0041e2d4` while `Entity+0x02 & 0x01` is set and bit
+  `0x04` is clear. It keeps a valid target (`+0x06` > 0, target
+  `+0x04 & 0x80 == 0`, target action row `+0x00 != 3/9`), else clears it and
+  asks `FUN_0041fb64(own group)` for the nearest hostile group - current
+  location, not the own group, `class != 0x53`, and (`class & 0x80 == 0`
+  object/monster or activity `+0x1D == 1` woken citizen) - with a visible living
+  member inside the party's area. The party group (`Game.N` group 0) is
+  `class 0x20`, so the area is the leader (group-first entity) +/- `(r + r/2)`
+  with `r = 20/9` at 800x600: **+/-30 x, +/-13 y**. `FUN_00420190` returns the
+  nearest member that no engaged party unit already targets, with
+  `FUN_00420098` as the plain-nearest fallback, and the unit chases/attacks it.
+  When nothing is found `+0x02 &= 0xFE` ends the order. Archer orders (`0x44`,
+  approach bit `0x04`) re-pick through `FUN_00410e84`: the first visible member
+  of that group whose `FUN_0041130C` probe is clear. **Status: ORIGINAL-CODE
+  VERIFIED + IMPLEMENTED** (`app/combat/acquire.rs`).
 - **M/O walk delay (`FUN_004123bc`).** For archetypes `0x4D`/`0x4F`, after a
   walk cycle `Entity+0x12` is a countdown: if zero, seed
   `1 + (rand%2) * rand%(Entity+0xD7)`, else decrement; the next route/action is

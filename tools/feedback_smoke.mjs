@@ -219,6 +219,9 @@ const staged = wasm.debug_ai_setup();
 if (staged === 0) fail('#7 AI staging found no enemy');
 const enemy = staged - 1;
 wasm.key_down(65); // A
+// `FUN_00421458` only writes the persistent order (`Entity+0x02 & 1`, `+0x06`
+// cleared); `FUN_0041E2D4` acquires the target on the next logic tick.
+wasm.step(0.06);
 if (wasm.debug_player_target() !== enemy) {
   fail(`#7 A/engage did not target actor ${enemy} (got ${wasm.debug_player_target()})`);
 }

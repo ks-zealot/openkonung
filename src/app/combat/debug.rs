@@ -101,12 +101,14 @@ impl PlayableApp {
     /// Diagnostic: clear all combat targets and attack cycles (smoke staging).
     pub fn debug_clear_combat_targets(&mut self) {
         self.player_attack_target = None;
+        self.player_engaged = false;
         self.player_attack_frame = 0;
         self.player_attack_ranged = false;
         self.player_ranged_frame = 0;
         self.player_ranged_fired = false;
         for m in self.party.iter_mut() {
             m.motion.combat_target = None;
+            m.motion.engaged = false;
             m.motion.ranged_order = false;
             m.motion.ranged_fired = false;
             m.motion.attack_frames = 0;
