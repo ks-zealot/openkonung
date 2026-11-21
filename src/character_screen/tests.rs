@@ -192,6 +192,48 @@ fn draw_uses_intr2_and_does_not_panic() {
     assert_eq!(p.portrait_status(), 5);
 }
 
+/// «Удар» is `FUN_0041AEA8`, not the raw weapon rating: the shipped knife is
+/// worth 60 and the armed `round(STR*HP/400)` term adds another 60, so the
+/// character sheet must show 120 (the live original's value).
+#[test]
+fn attack_value_uses_fun_0041aea8_not_the_raw_weapon_rating() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |n: &str| std::fs::read(dir.join(n)).ok();
+    let (Some(game), Some(graph), Some(objects), Some(exe), Some(konung), Some(save)) = (
+        read("Game.res"),
+        read("GRAPH.RES"),
+        read("Objects.res"),
+        read("CLIENT.EXE"),
+        read("konung.res"),
+        read("Game.1"),
+    ) else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let mut res = Res::new(game, graph, objects, exe);
+    res.load_items_and_fonts(&konung);
+    res.set_save_game(&save);
+
+    let mut p = player();
+    p.raw_0x12 = 2; // the shipped Game.1 knife sits in storage slot 2
+    let sheet = CharacterSheet {
+        name_id: p.hero.name_id,
+        class: p.entity_class(),
+        equipment: p.equipment,
+        additional: p.additional_equipment,
+        special: p.special_equipment,
+        inventory: p.inventory,
+        raw_0x12: p.raw_0x12,
+        flags_b: p.flags_b,
+        visual_index: p.hero.visual_index,
+        palette_id: p.hero.palette_id(),
+        snapshot: crate::inventory::OwnerSnapshot::from_player(&p),
+        pose: PaperDollPose::default(),
+    };
+    // STR 15 × HP 1600 / 400 = 60; the knife prototype adds another 60.
+    assert_eq!(attack_value(&res, &sheet), 120);
+}
+
 /// The paper doll lands at (470,127) / (570,160), the `0x46035C` table values.
 #[test]
 fn paper_doll_positions_match_executable_tables() {

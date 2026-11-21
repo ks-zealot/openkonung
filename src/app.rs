@@ -638,7 +638,8 @@ impl PlayableApp {
                 self.trade_message = None;
             }
         }
-        self.tick_ambient_sound();
+        // `tick_ambient_sound` runs from `advance_world_frame`, once per 60 ms
+        // original frame (matching `FUN_00436214`), not per rendered step.
         self.ensure_population(self.current_map);
         if !self.world.has_runtime_collision(self.current_map) {
             self.rebuild_occupancy(self.current_map);

@@ -178,6 +178,13 @@ impl PlayableApp {
                 }
                 if let Some((vx, vy)) = self.window_to_virtual(x, y) {
                     let (vx, vy) = (vx.round() as i32, vy.round() as i32);
+                    // AUTO experience-spend button (`INTR[169/170]`) lives on
+                    // the character sheet only (`FUN_0042CBD0` case 3 tail).
+                    let (ax, ay, aw, ah) = self.auto_rect();
+                    if vx >= ax && vx < ax + aw && vy >= ay && vy < ay + ah {
+                        self.toggle_auto_xp();
+                        return;
+                    }
                     let equipment = self.owner_equipment(self.inventory_owner);
                     let raw = self.owner_raw_0x12(self.inventory_owner);
                     let hit = crate::character_screen::hit_test(vx, vy, VIRTUAL_W, &equipment, raw);
@@ -245,13 +252,6 @@ impl PlayableApp {
             if self.held_item.is_none() {
                 if let Some((vx, vy)) = self.window_to_virtual(x, y) {
                     let (vx, vy) = (vx.round() as i32, vy.round() as i32);
-                    let (ax, ay, aw, ah) = self.auto_rect();
-                    if vx >= ax && vx < ax + aw && vy >= ay && vy < ay + ah {
-                        self.toggle_auto_xp();
-                        self.drag = false;
-                        self.last_mouse = (x, y);
-                        return;
-                    }
                     if let Some(code) = crate::hud::button_at(vx, vy, VIRTUAL_W) {
                         if self.press_hud_button(code) {
                             self.drag = false;

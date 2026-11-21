@@ -6,7 +6,7 @@
 //! timer-driven state machine:
 //!
 //! ```text
-//! skip only when key >= 0 && timer <= 0 && state == 6 && workers >= 1
+//! skip entirely when the key byte is negative (>= 0x80)
 //!
 //! timer > 0, state < 3, workers > 0:
 //!     timer -= 1
@@ -20,8 +20,11 @@
 //!         state += 1
 //!         if state != 6: timer = value
 //!         update_prop()
-//! otherwise (any other idle target):
+//! timer <= 0 && state == 6 && workers >= 1:
 //!     changed = true; state = 0; timer = value * 60 / workers; update_prop()
+//! timer <= 0 && state != 6:
+//!     no action - a completed target (state 3) stays complete and an
+//!     untouched foundation (state 0) waits for the build-menu timer write
 //! ```
 //!
 //! `changed` (`local_30`) gates the barracks training pass for that settlement.
@@ -163,10 +166,12 @@ impl PlayableApp {
                 let mut timer = target.timer;
                 let mut state = target.state;
                 let mut prop_update = false;
-                if timer > 0 {
+                // The original loads the timer as the high word of an `int`
+                // (`*(int *)(record+4) >> 0x10`), so both tests are signed.
+                if (timer as i16) > 0 {
                     if state < 3 && available > 0 {
-                        timer -= 1;
-                        if timer == 0 {
+                        timer = timer.wrapping_sub(1);
+                        if (timer as i16) <= 0 {
                             state = state.saturating_add(1);
                             if state != 3 {
                                 changed = true;
@@ -175,8 +180,8 @@ impl PlayableApp {
                             prop_update = true;
                         }
                     } else {
-                        timer -= 1;
-                        if timer == 0 {
+                        timer = timer.wrapping_sub(1);
+                        if (timer as i16) <= 0 {
                             state = state.saturating_add(1);
                             if state != 6 {
                                 timer = value;
@@ -184,10 +189,11 @@ impl PlayableApp {
                             prop_update = true;
                         }
                     }
-                } else if !(state == 6 && available >= 1) {
-                    // The original's else branch: a completed target with at
-                    // least one worker is the only one skipped, so every other
-                    // idle target restarts construction.
+                } else if state == 6 && available >= 1 {
+                    // The only idle reset: a ruined target (state 6) with free
+                    // workers rebuilds from the base sprite. A completed target
+                    // (state 3) and an untouched foundation (state 0) are left
+                    // exactly as they are.
                     changed = true;
                     state = 0;
                     timer = arm_timer(value, available);

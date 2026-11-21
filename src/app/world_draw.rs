@@ -298,7 +298,6 @@ impl PlayableApp {
                 held_id,
                 cursor_px,
                 &portraits,
-                player.auto_enabled(),
                 player.raw_0x12,
                 crate::anim::battle_from_flags(player.flags_b),
                 hud_press,
@@ -456,7 +455,21 @@ impl PlayableApp {
         // `FUN_0042F5F8` item detail, `FUN_0042E9CC` fixed strings). Drawn after
         // the interface overlays and before the game cursor, left aligned at
         // viewport.left+10 / viewport.bottom+5 with 15 px wrapped lines.
-        if let Some(text) = self.hover_panel_text() {
+        // The original never blanks the lower panel: when nothing is hovered it
+        // keeps the last description (a fresh game starts with the quest-log
+        // hint). The character sheet leaves the HUD text visible.
+        let panel_text = self.hover_panel_text().or_else(|| {
+            if self.dialog.is_none()
+                && !self.map_open
+                && !self.quest_log_open
+                && self.trade.is_none()
+            {
+                Some(crate::app::hover::DEFAULT_PANEL_TEXT.to_string())
+            } else {
+                None
+            }
+        });
+        if let Some(text) = panel_text {
             let PlayableApp { frame, world, .. } = self;
             crate::hud::draw_hover_text(frame, fw, fh, VIRTUAL_W, &world.res, &text);
         }

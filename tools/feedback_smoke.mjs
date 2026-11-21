@@ -163,11 +163,15 @@ wasm.key_down(50);
 if (wasm.debug_player_weapon_slot() !== 0) fail('#1 key 2 did not select weapon slot 0');
 wasm.key_down(51);
 if (wasm.debug_player_weapon_slot() !== 1) fail('#1 key 3 did not select weapon slot 1');
+// The AUTO button (`INTR[169/170]`) exists only on the character screen
+// (`FUN_0042CBD0` case 3), never in the world HUD.
+wasm.key_down(67); // C -> open the character screen
 const autoBefore = wasm.debug_player_flags_b() & 2;
 wasm.pointer_down(1, 650, 385);
 wasm.pointer_up(1, 650, 385);
 const autoAfter = wasm.debug_player_flags_b() & 2;
 if (autoBefore === autoAfter) fail('#7 AUTO button click did not toggle the auto-XP flag');
+wasm.key_down(27); // Esc -> close the character screen
 
 // ---------------------------------------------------------------- 6 sounds
 wasm.key_down(67); // C -> character screen + UI click

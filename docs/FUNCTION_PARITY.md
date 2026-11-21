@@ -1074,18 +1074,21 @@ documented deviations and three gaps are open.
 
 **Gaps found and fixed (C5).**
 
-1. **`0x41D048` phase-B target loop was inverted — `GAP-BRANCH`, fixed.** The
-   original skips a target only when
-   `key >= 0 && timer <= 0 && state == 6 && workers >= 1`; every other idle
-   target takes the else branch
-   (`changed = 1; state = 0; timer = V1*60/workers`, then `FUN_004172AC`).
-   `settlement_targets.rs` reset `state == 6 && workers > 0` and left the rest
-   idle, so with the shipped data (all targets `timer 0`, states `0/2/3/6`)
-   construction never started and completed targets restarted. **Applied:** the
-   predicate is now `!(state == 6 && workers >= 1)`, the timer goes through
-   `arm_timer` (zero divisor guarded, negative quotient truncated like the `AX`
-   store), and the fixtures verify both the idle reset and the completed-target
-   skip.
+1. **`0x41D048` phase-B target loop (re-verified 2026-11-21) — the earlier
+   inversion was itself a misread.** The outer guard is
+   `if (key < 0 || timer > 0 || (state != 6 || workers < 1))`, so the reset
+   `else` fires **only** for `key >= 0 && timer <= 0 && state == 6 &&
+   workers >= 1` (`changed = 1; state = 0; timer = V1*60/workers`, then
+   `FUN_004172AC`). A `timer <= 0` target with any other state executes
+   nothing: an untouched foundation (`state 0`) waits for the build-menu
+   timer write and a completed target (`state 3`) stays complete. The
+   2026-11-18 change inverted this and reset every idle target, so the first
+   pass after map entry collapsed every shipped `state 3` building (e.g.
+   loc 4 «Старый лагерь») into its foundation. **Applied:** the reset is
+   guarded by `state == 6 && workers >= 1`, the timer is read as a signed
+   high word, `arm_timer` keeps the zero-divisor guard and wrapped quotient,
+   and the fixtures cover ruined-rebuild, completed-target idling and the
+   shipped loc-4 table.
 2. **`0x41BD3C` member pass — `GAP-BRANCH`, fixed.** Its second half ticks
    poison and `+0xCE` for *every* member of *every* group with no location
    filter (only the death row/corpse is current-location gated).
@@ -2158,3 +2161,31 @@ save, map, frontend, feedback, shadow and lighting smokes pass.
 | `0x412C30` | PARITY | group relation pass matches |
 | `0x420190` | PARITY | nearest-unengaged matches |
 | `0x420098` | PARITY | plain nearest matches |
+
+---
+
+## Live UI parity (2026-11-21)
+
+The original `konung.res` was run on this machine (scratch install with a
+`KONUNG\Video` junction and `KONUNG.CFG`; Esc skips the Indeo intro) and used as
+a pixel oracle against the wasm frontend and character-sheet renders. Findings
+and fixes:
+
+* **New Hero screen** — hero portrait pairs are **(selected, normal)**
+  (`#3/#4`, `#5/#6`, `#7/#8`); numeric values draw top-left at the
+  `NEWH_DRAW` rect; the paper-doll preview uses the static 12-entry default
+  instance table written by `FUN_00436214` case 3 to `0x659B0C`, not a zeroed
+  table.
+* **Character sheet (`FUN_0042CBD0` case 3)** — tiles `INTR[5]` over the
+  viewport before `INTR[2]`; draws the AUTO button (`INTR[169/170]`,
+  `Entity+0x03 & 2`) at the `0x465B34` record-5 anchor and **not** in the world
+  HUD; «Удар» is `FUN_0041AEA8(entity, 0)` (or `FUN_0041AD44` for a live bow),
+  not the raw item rating; name/class/stats use the fonts' native cyan pixels;
+  the lower panel keeps the default quest-log text.
+* **Colour** — all RGB555 art is expanded through the original 16-bit **565**
+  path (green 6-bit), making R/B bit-exact and G exact against live
+  screenshots.
+
+After the fixes the live diff is 0 except the dynamic paper-doll pose/cursor:
+New Hero portraits/title/description 0; character-sheet stats/party/AUTO/
+free-XP 0, status text 4 px.

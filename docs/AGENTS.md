@@ -57,6 +57,8 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `node tools/settings_smoke.mjs`
 - Headless lighting smoke (packed LIGHTS.RES + 40 LIGHTS.N maps, day/night
   ambient darkening): `node tools/lighting_smoke.mjs`
+- Headless ambient-sound smoke (loc-4 `SOUNDS.RES` bank 280..287, 1% per
+  60 ms frame, no ambience over open windows): `node tools/ambient_smoke.mjs`
 - Headless movie smoke (19 transcoded/packed MP4s, intro + trigger handshake):
   `node tools/video_smoke.mjs`
 - Headless ranged smoke (arrow flight -> ammo/bow wear -> hit/dodge -> kill
@@ -127,10 +129,12 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `INTR[18].w = 20`, so visible slots = `(span+2−2·20)/69`: **800 -> 9 slots
   origin (159,486); 640 -> 7 slots origin (134,375)**, flanked by the original
   `INTR[18]/[20]` scroll-arrow caps) with the protagonist's item icons, and a
-  2×5 = 10-cell party panel, and the AUTO experience-spend button
-  (`INTR[169]/[170]`, selected by `Entity+0x03 & 0x02`, traced position
-  (644,379)/(515,303); `FUN_0041079C` auto-raises level/stats while the bit is
-  set - it is **not** auto-combat).
+  2×5 = 10-cell party panel. The AUTO experience-spend button
+  (`INTR[169]/[170]`, selected by `Entity+0x03 & 0x02`) belongs to the
+  **character screen only** (`FUN_0042CBD0` case 3 tail), at the `0x465B34`
+  record-5 anchor (644,379)/(515,303); the world HUD never draws it (live
+  comparison). `FUN_0041079C` auto-raises level/stats while the bit is set -
+  it is **not** auto-combat.
   `hud::portrait_id` ports the selector at VA `0x42C730`. Called from
   `app.rs::draw_detail` after world overlays. **Lower-panel hover text is
   implemented** (`app/hover.rs` + `hud::draw_hover_text`): the original hover
@@ -188,15 +192,21 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   its `+0x02` journal line (`QuestData::journal_line`/`line_text`) using the
   small font at the recovered prompt column, 15 px line advance. Book icon or
   `Q` toggles it.
-- Character screen: `character_screen.rs` renders `INTR[2]` at (140,0)/(112,0)
+- Character screen: `character_screen.rs` tiles the `INTR[5]` stone backdrop
+  over the interface viewport (`FUN_00430430`, clipped above the inventory strip
+  so the HUD stays visible), then renders `INTR[2]` at (140,0)/(112,0)
   clipped to the gameplay region (party panel + inventory strip stay visible),
-  draws equipped icons at the **absolute** original per-resolution slot tables
+  draws the AUTO button (`INTR[169]/[170]` by `Entity+0x03 & 0x02`) at the
+  `0x465B34` record-5 anchor (644,379)/(515,303), draws equipped icons at the **absolute** original per-resolution slot tables
   (main storage→visual `[3,4,3,0,1,2]` + slot 0/2 overlap branch; additional;
   special), the name/class (CP866 tables `0x45E71C`/`0x45ADC0`) with the large
-  font, and every stat value with the small font (`0x58BC34`) at the **absolute**
-  per-resolution anchors recovered from `FUN_0042cbd0` case 3 (value table
-  `0x465C54`, records `{x640,y640,x800,y800}`; secondary table `0x465B34`). The portrait in party cell 0 uses
-  `hud::portrait_id` from the actual `+0xD6`/`+0x04`/`+0x5C` fields.
+  font, and every stat value with the small font's **native cyan** pixels
+  (`None`, not a cream override) at the **absolute** per-resolution anchors
+  recovered from `FUN_0042cbd0` case 3 (value table `0x465C54`, records
+  `{x640,y640,x800,y800}`; secondary table `0x465B34`). «Удар» is the full
+  `FUN_0041AEA8(entity, 0)` value (weapon rating + `round(STR*HP/400)`, or the
+  bow branch `FUN_0041AD44`), not the raw item rating. The portrait in party
+  cell 0 uses `hud::portrait_id` from the actual `+0xD6`/`+0x04`/`+0x5C` fields.
   **Navigation (verified from `konung.res`):** the original opens the screen via
   interface **mode 7** (`FUN_00430d6c`, reached from a UI command/action table —
   not a mouse portrait click; a mode-0 portrait click only *selects* the member
@@ -262,11 +272,12 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `rand() % (max-min+1) + min`, no draw when a dimension is 1, `local_30`),
   role-2/role-4 restock (`app/settlement_trade.rs`), and
   the `FUN_00417F84` voivode/barracks training (`app/settlement_training.rs`,
-  skipped when `local_30` is set). The target rule is
-  **skip only `state == 6 && workers >= 1`**; every other idle target resets to
-  state 0 and is re-armed with `value*60/workers` (so shipped states `0/2/3`
-  restart construction and completed state-6 targets stay until the workers
-  drop to 0). Temporary effects (`Entity+0xCE`) are counted once per 16-frame
+  skipped when `local_30` is set). The target rule is: a target with
+  `timer <= 0` is left untouched unless it is **`state == 6 && workers >= 1`**,
+  in which case it rebuilds (`state = 0`, `timer = value*60/workers`). So the
+  shipped completed buildings (`state 3`) stay complete, a damaged/ruined
+  target walks `4 -> 5 -> 6 -> 0`, and a workerless village cannot rebuild
+  (state 6 stays 6). Temporary effects (`Entity+0xCE`) are counted once per 16-frame
   pass for the leader, the party and every cached population — `0x41D048`
   phase A handles non-object groups and `0x41BD3C` every object group, neither
   filtered by location. Producer slots are the settlement waypoint
@@ -684,18 +695,29 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   resume the context stays suspended forever and no effect is heard. `sound/events.rs` holds the verified 22-call-site mapping:
   UI `4`, item use `9`, map item `10`, equip `11`/`1`/`0`, dodge `6`, human
   action `34/35/36/7/3/2/8`, monster bank `arch*8-0x1D0`, dialogue voice
-  `0x0C..0x13`, ambience `0x100+(loc-1)*8`. `KIND_SOUNDS = 14`, manifest field
-  `sounds`; report `SOUND_SYSTEM.md`. Positional pan/volume and 19050/25050
-  pitch are deferred.
+  `0x0C..0x13`, ambience `0x100+(loc-1)*8`. Ambience is checked **once per
+  60 ms original frame** (`FUN_00436214` case 0, leader `Entity+0x01 & 0x80`
+  clear) at the assembly's **1%** (`0x62 < rand()%100`), not per browser step
+  and not over an open window; the original opens `SOUNDS.RES` (removing it
+  makes `konung.res` exit), so that is the packed archive and its empty banks
+  stay silent exactly like `FUN_0042A13C`. `KIND_SOUNDS = 14`, manifest field
+  `sounds`; report `SOUND_SYSTEM.md`. Positional pan/volume and the
+  19050/25050 pitch variants are implemented in `sound/position.rs` and the
+  browser shell.
 - Frontend: `menu_res.rs` (native menu-image RES decoder), `font.rs` (original
   proportional bitmap fonts embedded in `konung.res`, small 0x171E34 / large
   0x16193C), `frontend/` (original `MENU`/`NEWH`/`SAVE` screens). The New-Hero
   screen follows `FUN_0042EA6C`: tile `NEWH#1` (100x100 stone) behind the
-  transparent `NEWH#0`, draw numeric values at regions 7-14/24 and the image
+  transparent `NEWH#0`, draw the numeric values **top-left at the `NEWH_DRAW`
+  rect** (regions 7-14/24; the original does not centre them) and the image
   `NEWH#2` marker in the class box and the skill boxes 15-19 (combat: `archery <
   melee` -> 15 else 16; civil: `identification > 10` -> 17, `trade > 10` -> 18,
-  `healing > 50` -> 19), draw the 160x160 paper-doll preview at region 22
-  (`(470,127)` @640 / `(570,160)` @800), and draw the hovered/clicked control's
+  `healing > 50` -> 19). Hero portrait pairs are **(selected, normal)**
+  (`#3/#4`, `#5/#6`, `#7/#8`): the first image is the bright selected portrait.
+  The 160x160 preview at region 22 (`(470,127)` @640 / `(570,160)` @800) is
+  composed against the static 12-entry default instance table written by
+  `FUN_00436214` case 3 (`DEFAULT_PREVIEW_INSTANCES`), not a zeroed table, and
+  draws the hovered/clicked control's
   description from the 20-record CP866 table at `0x46331C` into the big panel
   (region 23) via `FUN_0042F578`/`FUN_0042BD8C` (15 px wrap). Bottom controls:
   **region 20 (left) = Ok** (`NEWH#11/#12`), **region 21 (right) = Отмена**

@@ -383,9 +383,12 @@ impl Frontend {
         let draws = self.res.newh_draw();
         for (region, text) in entries {
             let r = draws[region];
-            let tw = self.fonts.measure(OriginalFont::Small, &text);
-            let x = r.x as i32 + (r.w as i32 - tw) / 2;
-            let y = r.y as i32 + (r.h as i32 - 12) / 2; // small font cap height
+            // The original draws the value with its top-left at the draw rect
+            // (`FUN_0042EA6C`); it never centres inside the 30x15 value box.
+            // Verified against live ink boxes: the glyph starts at `rect.x`,
+            // and the small font's 2 px top bearing lands on `rect.y + 2`.
+            let x = r.x as i32;
+            let y = r.y as i32;
             self.fonts.draw(
                 &mut self.frame,
                 fw,

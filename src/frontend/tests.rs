@@ -160,17 +160,18 @@ fn bottom_controls_are_ok_left_cancel_right() {
 }
 
 /// Portrait artwork follows selection only; hovering never swaps the image.
+/// The first image of each pair (`#3/#5/#7`) is the bright **selected** artwork.
 #[test]
 fn hero_regions_pick_distinct_images_without_hover() {
     let mut s = NewHeroState::default();
-    // Default selection = Dragomir.
-    assert_eq!(s.hero_image(0, 0), 4);
-    assert_eq!(s.hero_image(1, 1), 5);
-    s.hovered_region = Some(1);
-    assert_eq!(s.hero_image(1, 1), 5); // hover does not change the artwork
-    s.selected_hero = Some(1);
+    // Default selection = Dragomir: #3 is his bright selected portrait.
     assert_eq!(s.hero_image(0, 0), 3);
-    assert_eq!(s.hero_image(1, 1), 6);
+    assert_eq!(s.hero_image(1, 1), 6); // unselected Mikhail: dimmed #6
+    s.hovered_region = Some(1);
+    assert_eq!(s.hero_image(1, 1), 6); // hover does not change the artwork
+    s.selected_hero = Some(1);
+    assert_eq!(s.hero_image(0, 0), 4); // Dragomir now normal/dimmed
+    assert_eq!(s.hero_image(1, 1), 5); // Mikhail bright selected
 }
 
 /// Hover sets the description and an unrelated region keeps the last one shown.

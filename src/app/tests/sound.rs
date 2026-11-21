@@ -83,6 +83,83 @@ fn ambient_ids_stay_inside_the_location_banks() {
     assert!(!app.sounds.is_empty(), "ambient bank never queued a clip");
 }
 
+/// `0x4365d4` rolls `0x62 < rand()%100` (1%, roll 99 only), not 2%.
+#[test]
+fn ambient_rate_is_one_percent_per_game_frame() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.current_map = 4;
+    app.sound_rng = crate::combat::OriginalRng::new(0x1234_5678);
+    app.sounds.clear();
+    for _ in 0..20_000 {
+        app.tick_ambient_sound();
+    }
+    let queued = app.sounds.len();
+    assert!(
+        (120..=280).contains(&queued),
+        "expected about 200 ambient events in 20k frames (1%), got {queued}"
+    );
+    let base = crate::sound::events::ambient(4, 0) as u32;
+    assert!(app
+        .sounds
+        .iter()
+        .all(|e| (base..base + 8).contains(&(e.id as u32))));
+}
+
+/// The ambient call is inside `FUN_00436214` case 0: no interface window plays it.
+#[test]
+fn ambient_is_silent_outside_world_mode() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.current_map = 4;
+    app.sound_rng = crate::combat::OriginalRng::new(7);
+    for window in ["character", "map", "quest"] {
+        app.character_screen = window == "character";
+        app.map_open = window == "map";
+        app.quest_log_open = window == "quest";
+        app.sounds.clear();
+        for _ in 0..5_000 {
+            app.tick_ambient_sound();
+        }
+        assert!(
+            app.sounds.is_empty(),
+            "ambient played while {window} window was open"
+        );
+    }
+}
+
+/// The ambient roll runs once per 60 ms original frame, not per rendered step.
+#[test]
+fn ambient_ticks_only_on_original_frames() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.current_map = 4;
+    app.sound_rng = crate::combat::OriginalRng::new(0x2B2B_2B2B);
+    let base = crate::sound::events::ambient(4, 0) as u32;
+    let mut ambient = 0;
+    // 500 × 1 ms = 0.5 s ≈ 8 original frames; at 1% that is almost always 0.
+    // A per-render-step tick would produce ~5 events here.
+    for _ in 0..500 {
+        app.sounds.clear();
+        app.step(0.001);
+        ambient += app
+            .sounds
+            .iter()
+            .filter(|e| (base..base + 8).contains(&(e.id as u32)))
+            .count();
+    }
+    assert!(
+        ambient <= 2,
+        "ambient ran per rendered step instead of per 60 ms frame ({ambient} events)"
+    );
+}
+
 /// Pan is 62.5 per projected cell row and volume -100 per 16 px of distance.
 ///
 /// Two rows away (32 px) therefore give volume -200 and pan 0; one row of row

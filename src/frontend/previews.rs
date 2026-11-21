@@ -10,6 +10,12 @@
 //! `Res::paper_doll_frame` is the same compositor used by the character sheet,
 //! so this module only prepares the per-hero equipment and the three possible
 //! active-weapon-slot (`Entity+0x12`) variants.
+//!
+//! The compositor resolves the equipment ids through the live item-instance
+//! table (`0x659B0C`). Before a `Game.N` is loaded the table is not the gameplay
+//! save: the original New-Game initialisation (`FUN_00436214` case 3) writes a
+//! static 12-entry default kit into it immediately before calling
+//! `FUN_0042EA6C`. [`preview_instance_table`] reproduces that kit.
 
 use crate::hero::{HeroTemplate, HEROES};
 use crate::res::{Image, Img, Res};
@@ -19,6 +25,39 @@ use std::rc::Rc;
 pub const PREVIEW_SLOTS: usize = 3;
 /// Size of the offscreen preview surface (`FUN_0042EA6C`).
 pub const PREVIEW_SIZE: usize = 160;
+
+/// The static default kit written to the item-instance table (`0x659B0C`) by
+/// `FUN_00436214` case 3 (New Game) before `FUN_0042EA6C` composes the preview.
+///
+/// Index = item-instance id; value = `(class, subtype)`. Every other byte of the
+/// 16-byte instance record is zero. The prototypes come from `konung.res` and
+/// give Dragomir's screenshot loadout: leather helmet, chainmail, mace, bow,
+/// shield (ids `3,4,0,1,8,11`).
+pub const DEFAULT_PREVIEW_INSTANCES: [(u8, u8); 12] = [
+    (0x00, 0x00),
+    (0x03, 0x24),
+    (0x03, 0x22),
+    (0x00, 0x03),
+    (0x01, 0x06),
+    (0x02, 0x00),
+    (0x04, 0x34),
+    (0x04, 0x2B),
+    (0x04, 0x37),
+    (0x05, 0x25),
+    (0x05, 0x26),
+    (0x05, 0x3D),
+];
+
+/// Build the `0x20000`-byte item-instance table used by the New-Hero preview.
+pub fn preview_instance_table() -> Vec<u8> {
+    let mut table = vec![0u8; 0x20000];
+    for (id, &(class, subtype)) in DEFAULT_PREVIEW_INSTANCES.iter().enumerate() {
+        let o = id * 16;
+        table[o] = class;
+        table[o + 3] = subtype;
+    }
+    table
+}
 
 /// Cosmetic preview loadout stored in `HeroTemplate.preset` (`Entity+0x66..`).
 ///
@@ -45,10 +84,10 @@ fn empty_preview() -> Img {
 /// Render `hero × weapon-slot` preview frames into a flat vector indexed by
 /// `hero_index * PREVIEW_SLOTS + weapon_slot`.
 ///
-/// `res` must already have `load_items_and_fonts` and an item-instance table
-/// attached. The original reads the *current* runtime instance table; on a fresh
-/// boot no `Game.N` has been loaded (`FUN_0043A870` has not run), so the caller
-/// passes a zeroed `0x20000`-byte table.
+/// `res` must already have `load_items_and_fonts` and the New-Game default
+/// instance table ([`preview_instance_table`]) attached. The original reads the
+/// *current* runtime instance table, which `FUN_00436214` case 3 fills with that
+/// static kit before drawing the creation entity.
 pub fn compose_previews(res: &mut Res) -> Vec<Img> {
     let mut out = Vec::with_capacity(HEROES.len() * PREVIEW_SLOTS);
     for hero in HEROES.iter() {
@@ -81,5 +120,32 @@ mod tests {
         assert_eq!(preview_equipment(&HEROES[0]), [3, 4, 0, 1, 8, 11]);
         assert_eq!(preview_equipment(&HEROES[1]), [0, 4, 5, 0, 7, 10]);
         assert_eq!(preview_equipment(&HEROES[2]), [0, 4, 5, 2, 6, 9]);
+    }
+
+    /// The table bytes match the `FUN_00436214` case-3 writes at `0x659B0C`.
+    #[test]
+    fn default_preview_instances_match_the_original_new_game_kit() {
+        let table = preview_instance_table();
+        assert_eq!(table.len(), 0x20000);
+        for (id, &(class, subtype)) in DEFAULT_PREVIEW_INSTANCES.iter().enumerate() {
+            let o = id * 16;
+            assert_eq!(table[o], class, "instance {id} class");
+            assert_eq!(table[o + 3], subtype, "instance {id} subtype");
+            assert_eq!(&table[o + 1..o + 3], &[0, 0], "instance {id} spacer");
+            assert_eq!(&table[o + 4..o + 16], &[0u8; 12], "instance {id} body");
+        }
+        // Dragomir's six preview ids resolve through this table to the armour,
+        // helmet, mace, bow and shield seen in the live character-creation screen.
+        let classes: Vec<(u8, u8)> = preview_equipment(&HEROES[0])
+            .iter()
+            .map(|&id| {
+                let o = id as usize * 16;
+                (table[o], table[o + 3])
+            })
+            .collect();
+        assert_eq!(
+            classes,
+            [(0, 3), (1, 6), (0, 0), (3, 0x24), (4, 0x37), (5, 0x3D)]
+        );
     }
 }

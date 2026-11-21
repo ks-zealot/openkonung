@@ -297,6 +297,21 @@ pub fn draw(
     let (wx, wy, _ww, _wh) = window_rect(logical_w);
     let sel = resolution_selector(logical_w);
 
+    // `FUN_0042CBD0` case 3: tile `INTR[5]` over the interface viewport
+    // (`FUN_00430430`) before the largely transparent `INTR[2]` window. The
+    // world viewport (`hud::layout`) extends behind the inventory strip, but the
+    // original draws the HUD strip after the interface, so the stone fill must
+    // stop at the strip top or it erases the item slots.
+    let layout = crate::hud::layout(logical_w);
+    let vp = layout.viewport;
+    let stone = crate::hud::Rect {
+        x: vp.x,
+        y: vp.y,
+        w: vp.w,
+        h: (layout.inventory_region.y - vp.y).max(0),
+    };
+    crate::world_map::draw_stone(frame, fw, fh, res, stone);
+
     // Original window background (its own static labels are baked in).
     if let Some(bg) = res.intr_sprite(WINDOW_SPRITE) {
         blit(frame, fw, fh, &bg.data, bg.w, bg.h, wx, wy);
@@ -374,6 +389,35 @@ pub fn draw(
     }
 
     draw_text(frame, fw, fh, res, sheet, sel);
+    draw_auto_button(frame, fw, fh, res, sheet, sel);
+}
+
+/// `FUN_0042CBD0` case 3 tail: the AUTO experience-spend button. The original
+/// picks `INTR[169]` when `Entity+0x03 & 0x02` is clear and `INTR[170]` when it
+/// is set, and draws it at the `0x465B34` record-5 anchor (`(644,379)` @800,
+/// `(515,303)` @640). It exists only on the character sheet, never in the world
+/// HUD.
+fn draw_auto_button(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    res: &mut Res,
+    sheet: &CharacterSheet,
+    sel: usize,
+) {
+    let (x, y) = if sel == 0 {
+        TABLE2_640[5]
+    } else {
+        TABLE2_800[5]
+    };
+    let id = if sheet.flags_b & 2 == 0 {
+        crate::intr::AUTO_OFF
+    } else {
+        crate::intr::AUTO_ON
+    };
+    if let Some(icon) = res.intr_sprite(id) {
+        blit(frame, fw, fh, &icon.data, icon.w, icon.h, x, y);
+    }
 }
 
 /// Render the original 160x160 paper doll into the character window.
@@ -447,7 +491,7 @@ fn draw_text(
             &name,
             center - w / 2,
             name_y,
-            Some([235, 235, 210]),
+            None,
         );
         if let Some(class) = res.class_name(sheet.class) {
             let w = font.measure(&class);
@@ -458,7 +502,7 @@ fn draw_text(
                 &class,
                 center - w / 2,
                 class_y,
-                Some([235, 235, 210]),
+                None,
             );
         }
     }
@@ -535,8 +579,22 @@ const VALUE_800: [(i32, i32); 25] = [
 
 /// Secondary `(x, y)` anchors at `0x465B34`: row 0 is the «Свободный опыт»
 /// centering anchor; rows 0..=4 are the «Модиф. уровень» requirement slots.
-const TABLE2_640: [(i32, i32); 5] = [(578, 70), (573, 110), (573, 126), (573, 145), (573, 162)];
-const TABLE2_800: [(i32, i32); 5] = [(722, 89), (716, 138), (716, 158), (716, 181), (716, 203)];
+const TABLE2_640: [(i32, i32); 6] = [
+    (578, 70),
+    (573, 110),
+    (573, 126),
+    (573, 145),
+    (573, 162),
+    (515, 303), // record 5: AUTO (`INTR[169/170]`) `FUN_0042CBD0` case 3
+];
+const TABLE2_800: [(i32, i32); 6] = [
+    (722, 89),
+    (716, 138),
+    (716, 158),
+    (716, 181),
+    (716, 203),
+    (644, 379), // record 5: AUTO (`INTR[169/170]`) `FUN_0042CBD0` case 3
+];
 
 /// `Entity+0x04` class byte to the five playable classes, or `None` for every
 /// other value (monsters and battle-only archetypes have no sheet class).
@@ -551,6 +609,65 @@ fn class_from_entity(class: u8) -> Option<CharacterClass> {
         5 => Some(CharacterClass::Warrior),
         _ => None,
     }
+}
+
+/// Build the combat view used by `FUN_0041AEA8` / `FUN_0041AD44` for the
+/// «Удар» row. A character sheet always shows a human party member, so the
+/// object-family bit (`archetype & 0x40`) stays clear.
+pub(crate) fn sheet_combat_stats(sheet: &CharacterSheet) -> crate::combat::CombatStats {
+    let s = &sheet.snapshot;
+    crate::combat::CombatStats {
+        archetype: 0,
+        weapon_slot: s.raw_0x12,
+        hp: s.hp_internal,
+        dexterity: s.dexterity_base,
+        strength: s.strength_base,
+        endurance: s.endurance_base,
+        base_armor: s.base_armor,
+        melee_mastery: s.melee_mastery,
+        archery_mastery: s.archery_mastery,
+        periodic_damage: s.periodic_damage,
+        armor_bonus: s.armor_bonus,
+        damage_bonus: s.damage_bonus,
+        attack_bonus: s.attack_bonus,
+        bonus_flags: s.bonus_flags,
+        ammo: sheet.special,
+        temp_effect_timer: s.temp_effect_timer,
+        temp_effect_id: s.temp_effect_id,
+        equipment: sheet.equipment,
+    }
+}
+
+/// «Удар» (`FUN_0042CBD0` case 3):
+///
+/// * melee / unarmed — `FUN_0041AEA8(entity, 0)`: the active weapon value plus
+///   `round(STR*HP/400)`, or `round(STR*HP/800)` when no melee weapon is active
+///   (`combat::attack_damage` implements the whole function);
+/// * active bow (`Entity+0x12 == 1`, ammo in `+0xCC` and bow in `+0x68`) —
+///   `FUN_0041AD44`: the ammo prototype value plus the `+0xC6` set bonus.
+pub(crate) fn attack_value(res: &Res, sheet: &CharacterSheet) -> u32 {
+    let s = &sheet.snapshot;
+    if s.raw_0x12 == 1 && sheet.special != 0 && sheet.equipment[1] != 0 {
+        let mut value = res
+            .item_info(sheet.special)
+            .map(|i| i.rating as i32)
+            .unwrap_or(0);
+        if s.damage_bonus != 0 {
+            if s.bonus_flags & 2 == 0 {
+                value = s.damage_bonus as i32;
+            } else {
+                value += s.damage_bonus as i32;
+            }
+        }
+        return value.max(0) as u32;
+    }
+    let Some(db) = res.item_db.as_ref() else {
+        return 0;
+    };
+    let stats = sheet_combat_stats(sheet);
+    crate::combat::attack_damage(db, &res.save_game, &stats, 0)
+        .0
+        .max(0) as u32
 }
 
 /// Draw the dynamic values of the character screen. All coordinates are the
@@ -597,28 +714,9 @@ fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &Cha
         };
         armor = value.max(0) as u32;
     }
-    // «Удар» = `FUN_0041aea8` (melee slots) or `FUN_0041ad44` (bow active): the
-    // ammo prototype rating plus the `+0xC6` damage set bonus.
-    let attack = if s.raw_0x12 == 1 {
-        let mut value = res
-            .item_info(sheet.special)
-            .map(|i| i.rating as i32)
-            .unwrap_or(0);
-        if s.damage_bonus != 0 {
-            if s.bonus_flags & 2 == 0 {
-                value = s.damage_bonus as i32;
-            } else {
-                value += s.damage_bonus as i32;
-            }
-        }
-        value.max(0) as u32
-    } else if s.raw_0x12 == 0 || s.raw_0x12 == 2 {
-        res.item_info(sheet.equipment[s.raw_0x12 as usize])
-            .map(|i| i.rating as u32)
-            .unwrap_or(0)
-    } else {
-        0
-    };
+    // «Удар» = `FUN_0041aea8(entity, 0)` for melee/unarmed and
+    // `FUN_0041ad44(entity)` while a bow is active (see [`attack_value`]).
+    let attack = attack_value(res, sheet);
     let health = (s.hp_internal as u32 + 15) / 16;
 
     let vals: [String; 25] = [
@@ -650,12 +748,18 @@ fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &Cha
     ];
 
     for (i, text) in vals.iter().enumerate() {
-        let color = Some([235, 235, 210]);
+        // The original uses the small font's own (cyan) pixels; a cream
+        // override made every value read as white against the stone.
+        let color: Option<[u8; 3]> = None;
         if i == 24 {
+            // `FUN_0042CBD0` centres the free-XP value over the width of the
+            // `INTR[171]` raise icon (`DAT_0061F930`), not over table2 record 0:
+            // `TABLE2[0].x + (icon_w - text_w) / 2`.
             let (cx, _) = t2(0);
             let (_, y) = va(24);
             let w = font.measure(text);
-            let _ = font.draw(frame, fw, fh, text, cx - w / 2, y, color);
+            let icon_w = raise_icon.as_ref().map(|i| i.w as i32).unwrap_or(0);
+            let _ = font.draw(frame, fw, fh, text, cx + (icon_w - w) / 2, y, color);
         } else {
             let (x, y) = va(i);
             let _ = font.draw(frame, fw, fh, text, x, y, color);
@@ -690,7 +794,7 @@ fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &Cha
             if cost != 0 {
                 let (x, y) = t2(slot);
                 let text = format!("{}", cost);
-                let _ = font.draw(frame, fw, fh, &text, x, y, Some([235, 235, 210]));
+                let _ = font.draw(frame, fw, fh, &text, x, y, None);
                 if let Some(icon) = raise_icon.as_ref() {
                     blit(frame, fw, fh, &icon.data, icon.w, icon.h, x + 0x18, y + 2);
                 }

@@ -102,14 +102,23 @@ fn rd_u32(b: &[u8], o: usize) -> u32 {
     (b[o] as u32) | ((b[o + 1] as u32) << 8) | ((b[o + 2] as u32) << 16) | ((b[o + 3] as u32) << 24)
 }
 
-/// Exact RGB555 → 8-bit expansion (`bits 10..14` R, `5..9` G, `0..4` B).
+/// Exact RGB555 → **565 → 8-bit** expansion (`bits 10..14` R, `5..9` G,
+/// `0..4` B).
+///
+/// The original renders on a 16-bit 565 DirectDraw surface
+/// (`FUN_00427A3C`: `(c & 0x7FE0) << 1 | c & 0x1F`), so the 5-bit green becomes
+/// a 6-bit field with a zero LSB before the 6→8 bit expansion. Expanding the
+/// 5-bit green directly (`g5 >> 2`) is 0..4 levels too bright; live screenshots
+/// match only with the 565 path.
 #[inline]
 pub fn rgb555_to_rgba(pixel: u16) -> [u8; 4] {
     let r5 = ((pixel >> 10) & 0x1f) as u8;
     let g5 = ((pixel >> 5) & 0x1f) as u8;
     let b5 = (pixel & 0x1f) as u8;
     let r = (r5 << 3) | (r5 >> 2);
-    let g = (g5 << 3) | (g5 >> 2);
+    // 565 green = `g5 << 1`; replay the 6→8 bit expansion.
+    let g6 = g5 << 1;
+    let g = (g6 << 2) | (g6 >> 4);
     let b = (b5 << 3) | (b5 >> 2);
     [r, g, b, 255]
 }

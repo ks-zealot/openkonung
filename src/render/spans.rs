@@ -53,7 +53,7 @@ pub fn expand6(v: u16) -> u8 {
     (((v & 63) << 2) | ((v & 63) >> 4)) as u8
 }
 
-/// Recover the 5-bit palette channel from an 8-bit `*255/31` expansion.
+/// Recover the 5-bit palette channel from the bit-replicated 8-bit expansion.
 #[inline]
 fn collapse5(c: u8) -> u16 {
     ((c as u32 * 31 + 127) / 255) as u16
@@ -68,7 +68,7 @@ pub fn palette555_to_565(p: u16) -> u16 {
 
 /// `FUN_0043D247`: halve one screen pixel, in 565.
 ///
-/// The framebuffer holds the `*255/31` expansion of the 555 palette, so the
+/// The framebuffer holds the 565-expanded 555 palette, so the
 /// palette word is recovered, converted to 565 exactly like the original's
 /// 16bpp path, halved with `(c & 0xF7DF) >> 1`, and expanded back.
 #[inline]
@@ -273,7 +273,7 @@ mod tests {
     /// scanlines.
     #[test]
     fn darken_halves_every_channel_of_the_spans_only() {
-        // White (a 555 palette entry expanded by `*255/31`).
+        // White (a 555 palette entry expanded through the 565 path).
         let mut frame = vec![255u8; 8 * 4 * 2];
         let spans = [Span {
             row: 0,

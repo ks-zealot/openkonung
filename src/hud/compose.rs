@@ -184,7 +184,7 @@ pub fn compose<F>(
         blit(frame, fw, fh, &im.data, im.w, im.h, ox, oy);
     }
 
-    // AUTO combat button (traced gameplay-HUD element).
+    // Optional AUTO button (character screen supplies it via `HudState.auto`).
     if let Some((id, x, y)) = state.auto {
         if let Some(im) = lookup(id) {
             blit(frame, fw, fh, &im.data, im.w, im.h, x, y);
@@ -234,7 +234,6 @@ pub fn draw_game_hud(
     held: Option<u16>,
     cursor: (i32, i32),
     party: &[PartyPortrait],
-    auto_on: bool,
     weapon_slot: u8,
     battle: bool,
     pressed: Option<u8>,
@@ -270,15 +269,13 @@ pub fn draw_game_hud(
     }
 
     let party = party.to_vec();
-    let auto_id = if auto_on {
-        crate::intr::AUTO_ON
-    } else {
-        crate::intr::AUTO_OFF
-    };
+    // `INTR[169/170]` is the AUTO experience-spend button drawn by
+    // `FUN_0042CBD0` **case 3** (character sheet) only; the world HUD never
+    // shows it.
     let state = HudState {
         party,
         items: items.clone(),
-        auto: Some((auto_id, l.auto_pos.0, l.auto_pos.1)),
+        auto: None,
         icons: icon_plan(l.logical_w, weapon_slot, battle).to_vec(),
         pressed,
     };
@@ -342,7 +339,9 @@ pub fn draw_hover_text(
         if y >= l.logical_h {
             break;
         }
-        font.draw(frame, fw, fh, &line, x, y, Some([235, 235, 210]));
+        // The original paints the panel text with the small font's own cyan
+        // pixels (`FUN_0042BD8C`), not a cream override.
+        font.draw(frame, fw, fh, &line, x, y, None);
         y += 15;
     }
 }

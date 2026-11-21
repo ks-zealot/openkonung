@@ -331,10 +331,10 @@ fn target_pass_scales_by_workers_and_gates_training() {
     assert!(entity_level(&app, 183) > before_level);
 }
 
-/// Key 255 is a sentinel; a completed target with workers stays complete, and
-/// every other idle target restarts construction with a fresh timer.
+/// Key 255 is a sentinel; a ruined target (state 6) rebuilds while workers are
+/// free, and a completed target (state 3) is left idle.
 #[test]
-fn target_pass_ignores_sentinels_and_resets_idle_targets() {
+fn target_pass_ignores_sentinels_and_keeps_completed_targets() {
     let Some(mut app) = build_party_app() else {
         eprintln!("skipping: original resources not present");
         return;
@@ -354,17 +354,63 @@ fn target_pass_ignores_sentinels_and_resets_idle_targets() {
     assert_eq!(app.settlements[si].targets[0].state, 0, "key 255 sentinel");
     assert_eq!(app.settlements[si].targets[0].timer, 5);
     assert_eq!(
-        app.settlements[si].targets[1].state, 6,
-        "completed target with workers stays complete"
-    );
-    assert_eq!(app.settlements[si].targets[1].timer, 0);
-    assert_eq!(
-        app.settlements[si].targets[2].state, 0,
-        "idle state 3 restarts construction"
+        app.settlements[si].targets[1].state, 0,
+        "ruined target rebuilds with workers"
     );
     assert_eq!(
-        app.settlements[si].targets[2].timer, 180,
+        app.settlements[si].targets[1].timer, 180,
         "armed with 24 * 60 / 8 workers"
+    );
+    assert_eq!(
+        app.settlements[si].targets[2].state, 3,
+        "completed target stays complete"
+    );
+    assert_eq!(app.settlements[si].targets[2].timer, 0);
+}
+
+/// Regression for the shipped villages: `Game.1` loc 4 authors every main
+/// building at state 3 (complete). The periodic pass must leave those targets
+/// and their prop sprites alone instead of collapsing the village into
+/// foundations on the first 16-frame tick.
+#[test]
+fn shipped_completed_targets_survive_the_first_pass() {
+    let Some(mut app) = build_party_app_with_free_location() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let si = settlement_index(&app, 4);
+    let ti = app.settlements[si]
+        .targets
+        .iter()
+        .position(|t| t.key < 0x80 && t.state == 3 && t.timer == 0)
+        .expect("loc 4 ships completed targets");
+    let prop_index = app.settlements[si].targets[ti].prop_index;
+    app.world.loc_mut(4).unwrap().props.push(crate::loc::Prop {
+        ri: prop_index as usize,
+        object_id: 0,
+        grid_x: 10,
+        grid_y: 10,
+        interactive: true,
+        palette: 0,
+        frame: 0,
+        flame_emitters: Vec::new(),
+        flame_frames: Vec::new(),
+    });
+    app.apply_settlement_props();
+    let object_before = app.world.loc(4).unwrap().props[0].object_id;
+    let group_id = app.settlements[si].group_id as usize;
+    app.tables.as_mut().unwrap().groups[group_id].activity_1d = 0;
+
+    app.tick_settlement_pass(1);
+    assert_eq!(
+        app.settlements[si].targets[ti].state, 3,
+        "a completed building stays complete"
+    );
+    assert_eq!(app.settlements[si].targets[ti].timer, 0);
+    assert_eq!(
+        app.world.loc(4).unwrap().props[0].object_id,
+        object_before,
+        "the completed building's prop sprite must not change"
     );
 }
 
@@ -611,7 +657,7 @@ fn building_progresses_construction_damage_and_rebuild_sprites() {
         );
         app.settlements[si].targets[0].timer = 1;
     }
-    // 3 -> 4 -> 5 -> 6 = damage states; 6 -> 0 resets/rebuilds.
+    // 3 -> 4 -> 5 -> 6 = damage states; 6 -> 0 rebuilds.
     for (state, expected_obj) in [(4u8, 41usize), (5, 42), (6, 43)] {
         app.tick_settlement_pass(1);
         assert_eq!(app.settlements[si].targets[0].state, state);
@@ -621,16 +667,27 @@ fn building_progresses_construction_damage_and_rebuild_sprites() {
         );
         app.settlements[si].targets[0].timer = 1;
     }
-    // A finished settlement (state 6) only restarts when the worker pool is
-    // empty — `FUN_0041D048` phase B skips `state == 6 && workers >= 1`.
+    // A ruined target (state 6) restarts from the base sprite while workers
+    // are free; with no workers it stays ruined.
     app.settlements[si].targets[0].timer = 0;
-    app.tables.as_mut().unwrap().groups[group_id].activity_1d = 1;
     app.tick_settlement_pass(1);
     assert_eq!(
         app.settlements[si].targets[0].state, 0,
-        "state 6 rebuilds with no workers"
+        "state 6 rebuilds with workers"
     );
     assert_eq!(app.world.locs[0].props.last().unwrap().object_id, 37);
+
+    app.settlements[si].targets[0].state = 6;
+    app.settlements[si].targets[0].timer = 0;
+    app.apply_settlement_props();
+    assert_eq!(app.world.locs[0].props.last().unwrap().object_id, 43);
+    app.tables.as_mut().unwrap().groups[group_id].activity_1d = 1;
+    app.tick_settlement_pass(1);
+    assert_eq!(
+        app.settlements[si].targets[0].state, 6,
+        "a workerless village cannot rebuild"
+    );
+    assert_eq!(app.world.locs[0].props.last().unwrap().object_id, 43);
 }
 
 /// A target state change rewrites the prop's object id on the current map.

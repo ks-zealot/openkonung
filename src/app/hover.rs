@@ -110,6 +110,11 @@ fn push_level_health(out: &mut String, level: u8, health: u16) {
     out.push_str(&((health as u32 + 15) >> 4).to_string());
 }
 
+/// The lower-panel text the original leaves on screen when nothing is hovered.
+/// A fresh world/character screen starts with the quest-log control's hint; the
+/// text is only replaced by the next hovered control, not cleared.
+pub(super) const DEFAULT_PANEL_TEXT: &str = "Информация к размышлению (Q)";
+
 /// Fixed HUD button descriptions from `FUN_002260C` / `FUN_0042E9CC`.
 fn hud_button_tooltip(code: u8) -> Option<&'static str> {
     Some(match code {

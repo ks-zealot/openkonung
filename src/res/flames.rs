@@ -17,8 +17,8 @@
 //! - otherwise -> `b` literal 16-bit pixels.
 //!
 //! Pixels are RGB555 (max channels in the shipped frames: R 31, G 22, B 4).
-//! The game converts 555 -> 565 for its DirectDraw surface; the remake expands
-//! 555 directly to RGBA.
+//! The game converts 555 -> 565 for its DirectDraw surface; the remake uses the
+//! same 565 expansion (`rgb555_to_rgb`).
 
 use super::*;
 
@@ -171,13 +171,11 @@ fn decode_flame_frame(payload: &[u8], index: usize) -> Result<Img, String> {
                 if x >= width {
                     continue;
                 }
-                let r5 = ((value >> 10) & 0x1F) as u32;
-                let g5 = ((value >> 5) & 0x1F) as u32;
-                let b5 = (value & 0x1F) as u32;
+                let [r, g, b] = super::rgb555_to_rgb(value as u16);
                 let o = (row * width + x) * 4;
-                image.data[o] = (r5 * 255 / 31) as u8;
-                image.data[o + 1] = (g5 * 255 / 31) as u8;
-                image.data[o + 2] = (b5 * 255 / 31) as u8;
+                image.data[o] = r;
+                image.data[o + 1] = g;
+                image.data[o + 2] = b;
                 image.data[o + 3] = 255;
                 x += 1;
             }
@@ -218,8 +216,8 @@ mod tests {
         payload
     }
 
-    /// Skipped pixels stay transparent and literal RGB555 values expand to full
-    /// red/green/blue channels.
+    /// Skipped pixels stay transparent and literal RGB555 values expand through
+    /// the original 565 path (green max is 251, not 255).
     #[test]
     fn decodes_555_literals_and_skips() {
         let img = decode_flame_frame(&synthetic_frame(), 0).expect("decodes");
@@ -228,7 +226,7 @@ mod tests {
         let red = (1 * 4) as usize;
         assert_eq!(&img.data[red..red + 4], &[255, 0, 0, 255]);
         let green = (2 * 4) as usize;
-        assert_eq!(&img.data[green..green + 4], &[0, 255, 0, 255]);
+        assert_eq!(&img.data[green..green + 4], &[0, 251, 0, 255]);
         let blue_row = (4 + 1) * 4;
         assert_eq!(&img.data[blue_row..blue_row + 4], &[0, 0, 255, 255]);
     }

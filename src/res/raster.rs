@@ -21,12 +21,29 @@ pub struct Image {
 /// Shared, immutable image handle (`Rc` so sprite caches can hand out copies).
 pub type Img = Rc<Image>;
 
+/// Expand one RGB555 word exactly like the original 16-bit screen: the palette
+/// is converted 555 → 565 (`FUN_00427A3C`) and the display expands the 565
+/// fields by bit replication. The green field is therefore six bits
+/// (`g5 << 1`) and expands with `>> 4`, not `>> 2`.
+#[inline]
+pub fn rgb555_to_rgb(pixel: u16) -> [u8; 3] {
+    let r5 = ((pixel >> 10) & 31) as u16;
+    let g5 = ((pixel >> 5) & 31) as u16;
+    let b5 = (pixel & 31) as u16;
+    let g6 = g5 << 1;
+    [
+        ((r5 << 3) | (r5 >> 2)) as u8,
+        ((g6 << 2) | (g6 >> 4)) as u8,
+        ((b5 << 3) | (b5 >> 2)) as u8,
+    ]
+}
+
 /// Expand one 512-byte RGB555 palette block of `GRAPH.RES` to RGB.
 ///
 /// Palette `palette_id` starts at `palette_id * 512`; each entry is a
 /// little-endian `u16` with bits `10..14` red, `5..9` green and `0..4` blue,
-/// scaled by `255 / 31`. An out-of-range palette returns an all-black table
-/// rather than failing.
+/// expanded through the original's 565 path (see [`rgb555_to_rgb`]). An
+/// out-of-range palette returns an all-black table rather than failing.
 pub fn palette_rgb(graph: &[u8], palette_id: usize) -> [[u8; 3]; 256] {
     let mut out = [[0u8; 3]; 256];
     let base = palette_id * 512;
@@ -34,11 +51,7 @@ pub fn palette_rgb(graph: &[u8], palette_id: usize) -> [[u8; 3]; 256] {
         return out;
     }
     for i in 0..256 {
-        let v = u16(graph, base + i * 2);
-        let b = (v & 31) * 255 / 31;
-        let g = ((v >> 5) & 31) * 255 / 31;
-        let r = ((v >> 10) & 31) * 255 / 31;
-        out[i] = [r as u8, g as u8, b as u8];
+        out[i] = rgb555_to_rgb(u16(graph, base + i * 2) as u16);
     }
     out
 }

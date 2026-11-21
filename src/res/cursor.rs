@@ -89,11 +89,9 @@ pub fn cursor_image(graph: &[u8], i: usize) -> Option<Img> {
                     if x >= w || rq + 2 > row.len() {
                         break;
                     }
-                    let v = row[rq] as u32 | ((row[rq + 1] as u32) << 8);
+                    let v = row[rq] as u16 | ((row[rq + 1] as u16) << 8);
                     rq += 2;
-                    let r = (((v >> 10) & 31) * 255 / 31) as u8;
-                    let g = (((v >> 5) & 31) * 255 / 31) as u8;
-                    let bl = ((v & 31) * 255 / 31) as u8;
+                    let [r, g, bl] = super::rgb555_to_rgb(v);
                     let di = (y * w + x) * 4;
                     data[di] = r;
                     data[di + 1] = g;

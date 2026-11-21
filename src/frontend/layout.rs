@@ -248,9 +248,11 @@ pub const NEWH_AUX_100: usize = 1;
 /// the selected class draw rectangle by the original renderer (VA 0x42EA6C).
 pub const NEWH_CLASS_MARKER: usize = 2;
 
-/// Hero portrait image pairs: (normal, selected) for hero 0/1/2. The original
-/// renderer chooses only by the selected hero index (`Entity+0xD3 >> 24`); there
-/// is no hover variant (`FUN_0042EA6C`).
+/// Hero portrait image pairs: **(selected, normal)** for hero 0/1/2. The even
+/// image (`#3/#5/#7`) is the bright selected artwork; the odd image
+/// (`#4/#6/#8`) is the dimmed normal one (verified against the live game). The
+/// original renderer chooses only by the selected hero index
+/// (`Entity+0xD3 >> 24`); there is no hover variant (`FUN_0042EA6C`).
 pub const HERO_IMAGE_PAIRS: [(usize, usize); 3] = [(3, 4), (5, 6), (7, 8)];
 
 /// Bottom New-Hero button image pairs `(normal, pressed)` indexed by

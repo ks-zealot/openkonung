@@ -44,8 +44,8 @@ fn transparent_run_advances_without_pixels() {
     assert_eq!(&im.rgba[0..4], &[0, 0, 0, 0]);
     assert_eq!(&im.rgba[4..8], &[0, 0, 0, 0]);
     assert_eq!(&im.rgba[8..12], &[255, 0, 0, 255]);
-    // 0x03E0 = green
-    assert_eq!(&im.rgba[12..16], &[0, 255, 0, 255]);
+    // 0x03E0 = green -> 565 green 62 -> 8-bit 251
+    assert_eq!(&im.rgba[12..16], &[0, 251, 0, 255]);
 }
 
 /// The `0x00` token ends a row, so each row decodes independently.
@@ -192,12 +192,15 @@ fn menu800_and_newh800_real_resource() {
     }
 }
 
-/// RGB555 expansion replicates the high bits so channel maxima are exactly 255.
+/// RGB555 expands through the original's 16-bit 565 surface: red/blue use 5-bit
+/// replication, green becomes a 6-bit field (zero LSB) before 6→8 replication.
 #[test]
 fn rgb555_expansion_matches_expected() {
     assert_eq!(rgb555_to_rgba(0x7C00), [255, 0, 0, 255]);
-    assert_eq!(rgb555_to_rgba(0x03E0), [0, 255, 0, 255]);
+    assert_eq!(rgb555_to_rgba(0x03E0), [0, 251, 0, 255]);
     assert_eq!(rgb555_to_rgba(0x001F), [0, 0, 255, 255]);
-    assert_eq!(rgb555_to_rgba(0x7FFF), [255, 255, 255, 255]);
+    assert_eq!(rgb555_to_rgba(0x7FFF), [255, 251, 255, 255]);
     assert_eq!(rgb555_to_rgba(0x0000), [0, 0, 0, 255]);
+    // Mid-scale green: 555 15 -> 565 30 -> 8-bit 121 (`15<<3 | 15>>3`).
+    assert_eq!(rgb555_to_rgba(0x01E0), [0, 121, 0, 255]);
 }

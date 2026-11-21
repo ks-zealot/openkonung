@@ -97,9 +97,31 @@ impl PlayableApp {
         self.queue_sound_opt(crate::sound::events::DODGE, cell);
     }
 
-    /// Original state-0 ambience (`0x4365d4`): 2% of gameplay frames play one
-    /// clip from the current location's eight-clip bank.
+    /// Original state-0 ambience (`FUN_00436214` `0x4365d4`).
+    ///
+    /// The call is inside `switch (_DAT_0081D5AC) case 0` (world mode), gated by
+    /// the leader's `Entity+0x01 & 0x80` flag. `0x62 < rand()%100` is **1%**
+    /// (only roll 99), then `rand()%8` picks one of the location's eight clips.
+    /// The browser calls this once per **60 ms original frame** from
+    /// [`PlayableApp::advance_world_frame`], not once per rendered step.
+    ///
+    /// The remake keeps the cosmetic `sound_rng` instead of consuming the
+    /// global combat RNG (documented deviation); the rate and bank are exact.
     pub(super) fn tick_ambient_sound(&mut self) {
+        // Case 0 only: the original never plays ambience over an interface
+        // window.
+        if self.dialog.is_some()
+            || self.character_screen
+            || self.map_open
+            || self.quest_log_open
+            || self.trade.is_some()
+        {
+            return;
+        }
+        // The original's other gate is `Entity+0x01 & 0x80 == 0` on the
+        // leader. `PlayableApp.player_dir` is masked to `0..=7`, so that
+        // scripted-state bit is not represented here.
+        // `0x62 < v` -> v = 99 only: 1% per original frame.
         if self.sound_rng.next_u32() % 100 <= 98 {
             return;
         }

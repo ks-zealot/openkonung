@@ -243,8 +243,9 @@ pub fn frontend_assets(res: FrontendRes) -> FrontendAssets {
 /// GRAPH/OBJECTS/Game.res/exe buffers and returning them afterwards.
 ///
 /// The original preview compositor (`FUN_00427E9C`) reads the live item-instance
-/// table. Before any `Game.N` is loaded (`FUN_0043A870` has not run) that table
-/// is zeroed, so the preview is composed against a zeroed `0x20000` table.
+/// table. Before any `Game.N` is loaded (`FUN_0043A870` has not run), the
+/// original New-Game initialisation (`FUN_00436214` case 3) has written its
+/// static default kit into `0x659B0C`; the previews use that same table.
 fn build_hero_previews() -> Option<Vec<crate::res::Img>> {
     let l = loader_mut();
     if let Some(cached) = &l.hero_previews {
@@ -259,7 +260,7 @@ fn build_hero_previews() -> Option<Vec<crate::res::Img>> {
     let exe = std::mem::take(&mut l.exe);
     let mut res = crate::res::Res::new(game, graph, objects, exe);
     res.load_items_and_fonts(&l.names);
-    let instances = vec![0u8; 0x20000];
+    let instances = crate::frontend::previews::preview_instance_table();
     res.set_save_game(&instances);
     let previews = crate::frontend::previews::compose_previews(&mut res);
     let (game, graph, objects, exe) = res.into_parts();

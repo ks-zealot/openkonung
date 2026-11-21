@@ -176,11 +176,27 @@ impl PlayableApp {
 
     /// AUTO (`INTR[169/170]`, `Entity+0x03 & 2`): original `FUN_0041079C`
     /// auto-spends available XP on level/stat raises when the bit is set.
+    /// The button lives on the character sheet and acts on the **shown**
+    /// member (`_DAT_0081D560`), not always the protagonist.
     pub(super) fn toggle_auto_xp(&mut self) {
+        use crate::inventory::InventoryOwner;
         self.queue_sound(crate::sound::events::UI_CLICK);
-        self.player.flags_b ^= 0x02;
-        if self.player.auto_enabled() {
-            self.auto_spend_xp(crate::inventory::InventoryOwner::Protagonist);
+        let owner = self.inventory_owner;
+        let on = match owner {
+            InventoryOwner::Protagonist => {
+                self.player.flags_b ^= 0x02;
+                self.player.auto_enabled()
+            }
+            InventoryOwner::Party(i) => match self.party.get_mut(i) {
+                Some(member) => {
+                    member.entity.flags_b ^= 0x02;
+                    member.entity.flags_b & 0x02 != 0
+                }
+                None => false,
+            },
+        };
+        if on {
+            self.auto_spend_xp(owner);
         }
     }
 

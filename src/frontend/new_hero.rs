@@ -6,9 +6,9 @@
 //! `NEWH_HIT_*` regions `[0, 1, 2]`; the two large bottom controls are regions
 //! `[20, 21]`.
 //!
-//! The first image of each hero pair is the normal state and the second is the
-//! selected state; the original has no hover variant (`FUN_0042EA6C`).
-//! Both images of every pair are preserved.
+//! The first image of each hero pair is the **selected** (bright) state and the
+//! second is the normal (dimmed) state; the original has no hover variant
+//! (`FUN_0042EA6C`). Both images of every pair are preserved.
 //!
 //! Bottom control roles are verified from `FUN_0042EA6C` / case 2:
 //! **left** (region 20, #11/#12) = Ok; **right** (region 21, #9/#10) = Cancel.
@@ -250,11 +250,11 @@ impl NewHeroState {
             .position(|r: &Rect| r.contains(mx, my))
     }
 
-    /// Image index to draw for a hero region: the selected image when the hero
-    /// is chosen, otherwise the normal image. The original has no hover variant
-    /// (`FUN_0042EA6C` compares only the selected hero index).
+    /// Image index to draw for a hero region: the bright selected image when the
+    /// hero is chosen, otherwise the dimmed normal image. The original has no
+    /// hover variant (`FUN_0042EA6C` compares only the selected hero index).
     pub fn hero_image(&self, hero: usize, _region: usize) -> usize {
-        let (normal, selected) = HERO_IMAGE_PAIRS[hero];
+        let (selected, normal) = HERO_IMAGE_PAIRS[hero];
         if self.selected_hero == Some(hero) {
             selected
         } else {

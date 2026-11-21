@@ -28,6 +28,9 @@ impl PlayableApp {
             self.world_frame = self.world_frame.saturating_add(whole as u64);
             self.world_frame_accum -= whole;
             for _ in 0..whole as u64 {
+                // `FUN_00436214` case 0 ambient check, once per 60 ms frame
+                // (`0x4365d4`), not once per rendered browser step.
+                self.tick_ambient_sound();
                 self.world.tick_prop_flames(self.current_map);
                 // `FUN_0041D048` settlement branch: `(frame + 7) & 0xF == 0`,
                 // i.e. once per 16 original frames for all 20 settlements.
