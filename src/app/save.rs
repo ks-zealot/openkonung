@@ -223,10 +223,10 @@ impl PlayableApp {
         self.player_path.clear();
         self.player_step_t = 0.0;
         self.player_active = false;
+        self.player_blocked = false;
         self.anim_time = 0.0;
         self.teleport_cooldown = 0.0;
         self.world_frame_accum = 0.0;
-        self.temp_effect_accum = 0.0;
         self.party_step_t = 0.0;
         self.player_interact = false;
         self.pickup_message = None;
@@ -273,8 +273,13 @@ impl PlayableApp {
         if !self.population_cache.contains_key(&self.current_map) {
             self.ensure_population(self.current_map);
         }
+        // Rebuild the live collision table from the restored motion state.
+        self.rebuild_occupancy(self.current_map);
+        self.derive_target_markers();
         self.sweep_all_owners();
         self.apply_settlement_props();
+        // `FUN_0043ADF0` recalculation for the restored state.
+        self.recompute_all_effects();
         self.center_camera_on_player(true, 0.0);
         Ok(())
     }
@@ -515,13 +520,21 @@ impl PlayableApp {
         }
         // Original load mode 1 keeps the snapshot state and never re-places
         // actors: replace the growth-aware cache `apply_save` may have built.
-        if let Some(tables) = self.tables.as_ref() {
-            if let Some(loc) = self.world.loc(self.current_map) {
-                let collision = loc.collision.clone();
-                let build =
-                    crate::actors::build_population(tables, self.current_map as u8, &collision);
-                self.population_cache.insert(self.current_map, build);
-            }
+        if self.tables.is_some() {
+            let loc = self.current_map;
+            self.world.reset_collision(loc);
+            let build = {
+                let PlayableApp { world, tables, .. } = self;
+                match (tables.as_ref(), world.collision_mut(loc)) {
+                    (Some(t), Some(collision)) => {
+                        crate::actors::build_population(t, loc as u8, collision)
+                    }
+                    _ => crate::actors::PopulationBuild::default(),
+                }
+            };
+            self.population_cache.insert(loc, build);
+            self.rebuild_occupancy(loc);
+            self.derive_target_markers();
         }
         Ok(())
     }

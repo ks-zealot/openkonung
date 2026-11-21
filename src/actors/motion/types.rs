@@ -26,6 +26,12 @@ pub struct ActorMotion {
     /// consumed at segment START, so `path` is already empty yet the sprite is
     /// still walking).
     pub walking: bool,
+    /// `FUN_00438090`: the unit is rotating one 45-degree step per logic frame
+    /// before it may consume the queued direction (`FUN_004123BC` requires
+    /// `facing == queue head`). `walking` stays set so the movement tick keeps
+    /// servicing the actor; no cell is consumed until the turn completes.
+    #[serde(default)]
+    pub turning: bool,
     /// Destination cell, when walking.
     pub target: Option<(i32, i32)>,
     /// Remaining movement-direction codes (0..=7) to the target
@@ -59,6 +65,13 @@ pub struct ActorMotion {
     pub citizen: bool,
     /// Current melee target. `None` for ordinary citizens/wanderers.
     pub combat_target: Option<crate::combat::CombatTarget>,
+    /// One-based id of the ordered interaction target (`Entity+0x06`), i.e. the
+    /// collision marker the step commit compares against. `0` = no target.
+    ///
+    /// Runtime-only: the original keeps this in `Entity+0x06`; the remake
+    /// derives it from `combat_target` on load.
+    #[serde(skip)]
+    pub target_marker: u16,
     /// Persistent engage order (`Entity+0x02 & 0x01`, the `'A'` order written by
     /// `FUN_00421458`/`FUN_0042260C`). While set, a unit that loses its target
     /// re-acquires the next hostile of the nearest enemy group around the leader

@@ -61,6 +61,7 @@ impl PlayableApp {
             {
                 let ranged = party_ranged.get(i).copied().unwrap_or(false);
                 m.motion.combat_target = Some(target);
+                m.motion.target_marker = crate::actors::occupancy::marker(entity_id);
                 m.motion.attack_frames = 0;
                 m.motion.frame = 0;
                 m.motion.ranged_order = ranged;
@@ -110,6 +111,7 @@ impl PlayableApp {
                 continue;
             }
             m.motion.combat_target = None;
+            m.motion.target_marker = 0;
             m.motion.attack_frames = 0;
             m.motion.frame = 0;
             m.motion.ranged_order = false;
@@ -155,6 +157,7 @@ impl PlayableApp {
                 && party_ranged.get(i).copied().unwrap_or(false)
             {
                 m.motion.combat_target = Some(target);
+                m.motion.target_marker = 0;
                 m.motion.ranged_order = true;
                 m.motion.ranged_fired = false;
                 m.motion.attack_frames = 0;

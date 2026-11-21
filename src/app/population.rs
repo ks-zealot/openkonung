@@ -9,43 +9,59 @@ impl PlayableApp {
         if self.population_cache.contains_key(&loc_id) {
             return;
         }
-        let mut build = {
-            let collision = self.world.loc(loc_id).map(|l| l.collision.as_slice());
-            match (&self.tables, collision) {
-                (Some(t), Some(c)) => build_population(t, loc_id as u8, c),
-                _ => PopulationBuild::default(),
-            }
-        };
-        // `FUN_0043ADF0(mode 0)` population growth: consume every negative
-        // `Group+0x02` accumulator and fill the target count before actors are
-        // sorted. Save mode 1 never reaches this path because its cache exists.
-        let grown = {
-            let collision = self.world.loc(loc_id).map(|l| l.collision.as_slice());
-            match (self.tables.as_mut(), collision) {
-                (Some(t), Some(c)) => crate::actors::grow_map(t, loc_id as u8, c, &mut build.rng),
-                _ => Vec::new(),
-            }
-        };
-        for a in grown {
-            let rect = self
-                .tables
-                .as_ref()
-                .and_then(|t| t.groups.get(a.source_group_id))
-                .map(|g| g.rect_a)
-                .unwrap_or_default();
-            let cell = (a.entity.x as i32, a.entity.y as i32);
-            build.motion.insert(
-                a.entity.index,
-                ActorMotion {
-                    cell,
-                    render_cell: cell,
-                    facing: a.entity.facing,
-                    rect_a: rect,
-                    ..Default::default()
-                },
-            );
-            build.actors.push(a);
+        if self.world.loc(loc_id).is_none() {
+            // Do not cache a default: fixtures may append the map after the app
+            // is constructed, and the next pass must be able to build it.
+            return;
         }
+        // `FUN_00435870`: location setup releases the dead actors' item
+        // instances and clears the settlement waypoints that point at them.
+        self.cleanup_dead_at_location(loc_id);
+        let mut build = {
+            let PlayableApp { world, tables, .. } = self;
+            // Build against a fresh runtime copy: the authored terrain table
+            // plus one-based actor markers accumulated by the placement pass.
+            world.reset_collision(loc_id);
+            let Some(collision) = world.collision_mut(loc_id) else {
+                return;
+            };
+            let mut build = match tables.as_ref() {
+                Some(t) => build_population(t, loc_id as u8, collision),
+                None => PopulationBuild::default(),
+            };
+            // `FUN_0043ADF0(mode 0)` population growth: consume every negative
+            // `Group+0x02` accumulator and fill the target count before actors
+            // are sorted. Save mode 1 never reaches this path because its cache
+            // exists.
+            let grown = match tables.as_mut() {
+                Some(t) => crate::actors::grow_map(t, loc_id as u8, collision, &mut build.rng),
+                None => Vec::new(),
+            };
+            for a in grown {
+                let rect = tables
+                    .as_ref()
+                    .and_then(|t| t.groups.get(a.source_group_id))
+                    .map(|g| g.rect_a)
+                    .unwrap_or_default();
+                let cell = (a.entity.x as i32, a.entity.y as i32);
+                build.motion.insert(
+                    a.entity.index,
+                    ActorMotion {
+                        cell,
+                        render_cell: cell,
+                        facing: a.entity.facing,
+                        rect_a: rect,
+                        ..Default::default()
+                    },
+                );
+                build.actors.push(a);
+            }
+            build
+        };
+        // `FUN_0043ADF0` (mode 0) seed: the settlement stock of the location is
+        // rolled once per entry, before the population is cached. Entry-time
+        // rolls use the location stream (placement/growth), not `combat_rng`.
+        self.seed_settlement_stock(loc_id, &mut build.rng);
         // A recruited companion left its location group (original `0x123` moves
         // the entity into the party group 0), so it must not be rebuilt as a
         // world NPC at its location.
@@ -88,6 +104,81 @@ impl PlayableApp {
         }
         sort_actors(&mut build.actors);
         self.population_cache.insert(loc_id, build);
+        // `FUN_0043ADF0` runs `FUN_0041C69C` for the new actors: their derived
+        // stats and set bonuses come from the equipped items' condition records.
+        self.recompute_effects_for_location(loc_id);
+        // The placement pass marked the world NPCs; add the party/leader on the
+        // active map so the first move already sees them.
+        if loc_id == self.current_map {
+            self.rebuild_occupancy(loc_id);
+        }
+    }
+
+    /// `FUN_00435870`: location setup cleanup.
+    ///
+    /// Walks the groups of the location; for every dead actor
+    /// (`Entity+0x04 & 0x80`) it releases all carried item instances
+    /// (`FUN_00422520`: class `0xFF`), and clears the settlement waypoint owner
+    /// slots that point at a dead member of the settlement's own group.
+    pub(super) fn cleanup_dead_at_location(&mut self, loc_id: u32) {
+        let mut dead: Vec<(usize, usize)> = Vec::new();
+        if let Some(tables) = self.tables.as_ref() {
+            for g in tables.groups.iter() {
+                if g.loc_id as u32 != loc_id {
+                    continue;
+                }
+                let first = g.first_entity as usize;
+                let end = first.saturating_add(g.entity_count as usize);
+                for idx in first..end {
+                    if tables
+                        .entities
+                        .get(idx)
+                        .map(|e| e.flags_b & 0x80 != 0)
+                        .unwrap_or(false)
+                    {
+                        dead.push((idx, g.index));
+                    }
+                }
+            }
+        }
+        if dead.is_empty() {
+            return;
+        }
+        for (idx, _) in &dead {
+            let ids: Vec<u16> = self
+                .tables
+                .as_ref()
+                .and_then(|t| t.entities.get(*idx))
+                .map(|e| {
+                    let mut ids = Vec::with_capacity(6 + 1 + 32 + 5);
+                    ids.extend_from_slice(&e.equipment);
+                    ids.push(e.special_equipment);
+                    ids.extend_from_slice(&e.inventory);
+                    ids.extend_from_slice(&e.additional_equipment);
+                    ids
+                })
+                .unwrap_or_default();
+            for id in ids {
+                if id != 0 {
+                    self.world.res.set_item_class(id, 0xFF);
+                }
+            }
+        }
+        for s in self.settlements.iter_mut() {
+            if s.loc_id as u32 != loc_id {
+                continue;
+            }
+            for (idx, group) in &dead {
+                if *group != s.group_id as usize {
+                    continue;
+                }
+                for w in s.waypoints.iter_mut() {
+                    if w.owner as usize == *idx {
+                        w.owner = 0;
+                    }
+                }
+            }
+        }
     }
 
     /// Resolve every already-positioned non-player actor (live action/frame from

@@ -60,8 +60,13 @@ impl PlayableApp {
             return;
         }
         let frame_count = self.world.res.object_frame_count(object_id).max(1);
-        let frame =
-            (prop_variant_hash(loc, target.prop_index, object_id, 0) % frame_count as u32) as u8;
+        // `FUN_004172AC`: the start frame is `rand() % frame_count`; a
+        // single-frame prop draws no random value.
+        let frame = if frame_count < 2 {
+            0
+        } else {
+            (self.combat_rng.next_u32() % frame_count as u32) as u8
+        };
         // `FUN_004172AC` copies the object record's `+0x14` palette offset into
         // the prop record (`prop+0x04`).
         let palette = {
@@ -80,13 +85,17 @@ impl PlayableApp {
             .filter(|e| crate::res::flame_range(e.selector).is_some())
             .collect();
         let mut frames = Vec::with_capacity(emitters.len());
-        for (i, emitter) in emitters.iter().enumerate() {
+        for emitter in &emitters {
             let (min, max) = crate::res::flame_range(emitter.selector).expect("filtered");
-            let span = (max - min) as u32;
-            frames.push(
-                min + (prop_variant_hash(loc, target.prop_index, object_id, i as u32 + 1) % span)
-                    as u8,
-            );
+            // `0x45AE68`/`0x45AE6C`: `rand() % (max - min + 1) + min`; a single
+            // value draws nothing.
+            let span = (max - min) as u32 + 1;
+            let offset = if span < 2 {
+                0
+            } else {
+                (self.combat_rng.next_u32() % span) as u8
+            };
+            frames.push(min + offset);
         }
         let Some(loc_data) = self.world.loc_mut(loc) else {
             return;
@@ -207,7 +216,6 @@ impl PlayableApp {
 
         let threshold = crate::inventory::capacity(self.player.endurance_base);
         let mut weight = self.carried_weight();
-        let mut transferred = 0usize;
 
         loop {
             let item = match self.active_world_objects[index].items.first().copied() {
@@ -222,32 +230,17 @@ impl PlayableApp {
                 self.set_pickup_message("Превышен вес");
                 break;
             }
-            // Class-12 ammo merges into an existing stack; everything else is
-            // inserted at slot 0 and shifts the rest up (`0x41125b..0x41129e`).
-            let stacked;
-            {
-                let PlayableApp { world, player, .. } = self;
-                let mut slots = crate::inventory::SlotsMut {
-                    equipment: &mut player.equipment,
-                    inventory: &mut player.inventory,
-                    additional: &mut player.additional_equipment,
-                    special: &mut player.special_equipment,
-                };
-                stacked = crate::inventory::try_stack_ammo(&mut world.res, &mut slots, item);
+            // `0x41125b..0x41129e`: every picked item is inserted at slot 0 and
+            // shifts the rest up; the original pickup path never stacks.
+            if !self.player.inventory.contains(&0) {
+                self.set_pickup_message("Мешок у тебя не резиновый!");
+                break;
             }
-            if !stacked {
-                // `0x4111a2`: 32 inventory slots, `0` = empty.
-                if !self.player.inventory.contains(&0) {
-                    self.set_pickup_message("Мешок у тебя не резиновый!");
-                    break;
-                }
-                for i in (0..self.player.inventory.len() - 1).rev() {
-                    self.player.inventory[i + 1] = self.player.inventory[i];
-                }
-                self.player.inventory[0] = item;
+            for i in (0..self.player.inventory.len() - 1).rev() {
+                self.player.inventory[i + 1] = self.player.inventory[i];
             }
+            self.player.inventory[0] = item;
             weight += item_weight;
-            transferred += 1;
             // Pop the item from the runtime pile (`memmove +0x14..`).
             self.active_world_objects[index].items.remove(0);
             if self.active_world_objects[index].items.is_empty() {
@@ -255,16 +248,15 @@ impl PlayableApp {
             }
         }
 
-        if transferred == 0 {
-            return;
-        }
-
-        // Refresh the ground sprite after a partial transfer.
         if !self.active_world_objects[index].items.is_empty() {
             let first = self.active_world_objects[index].items.first().copied();
             let info = first.and_then(|id| self.world.res.item_info(id));
             let obj = &mut self.active_world_objects[index];
             obj.sprite = world_object_sprite(info, &obj.items, obj.money);
+            // `FUN_004110EC`: a weight/bag refusal leaves the remainder and
+            // opens `FUN_00417010`'s ground-container window (the refusal
+            // message was already set), so the player can rearrange the bag.
+            self.start_ground_trade(index);
             return;
         }
 
@@ -325,7 +317,7 @@ impl PlayableApp {
             items[i] = *id;
         }
         let money = plan.money.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-        if items.iter().all(|&id| id == 0) && money == 0 {
+        if !plan.empty_marker && items.iter().all(|&id| id == 0) && money == 0 {
             return;
         }
         let x = cell.0.clamp(0, u16::MAX as i32) as u16;
@@ -366,7 +358,7 @@ impl PlayableApp {
     }
 
     /// Original `FUN_0041093C` source handling after the pile is emptied.
-    fn finish_world_object(&mut self, source_index: usize) {
+    pub(super) fn finish_world_object(&mut self, source_index: usize) {
         let Some(source) = self.world_object_sources.get(source_index) else {
             return;
         };
@@ -431,7 +423,7 @@ impl PlayableApp {
 
 /// `FUN_00438CC8`: a record with exactly one item and no money uses that
 /// item's world sprite; anything else uses the generic loot icon.
-fn world_object_sprite(first: Option<crate::item::ItemInfo>, items: &[u16], money: i16) -> u16 {
+pub(super) fn world_object_sprite(first: Option<crate::item::ItemInfo>, items: &[u16], money: i16) -> u16 {
     if items.len() == 1 && money == 0 {
         first
             .map(|i| i.world_sprite)
@@ -441,15 +433,3 @@ fn world_object_sprite(first: Option<crate::item::ItemInfo>, items: &[u16], mone
     }
 }
 
-/// Deterministic visual-only hash for per-prop animation phases. The original
-/// uses the game RNG at map load; using a stable hash keeps combat deterministic
-/// while still varying the flame/prop start frames.
-fn prop_variant_hash(loc: u32, prop_index: u16, object_id: usize, salt: u32) -> u32 {
-    let mut h = 0x811C_9DC5u32;
-    for value in [loc, prop_index as u32, object_id as u32, salt] {
-        h ^= value;
-        h = h.wrapping_mul(0x0100_0193);
-        h ^= h >> 13;
-    }
-    h
-}

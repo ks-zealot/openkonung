@@ -33,6 +33,7 @@ use crate::population::{Entity, GameTables, Group, Rect, Settlement, Waypoint};
 
 mod growth;
 mod motion;
+pub mod occupancy;
 mod pathfind;
 /// Maximum path length in cells. The original stores the direction queue in the
 /// 32-byte `Entity+0x13` field (terminator at `+0x32`), so at most 31 steps are
@@ -41,6 +42,7 @@ mod placement;
 
 pub use self::growth::*;
 pub use self::motion::*;
+pub use self::occupancy::*;
 pub use self::pathfind::*;
 pub use self::placement::*;
 

@@ -88,6 +88,7 @@ impl PlayableApp {
         if crate::config::config().shadows != 0 {
             // Screen-space clip: `origin` below already includes the camera pan.
             let clip = (0, 0, fw as i32 - 1, fh as i32 - 1);
+            let loc = self.current_map;
             let mut spans: Vec<crate::render::spans::Span> = Vec::new();
             {
                 let PlayableApp { world, frame, .. } = self;
@@ -108,6 +109,21 @@ impl PlayableApp {
                         clip,
                         &mut spans,
                     );
+                }
+                // `FUN_00426384` prop loop: every prop on the map adds its
+                // frame's ground mask (burning props with >= 2 flame parts
+                // skip it). Same run budget as the actor masks.
+                if let Some(loc_data) = world.loc(loc) {
+                    for p in &loc_data.props {
+                        let (lx, ly) = crate::loc::prop_to_local_px(p.grid_x, p.grid_y);
+                        world.res.add_prop_shadow(
+                            p.object_id,
+                            p.frame as usize,
+                            (iox + lx, ioy + ly),
+                            clip,
+                            &mut spans,
+                        );
+                    }
                 }
                 crate::render::spans::darken(frame, fw as usize, fh as usize, &spans);
             }
@@ -301,12 +317,15 @@ impl PlayableApp {
         // Exchange (interface mode 7, `FUN_00430D6C`). Drawn over the HUD
         // after the world, with the original stone fill/window/rows/buttons.
         if self.trade.is_some() {
-            let trade_name = self
-                .trade
-                .as_ref()
-                .and_then(|t| self.tables.as_ref()?.entities.get(t.npc_entity))
-                .and_then(|e| self.world.res.character_name(e.name_id))
-                .unwrap_or_else(|| "????????".to_string());
+            let trade_name = if self.ground_pile.is_some() {
+                String::new()
+            } else {
+                self.trade
+                    .as_ref()
+                    .and_then(|t| self.tables.as_ref()?.entities.get(t.npc_entity))
+                    .and_then(|e| self.world.res.character_name(e.name_id))
+                    .unwrap_or_else(|| "????????".to_string())
+            };
             let message = self.trade_message.clone();
             let cursor = (
                 self.cursor_virtual.0.round() as i32,
@@ -418,10 +437,18 @@ impl PlayableApp {
                 frame,
                 world,
                 dialog,
+                dialog_background_tiled,
                 ..
             } = self;
             if let Some(state) = dialog.as_ref() {
-                crate::dialog::draw(frame, fw, fh, &mut world.res, state);
+                crate::dialog::draw(
+                    frame,
+                    fw,
+                    fh,
+                    &mut world.res,
+                    state,
+                    *dialog_background_tiled,
+                );
             }
         }
 

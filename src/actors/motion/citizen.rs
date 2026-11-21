@@ -22,7 +22,7 @@ use crate::coords::step_by_direction;
 /// location's waypoints.
 pub fn update_population(
     build: &mut PopulationBuild,
-    collision: &[u16],
+    collision: &mut [u16],
     settlement: Option<&Settlement>,
     dt: f64,
 ) {
@@ -123,6 +123,23 @@ pub fn update_population(
             let rect = m.rect_a;
             let cell = m.cell;
 
+            // `FUN_00438090`: while turning, rotate one 45-degree step per logic
+            // frame and consume no cell (`FUN_004123BC` needs the facing to
+            // match the queue head first).
+            if m.turning {
+                if let Some(&head) = m.path.first() {
+                    if crate::coords::turn_toward(&mut m.facing, head) {
+                        m.turning = false;
+                    }
+                } else {
+                    m.turning = false;
+                    m.walking = false;
+                }
+                m.render_cell = m.cell;
+                m.frame = 0;
+                continue;
+            }
+
             // Route issuing runs only while no segment is in flight, so a route
             // is never re-issued mid-step (the committed cell leads the sprite).
             if !m.walking {
@@ -139,7 +156,11 @@ pub fn update_population(
                         m.path.clear();
                         m.target = None;
                         if m.facing != w.facing {
-                            m.facing = w.facing;
+                            // `FUN_004168A4`: one turn step per tick, handled.
+                            crate::coords::turn_toward(&mut m.facing, w.facing);
+                            m.render_cell = m.cell;
+                            m.frame = 0;
+                            continue;
                         }
                     } else if let Some(goal) = (0..8u8)
                         .map(|d| step_by_direction(station_cell.0, station_cell.1, d))
@@ -166,7 +187,11 @@ pub fn update_population(
                         m.path.clear();
                         m.target = None;
                         if m.facing != w.facing {
-                            m.facing = w.facing;
+                            // `FUN_004168A4`: one turn step per tick, handled.
+                            crate::coords::turn_toward(&mut m.facing, w.facing);
+                            m.render_cell = m.cell;
+                            m.frame = 0;
+                            continue;
                         }
                     } else {
                         // (Re)issue a route to the home waypoint. A route longer
@@ -198,19 +223,28 @@ pub fn update_population(
                         }
                     }
                 } else {
-                    // Think when idle: 50 % skip, else pick a random rect-A target.
+                    // Think when idle: `rand()%100` below the skip threshold
+                    // does nothing; `Q`/`R` (`0x51`/`0x52`) skip 75 %, the
+                    // ordinary wanderer 50 % (`FUN_004168A4`).
                     if m.wait > 0 {
                         m.wait -= 1;
-                    } else if build.rng.next_u32() % WANDER_THINK_SKIP_DIVISOR == 0 {
-                        if let Some(t) = wander_target(&rect, cell, &mut build.rng, collision) {
-                            if t != cell {
-                                let bounds = path_bounds(&rect, cell, t);
-                                match find_path(collision, &occupied, cell, t, bounds) {
-                                    Some(p) if !p.is_empty() => {
-                                        m.path = p;
-                                        m.target = Some(t);
+                    } else {
+                        let limit = if WANDER_QR_ARCHETYPES.contains(&arch) {
+                            WANDER_THINK_SKIP_PERCENT_QR
+                        } else {
+                            WANDER_THINK_SKIP_PERCENT
+                        };
+                        if build.rng.next_u32() % 100 >= limit {
+                            if let Some(t) = wander_target(&rect, cell, &mut build.rng, collision) {
+                                if t != cell {
+                                    let bounds = path_bounds(&rect, cell, t);
+                                    match find_path(collision, &occupied, cell, t, bounds) {
+                                        Some(p) if !p.is_empty() => {
+                                            m.path = p;
+                                            m.target = Some(t);
+                                        }
+                                        _ => m.wait = WANDER_WAIT_MIN,
                                     }
-                                    _ => m.wait = WANDER_WAIT_MIN,
                                 }
                             }
                         }
@@ -220,7 +254,7 @@ pub fn update_population(
                 // Commit the first cell of a freshly issued route at its START
                 // (`FUN_0041435C`): draw from the pre-step cell, then advance.
                 if !m.path.is_empty() {
-                    begin_actor_segment(m, &mut occupied, collision);
+                    begin_actor_segment(m, eid, &mut occupied, collision);
                 }
             }
 
@@ -248,7 +282,7 @@ pub fn update_population(
                     m.frame = 0;
                     if !m.path.is_empty() {
                         // Commit the next cell at cycle start.
-                        begin_actor_segment(m, &mut occupied, collision);
+                        begin_actor_segment(m, eid, &mut occupied, collision);
                     } else {
                         m.walking = false;
                         m.render_cell = m.cell;

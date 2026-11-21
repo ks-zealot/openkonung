@@ -337,10 +337,14 @@ impl PlayableApp {
         self.player_active = false;
         for member in &mut self.party {
             member.motion.combat_target = None;
+            member.motion.target_marker = 0;
             member.motion.path.clear();
             member.motion.target = None;
             member.motion.walking = false;
         }
+        // Forced death rows free their cells immediately (the settlement pass
+        // sets the final frame directly instead of advancing the death row).
+        self.rebuild_occupancy(self.current_map);
         // `FUN_0042ADE4("DEFEAT<location>.FLM")`.
         video::request(VideoClip::Defeat(loc as u8), VideoAfter::Gameplay);
     }

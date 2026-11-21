@@ -2,7 +2,9 @@
 
 use super::super::*;
 use super::common::*;
-use crate::inventory::{InventoryOwner, ItemLocation, StatOp, INVENTORY_SLOTS, MAIN_SLOTS};
+use crate::inventory::{
+    HeldItem, InventoryOwner, ItemLocation, StatOp, INVENTORY_SLOTS, MAIN_SLOTS,
+};
 
 /// Build a party app with the real `Game.1` item-instance table attached.
 ///
@@ -15,7 +17,8 @@ fn inventory_app() -> Option<PlayableApp> {
     Some(app)
 }
 
-/// Lifting clears its source slot, placing fills the equipment slot, depositing inserts at bag slot 0.
+/// Lifting clears its source slot, placing fills the equipment slot, and
+/// depositing returns it to the source slot (`FUN_0041E8A8`).
 #[test]
 fn lift_place_and_deposit_equipment() {
     let Some(mut app) = inventory_app() else {
@@ -32,6 +35,9 @@ fn lift_place_and_deposit_equipment() {
     app.player.inventory[3] = item;
     app.set_inventory_owner(InventoryOwner::Protagonist);
 
+    // The Spata prototype requires strength 55 (`0x41B1A4` stat 5).
+    app.player.strength_base = 100;
+    app.player.strength_current = 100;
     assert!(app.lift_item(ItemLocation::Inventory(3)));
     assert_eq!(app.held_item.map(|h| h.id), Some(item));
     assert_eq!(app.player.inventory[3], 0);
@@ -43,8 +49,15 @@ fn lift_place_and_deposit_equipment() {
     assert!(app.lift_item(ItemLocation::Main(1)));
     assert_eq!(app.player.equipment[1], 0);
     assert!(app.deposit_held());
-    assert_eq!(app.player.inventory[0], item);
+    assert_eq!(
+        app.player.equipment[1], item,
+        "put-down restores the lift-time container slot"
+    );
     assert!(app.held_item.is_none());
+    assert!(
+        !app.player.inventory.contains(&item),
+        "the item is not moved into the bag"
+    );
 }
 
 /// A held jar on the stinger crafts the potion, raises healing by the table delta and stays in hand.
@@ -117,6 +130,9 @@ fn right_click_equips_by_class() {
         .expect("item");
     app.player.inventory = [0; INVENTORY_SLOTS];
     app.player.equipment = [0; MAIN_SLOTS];
+    // The Spata prototype requires strength 55 (`0x41B1A4` stat 5).
+    app.player.strength_base = 100;
+    app.player.strength_current = 100;
     app.player.inventory[0] = item;
     assert!(app.right_click_inventory_slot(0));
     assert_eq!(app.player.equipment[1], item);
@@ -202,7 +218,8 @@ fn temporary_effect_restores_saved_stats() {
     crate::inventory::apply_player_ops(&mut app.player, &ops);
     assert_eq!(app.player.dexterity_current, 24);
     assert_eq!(app.player.charisma_current, 12);
-    app.tick_temp_effects(1.0);
+    // The countdown is one unit per 16-frame pass (`FUN_0041D048` phase A).
+    app.tick_temp_effect_pass();
     assert_eq!(app.player.dexterity_current, 30);
     assert_eq!(app.player.charisma_current, 10);
 }
@@ -227,11 +244,11 @@ fn raise_stat_moves_xp_and_increments_current_only() {
         crate::character_screen::stat_raise_cost(&sheet, stat)
     };
     assert!(cost > 0, "fresh level-0 warrior can raise strength");
-    let base = app.player.strength_base;
     let current = app.player.strength_current;
     assert!(app.raise_owner_stat(InventoryOwner::Protagonist, stat));
     assert_eq!(app.player.strength_current, current + 1);
-    assert_eq!(app.player.strength_base, base, "base half untouched");
+    // `FUN_0041C69C` recomputes the derived half from the stored one.
+    assert_eq!(app.player.strength_base, current + 1, "derived half follows");
     assert_eq!(app.player.available_xp, 1000 - cost);
     assert_eq!(app.player.invested_xp, cost);
 }
@@ -254,4 +271,198 @@ fn level_up_requires_the_min_gate() {
     app.player.strength_current = 16;
     assert!(app.level_up_owner(InventoryOwner::Protagonist));
     assert_eq!(app.player.level, 2);
+}
+
+/// `0x41E450` param 12 (`+0xCC` ammo): the class must be 12, unlike the other
+/// slot families which are gated per slot.
+#[test]
+fn only_ammo_fits_the_special_slot() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let sword = app
+        .world
+        .res
+        .alloc_item_instance(0, 1, 0, -1, 100.0, 0, 0)
+        .expect("sword");
+    app.player.special_equipment = 0;
+    // The arrow prototype (subtype 0) requires strength 28 (`0x41B1A4` stat 5).
+    app.player.strength_base = 100;
+    app.player.strength_current = 100;
+    app.held_item = Some(HeldItem {
+        id: sword,
+        owner: InventoryOwner::Protagonist,
+        source: None,
+    });
+    assert!(!app.place_held(ItemLocation::Special), "class 0 is not ammo");
+    assert!(app.held_item.is_some(), "the sword stays on the cursor");
+
+    app.held_item = None;
+    let arrow = app
+        .world
+        .res
+        .alloc_item_instance(12, 0, 0, -1, 0.0, 0, 0)
+        .expect("arrow");
+    app.held_item = Some(HeldItem {
+        id: arrow,
+        owner: InventoryOwner::Protagonist,
+        source: None,
+    });
+    assert!(app.place_held(ItemLocation::Special));
+    assert_eq!(app.player.special_equipment, arrow);
+}
+
+/// `0x41E8A8`: putting a lifted item down restores the container slot it came
+/// from instead of front-inserting it into the bag.
+#[test]
+fn put_down_restores_the_source_slot() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(2, 1, 0, -1, 100.0, 0, 0)
+        .expect("weapon");
+    app.player.equipment[2] = item;
+    app.player.inventory = [0; INVENTORY_SLOTS];
+    assert!(app.lift_item(ItemLocation::Main(2)));
+    assert_eq!(app.player.equipment[2], 0);
+    assert!(app.deposit_held());
+    assert_eq!(app.player.equipment[2], item, "back in its slot");
+    assert!(
+        !app.player.inventory.contains(&item),
+        "not front-inserted into the bag"
+    );
+}
+
+/// `0x422520`: `0x16B` destroys the departing actor's item instances; the
+/// `0x14C` settle path keeps them.
+#[test]
+fn removing_an_actor_releases_its_items() {
+    use super::super::dialogue_ops::QuestContext;
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(0, 1, 0, -1, 100.0, 0, 0)
+        .expect("gear");
+    if let Some(t) = app.tables.as_mut() {
+        t.entities[280].equipment[0] = item;
+    }
+    let mut ctx = QuestContext::from_app(&app, 280);
+    assert!(ctx.exec_op(0x16B));
+    ctx.apply_to_app(&mut app);
+    assert_eq!(
+        app.world.res.item_class(item),
+        Some(0xFF),
+        "the departing NPC's gear is destroyed"
+    );
+}
+
+/// `FUN_0041DAB0` case 11 also sets the ground-marker highlight
+/// (`_DAT_0081D628 = 1`), the same flag the torch raises.
+#[test]
+fn highlight_potion_sets_the_torch_reveal() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let potion = app
+        .world
+        .res
+        .alloc_item_instance(9, 11, 0, -1, 5.0, 0, 0)
+        .expect("potion");
+    app.inventory_owner = InventoryOwner::Protagonist;
+    app.inventory_scroll = 0;
+    app.held_item = None;
+    app.player.inventory = [0; INVENTORY_SLOTS];
+    app.player.inventory[0] = potion;
+    app.torch_reveal = false;
+    assert!(app.right_click_inventory_slot(0));
+    assert!(app.torch_reveal, "subtype 11 highlights ground markers");
+    assert_eq!(app.world.res.item_class_subtype(potion), Some((9, 3)));
+}
+
+/// `FUN_0041DAB0` case 8 is an antidote: it reduces the periodic damage by
+/// `quality*10` (clamped at 0) and does nothing for an unpoisoned user.
+#[test]
+fn antidote_reduces_periodic_damage() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let potion = app
+        .world
+        .res
+        .alloc_item_instance(9, 8, 0, -1, 3.0, 0, 0)
+        .expect("antidote");
+    app.inventory_owner = InventoryOwner::Protagonist;
+    app.inventory_scroll = 0;
+    app.held_item = None;
+    app.player.inventory = [0; INVENTORY_SLOTS];
+    app.player.inventory[0] = potion;
+    app.player.periodic_damage = 100;
+    assert!(app.right_click_inventory_slot(0));
+    assert_eq!(app.player.periodic_damage, 70);
+    assert_eq!(app.world.res.item_class_subtype(potion), Some((9, 3)));
+}
+
+/// `FUN_00410B08` returns 0 while `Entity+0xCE` is running: no raise cost and
+/// no level-up.
+#[test]
+fn temp_effect_blocks_raise_and_level_up() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.set_inventory_owner(InventoryOwner::Protagonist);
+    app.player.level = 0;
+    app.player.available_xp = 100_000;
+    app.player.temp_effect_timer = 30;
+    let sheet = app
+        .growth_sheet(InventoryOwner::Protagonist)
+        .expect("sheet");
+    assert_eq!(
+        crate::character_screen::stat_raise_cost(&sheet, crate::character::PrimaryStat::Strength),
+        0
+    );
+    assert!(!app.level_up_owner(InventoryOwner::Protagonist));
+    app.player.temp_effect_timer = 0;
+    let sheet = app
+        .growth_sheet(InventoryOwner::Protagonist)
+        .expect("sheet");
+    assert!(
+        crate::character_screen::stat_raise_cost(&sheet, crate::character::PrimaryStat::Strength)
+            > 0
+    );
+}
+
+/// `FUN_0041B0C4`: class 10 has no weight in the original (the selector's
+/// `else -> 0` branch); every other table-backed class keeps its prototype
+/// weight.
+#[test]
+fn class_ten_items_weigh_nothing() {
+    let Some(mut app) = inventory_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(1, 1, 0, -1, 1.0, 0, 0)
+        .expect("item");
+    let before = crate::inventory::item_weight(&app.world.res, item);
+    assert_ne!(before, 0, "the base item has a prototype weight");
+    assert!(app.world.res.set_item_class(item, 10));
+    assert_eq!(
+        crate::inventory::item_weight(&app.world.res, item),
+        0,
+        "class 10 is not weighted by FUN_0041B0C4"
+    );
 }

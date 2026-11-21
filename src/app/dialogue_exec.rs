@@ -25,11 +25,58 @@ use super::dialogue_ops::QuestContext;
 use crate::actors::ActorMotion;
 use crate::script::evaluate_condition;
 
+/// `FUN_00435290` window template / voice id.
+///
+/// Humanoids (`archetype & 0x40 == 0`) draw `rand()%4 + 0x0C`; when that equals
+/// the previous template (`_DAT_0081D68C`) they re-draw `rand()%4 + 0x0D` and
+/// map `0x10` back to `0x0C`. Object NPCs draw nothing: class `Q`/`R`/`S` map
+/// to `0x11`/`0x12`/`0x13`, anything else to `0x10`. The same id is the NPC
+/// voice clip (`FUN_0042A13C`) and selects the dialogue window art.
+pub(super) fn dialog_template(
+    archetype: u8,
+    previous: u8,
+    rng: &mut crate::combat::OriginalRng,
+) -> u8 {
+    if archetype & 0x40 == 0 {
+        let mut template = (rng.next_u32() % 4) as u8 + 0x0C;
+        if template == previous {
+            template = (rng.next_u32() % 4) as u8 + 0x0D;
+            if template == 0x10 {
+                template = 0x0C;
+            }
+        }
+        template
+    } else {
+        match archetype {
+            b'Q' => 0x11,
+            b'R' => 0x12,
+            b'S' => 0x13,
+            _ => 0x10,
+        }
+    }
+}
+
 impl PlayableApp {
     /// Build and open the dialogue for `dialogue_id` on `npc_entity`
     /// (`FUN_00435290` + `FUN_00434C74` + `FUN_0042CBD0(0)`).
     pub(super) fn open_dialog(&mut self, npc_entity: usize, dialogue_id: u8) {
         let fw = VIRTUAL_W;
+        // `FUN_00435290`: pick the window template / voice id before resolving
+        // the page (the humanoid branch consumes one or two `rand()%4` draws).
+        let archetype = self
+            .party
+            .iter()
+            .find(|m| m.entity.index == npc_entity)
+            .map(|m| m.entity.archetype)
+            .or_else(|| {
+                self.tables
+                    .as_ref()
+                    .and_then(|t| t.entities.get(npc_entity))
+                    .map(|e| e.archetype)
+            })
+            .unwrap_or(0);
+        let template = dialog_template(archetype, self.dialog_template, &mut self.sound_rng);
+        self.dialog_template = template;
         let mut ctx = QuestContext::from_app(self, npc_entity);
         let started = {
             let world = &self.world;
@@ -54,8 +101,9 @@ impl PlayableApp {
         };
         if let Some(state) = started {
             self.dialog = Some(state);
-            // NPC voice line (`FUN_00435290` picks 0x0C..0x0F for a humanoid).
-            self.queue_sound(0x0C + (npc_entity as u16 & 3));
+            // NPC voice line: `FUN_00435290` plays the template id that was
+            // chosen above (`0x0C..0x13`), once the page resolved.
+            self.queue_sound(template as u16);
             let actions = self
                 .dialog
                 .as_ref()
@@ -221,5 +269,39 @@ impl PlayableApp {
         self.party_selected[crate::hud::PARTY_CELLS - 1] = false;
         let loc = self.current_map;
         self.population_cache.remove(&loc);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dialog_template;
+    use crate::combat::OriginalRng;
+
+    /// Humanoid templates stay in `0x0C..=0x0F` (window art + voice clip) and
+    /// the draw consumes the RNG stream.
+    #[test]
+    fn humanoid_template_range_and_draw() {
+        let mut rng = OriginalRng::new(0x1234_5678);
+        let mut prev = 0u8;
+        for _ in 0..200 {
+            let t = dialog_template(0x05, prev, &mut rng);
+            assert!((0x0C..=0x0F).contains(&t), "humanoid template {t:#x}");
+            prev = t;
+        }
+    }
+
+    /// Object NPCs never draw: class `Q`/`R`/`S` map to `0x11`/`0x12`/`0x13`,
+    /// anything else to `0x10`.
+    #[test]
+    fn object_template_is_fixed_and_consumes_no_rng() {
+        let mut rng = OriginalRng::new(7);
+        assert_eq!(dialog_template(b'Q', 0, &mut rng), 0x11);
+        assert_eq!(dialog_template(b'R', 0, &mut rng), 0x12);
+        assert_eq!(dialog_template(b'S', 0, &mut rng), 0x13);
+        assert_eq!(dialog_template(0x41, 0, &mut rng), 0x10);
+        let mut a = OriginalRng::new(99);
+        let mut b = OriginalRng::new(99);
+        let _ = dialog_template(b'Q', 0, &mut a);
+        assert_eq!(a.next_u32(), b.next_u32(), "object branch draws nothing");
     }
 }

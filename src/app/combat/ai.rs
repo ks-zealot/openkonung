@@ -113,6 +113,7 @@ impl PlayableApp {
                     target: CombatTarget::Player,
                     cell: (self.player_x.round() as i32, self.player_y.round() as i32),
                     group: 0,
+                    marker: crate::actors::occupancy::marker(self.leader_entity_index),
                 });
             }
             for (i, m) in self.party.iter().enumerate() {
@@ -121,6 +122,7 @@ impl PlayableApp {
                         target: CombatTarget::Party(i),
                         cell: m.motion.cell,
                         group: 0,
+                        marker: crate::actors::occupancy::marker(m.entity.index),
                     });
                 }
             }
@@ -150,15 +152,23 @@ impl PlayableApp {
         }
         self.idle_inactive_object_groups();
 
+        let leader_marker = crate::actors::occupancy::marker(self.leader_entity_index);
+        let party_markers: Vec<u16> = self
+            .party
+            .iter()
+            .map(|m| crate::actors::occupancy::marker(m.entity.index))
+            .collect();
+
         let PlayableApp {
             world,
             population_cache,
+            ai_schedule,
+            combat_rng,
             ..
         } = self;
-        let collision = world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        let Some((collision, res)) = world.collision_and_res_mut(loc) else {
+            return;
+        };
         let Some(pop) = population_cache.get_mut(&loc) else {
             return;
         };
@@ -177,6 +187,7 @@ impl PlayableApp {
                     target: CombatTarget::World(a.entity.index),
                     cell: m.cell,
                     group: a.entity.group_id,
+                    marker: crate::actors::occupancy::marker(a.entity.index),
                 })
             })
             .collect();
@@ -186,7 +197,14 @@ impl PlayableApp {
                 // `FUN_00412E00` handles recall only for object groups; the
                 // citizen dispatcher returns without a recall path.
                 if class & 0x40 != 0 {
-                    Self::return_group_to_rect(pop, collision, group_id, &rect);
+                    Self::return_group_to_rect(
+                        pop,
+                        collision,
+                        group_id,
+                        &rect,
+                        &party,
+                        combat_rng,
+                    );
                 }
                 continue;
             }
@@ -220,12 +238,68 @@ impl PlayableApp {
                 .iter()
                 .filter_map(|id| pop.motion.get(id).and_then(|m| m.combat_target))
                 .collect();
+            // `FUN_0041FF68(own_group)`: the target of the **first engaged
+            // member** of this group (member order), provided that target is
+            // still visible and alive. The shared branch uses it verbatim; it is
+            // not a search over the enemy list.
+            let shared: Option<CombatTarget> = members.iter().find_map(|id| {
+                let m = pop.motion.get(id)?;
+                if !m.engaged {
+                    return None;
+                }
+                let t = m.combat_target?;
+                Self::target_is_visible(t, &party, &world_enemies).then_some(t)
+            });
             let citizen = class & 0x40 == 0;
 
-            for id in members {
+            for &id in &members {
                 let Some(ai) = pop.actors.iter().position(|a| a.entity.index == id) else {
                     continue;
                 };
+                // `FUN_004116CC`: the unit takes a turn only when the frame
+                // budget allows and the cursor is behind it (one-based order).
+                let order = id + 1;
+                if !ai_schedule.allows(order) {
+                    continue;
+                }
+                ai_schedule.serve(order);
+                let arch = pop.actors[ai].entity.archetype;
+                // `FUN_00412E00` returns 1 (handled, no AI) for the three
+                // prop-like archetypes before any target logic.
+                if matches!(arch, 0x51 | 0x52 | 0x53) {
+                    continue;
+                }
+                // `FUN_00412E00` citizen branch / `FUN_004168A4`: a **non-object**
+                // member of a woken group that is still at peace refreshes its
+                // gear (`FUN_004105A0`, which charges one action), enters battle
+                // stance and idles for that frame (`return 1`).
+                if arch & OBJECT_ARCHETYPE_BIT == 0
+                    && !crate::anim::battle_from_flags(pop.actors[ai].entity.flags_b)
+                {
+                    {
+                        let entity = &mut pop.actors[ai].entity;
+                        let snap = crate::inventory::OwnerSnapshot::from_entity(entity);
+                        let out = {
+                            let mut slots = crate::inventory::SlotsMut {
+                                equipment: &mut entity.equipment,
+                                inventory: &mut entity.inventory,
+                                additional: &mut entity.additional_equipment,
+                                special: &mut entity.special_equipment,
+                            };
+                            crate::inventory::refresh_equipment(&snap, res, &mut slots)
+                        };
+                        if out.changed || entity.raw_0x12 != out.weapon_slot {
+                            entity.raw_0x12 = out.weapon_slot;
+                        }
+                    }
+                    ai_schedule.charge();
+                    pop.actors[ai].entity.flags_b |= crate::anim::FLAG_BATTLE;
+                    if let Some(m) = pop.motion.get_mut(&id) {
+                        m.action = crate::anim::idle_action(true) as u8;
+                        m.frame = 0;
+                    }
+                    continue;
+                }
                 if pop
                     .motion
                     .get(&id)
@@ -234,19 +308,32 @@ impl PlayableApp {
                     continue;
                 }
                 let cell = pop.motion.get(&id).map(|m| m.cell).unwrap_or((0, 0));
-                let arch = pop.actors[ai].entity.archetype;
                 // `FUN_00410E84`: an armed archer (`Entity+0x12 == 1` with a
-                // melee weapon in slot 0 and ammo in `+0xCC`) only acquires a
+                // bow in slot 1 and ammo in `+0xCC`) only acquires a
                 // target its line-of-fire probe (`FUN_0041130C`) reaches.
-                let probe_range = Self::ranged_probe_range(&pop.actors[ai].entity, world);
+                let probe_range = Self::ranged_probe_range(&pop.actors[ai].entity, res);
                 let candidates: Vec<EnemyRef> = match probe_range {
-                    Some(range) => enemies
-                        .iter()
-                        .copied()
-                        .filter(|e| {
-                            crate::combat::los::probe(collision, cell, e.cell, range).is_clear()
-                        })
-                        .collect(),
+                    // `FUN_00410E84` charges one action for the pick and one per
+                    // line-of-fire probe. The remake probes every candidate (the
+                    // original stops at the first clear one); both are charged.
+                    // A failed pick falls through to the ordinary archetype
+                    // switch (`FUN_00412E00` `LAB_0041326b`), never to
+                    // "no target at all".
+                    Some(range) => {
+                        ai_schedule.charge();
+                        let mut clear: Vec<EnemyRef> = Vec::new();
+                        for e in enemies.iter().copied() {
+                            ai_schedule.charge();
+                            if crate::combat::los::probe(collision, cell, e.cell, range).is_clear() {
+                                clear.push(e);
+                            }
+                        }
+                        if clear.is_empty() {
+                            enemies.clone()
+                        } else {
+                            clear
+                        }
+                    }
                     None => enemies.clone(),
                 };
                 if candidates.is_empty() {
@@ -260,10 +347,11 @@ impl PlayableApp {
                     match arch {
                         // `FUN_00412E00` adjacent branch (0x44/0x57).
                         0x44 | 0x57 => Self::adjacent_enemy(cell, &candidates),
-                        // Shared branch: `FUN_0041FF68`; no unengaged
-                        // intermediate in the original.
-                        0x41 | 0x4D | 0x4F => Self::shared_target(&engaged, &candidates)
-                            .or_else(|| Self::nearest_enemy(cell, &candidates)),
+                        // Shared branch: `FUN_0041FF68` (first engaged member's
+                        // target), then `FUN_00420098` plain nearest.
+                        0x41 | 0x4D | 0x4F => {
+                            shared.or_else(|| Self::nearest_enemy(cell, &candidates))
+                        }
                         // `FUN_00420190` nearest-unengaged, then `FUN_00420098`.
                         0x43 | 0x45 | 0x46 | 0x4C | 0x55 => {
                             Self::nearest_unengaged(cell, &candidates, &engaged)
@@ -277,8 +365,19 @@ impl PlayableApp {
                     continue;
                 };
                 engaged.insert(target);
+                let marker = match target {
+                    CombatTarget::Player => leader_marker,
+                    CombatTarget::Party(i) => party_markers.get(i).copied().unwrap_or(0),
+                    CombatTarget::World(tid) => crate::actors::occupancy::marker(tid),
+                    CombatTarget::Prop(_) => 0,
+                };
                 if let Some(m) = pop.motion.get_mut(&id) {
                     m.combat_target = Some(target);
+                    m.target_marker = marker;
+                    // `FUN_004142D4(entity, target.cell, 1)` writes the whole
+                    // order byte (`Entity+0x02 = 1`): the unit now holds the
+                    // persistent engage order `FUN_0041EB48` looks for.
+                    m.engaged = true;
                     m.attack_frames = 0;
                     m.ranged_order = false;
                     m.ranged_fired = false;
@@ -332,6 +431,8 @@ impl PlayableApp {
                     // `FUN_00412E00` activity 0 returns before the action
                     // machine; a stale target must not keep attacking.
                     m.combat_target = None;
+                    m.target_marker = 0;
+                    m.engaged = false;
                     m.ranged_order = false;
                     m.attack_frames = 0;
                 }
@@ -346,85 +447,34 @@ impl PlayableApp {
         }
     }
 
-    /// `FUN_004105A0` / `FUN_004104D4`: every non-party human actor refreshes
-    /// its equipment and active weapon slot on its AI tick. The original calls
-    /// it from `FUN_00412E00` (object/enemy groups) and `FUN_004168A4` (citizen
-    /// groups), i.e. for exactly the actors in the loaded population.
-    ///
-    /// Deviation (documented): object-family actors (`archetype & 0x40`) are
-    /// skipped. They can never hold equipment, and for `archetype 0x4D/0x4F`
-    /// `Entity+0x12` is the authored M/O walk delay — writing the weapon slot
-    /// there would corrupt it.
-    pub(in crate::app) fn refresh_npc_equipment(&mut self) {
-        let loc = self.current_map;
-        let party_ids: HashSet<usize> = self.party.iter().map(|m| m.entity.index).collect();
-        let PlayableApp {
-            world,
-            population_cache,
-            ..
-        } = self;
-        let Some(pop) = population_cache.get_mut(&loc) else {
-            return;
-        };
-        let ids: Vec<usize> = pop
-            .actors
-            .iter()
-            .filter(|a| a.entity.archetype & 0x40 == 0 && !party_ids.contains(&a.entity.index))
-            .map(|a| a.entity.index)
-            .collect();
-        for id in ids {
-            if pop.motion.get(&id).is_some_and(|m| m.dead) {
-                continue;
-            }
-            let Some(pos) = pop.actors.iter().position(|a| a.entity.index == id) else {
-                continue;
-            };
-            let entity = &mut pop.actors[pos].entity;
-            let snap = crate::inventory::OwnerSnapshot::from_entity(entity);
-            let out = {
-                let mut slots = crate::inventory::SlotsMut {
-                    equipment: &mut entity.equipment,
-                    inventory: &mut entity.inventory,
-                    additional: &mut entity.additional_equipment,
-                    special: &mut entity.special_equipment,
-                };
-                crate::inventory::refresh_equipment(&snap, &world.res, &mut slots)
-            };
-            if out.changed || entity.raw_0x12 != out.weapon_slot {
-                entity.raw_0x12 = out.weapon_slot;
-            }
-        }
-    }
-
-    /// `FUN_00410E84` gate: active weapon is the bow (`Entity+0x12 == 1`), a
-    /// melee weapon is equipped (`equipment[0]`) and ammo is loaded
-    /// (`special_equipment`). Returns the line-of-fire range of the **melee**
-    /// weapon's subtype (`u16@0x459B84 + subtype*0x40`, read by
-    /// `FUN_0041130C`).
+    /// `FUN_00410E84` gate: active weapon is the bow (`Entity+0x12 == 1`), a bow
+    /// is equipped (`equipment[1]`, `Entity+0x68`) and ammo is loaded
+    /// (`Entity+0xCC`). Returns the line-of-fire sample count of the **bow's**
+    /// subtype (`u16@0x459B84 + subtype*0x40`, read by `FUN_0041130C`).
     fn ranged_probe_range(
         entity: &crate::population::Entity,
-        world: &crate::app::World,
+        res: &crate::res::Res,
     ) -> Option<u16> {
-        if entity.raw_0x12 != 1 || entity.equipment[0] == 0 || entity.special_equipment == 0 {
-            return None;
-        }
-        let subtype = world.res.item_class_subtype(entity.equipment[0])?.1;
-        world.res.item_db.as_ref().map(|db| db.probe_range(subtype))
+        let bow = super::armed_bow(
+            entity.raw_0x12,
+            &entity.equipment,
+            entity.special_equipment,
+        )?;
+        let subtype = res.item_class_subtype(bow)?.1;
+        res.item_db.as_ref().map(|db| db.probe_range(subtype))
     }
 
-    /// `FUN_0041FF68` shared branch: the first available enemy that some group
-    /// member already targets.
-    ///
-    /// `engaged` holds the targets of the group's own members, so the group
-    /// focuses its attacks instead of splitting over every candidate.
-    fn shared_target(
-        engaged: &HashSet<CombatTarget>,
-        enemies: &[EnemyRef],
-    ) -> Option<CombatTarget> {
-        enemies
-            .iter()
-            .find(|e| engaged.contains(&e.target))
-            .map(|e| e.target)
+    /// `FUN_0041FF68` visibility test: a world target must still be in the live
+    /// visible enemy list; leader/party targets are always visible.
+    fn target_is_visible(
+        target: CombatTarget,
+        party: &[EnemyRef],
+        world_enemies: &[EnemyRef],
+    ) -> bool {
+        match target {
+            CombatTarget::World(_) => world_enemies.iter().any(|e| e.target == target),
+            _ => party.iter().any(|e| e.target == target),
+        }
     }
 
     /// `FUN_00420098` plain nearest: the enemy at the smallest
@@ -464,21 +514,28 @@ impl PlayableApp {
         None
     }
 
-    /// Activity `0x20` recall: walk every stray group member back into
-    /// rectangle A.
+    /// `FUN_00412E00` activity `0x20` recall.
     ///
-    /// The goal is the member's cell clamped into the rectangle, so it never aims
-    /// past the bound. A reversed (invalid) authored rectangle is skipped instead
-    /// of being normalized. Walking members finish their current cycle; idle
-    /// ones start a route through `FUN_0043DA1F`.
+    /// A member that still holds its engage order (`Entity+0x02 & 1`) chases the
+    /// nearest hostile group (`FUN_0041FB64` - the party for a world group).
+    /// A member without it walks to a **random cell inside rectangle A**:
+    /// `rand()%2` picks the direction, then one `rand()%((dim-1)/4)` per axis
+    /// when that span is at least two quarters, and a forward free-cell scan
+    /// wraps inside `[x1+1, x2-1] × [y1+1, y2-1]` for at most `(w-1)*(h-1)`
+    /// cells. `FUN_004142D4(..., 8)` issues the move (mode 8 = no engage bit).
+    ///
+    /// A member already inside the rectangle only normalizes its idle action.
+    /// Walking members finish their current cycle (the remake commits one cell
+    /// per cycle; the original re-issues a route every recall pass).
     fn return_group_to_rect(
         pop: &mut PopulationBuild,
-        collision: &[u16],
+        collision: &mut [u16],
         group_id: usize,
         rect: &crate::population::Rect,
+        party: &[EnemyRef],
+        rng: &mut crate::combat::OriginalRng,
     ) {
         if rect.x1 > rect.x2 || rect.y1 > rect.y2 {
-            // Invalid authored rectangle: never clamp with reversed bounds.
             return;
         }
         let mut occupied: HashSet<(i32, i32)> = pop
@@ -497,32 +554,109 @@ impl PlayableApp {
             let Some(m) = pop.motion.get_mut(&id) else {
                 continue;
             };
-            if rect_contains(rect, m.cell.0, m.cell.1) {
-                if !m.walking {
-                    m.action = crate::anim::idle_action(false) as u8;
-                }
+            if m.dead {
                 continue;
             }
             if m.walking {
-                if Self::advance_motion_walk(m, collision, &mut occupied) {
+                if Self::advance_motion_walk(m, id, collision, &mut occupied) {
                     m.action = crate::anim::walk_action(false) as u8;
                 } else {
                     m.action = crate::anim::idle_action(false) as u8;
                 }
                 continue;
             }
-            let goal = (
-                m.cell.0.clamp(rect.x1 as i32, rect.x2 as i32),
-                m.cell.1.clamp(rect.y1 as i32, rect.y2 as i32),
-            );
-            if goal == m.cell {
-                m.action = crate::anim::idle_action(false) as u8;
+            if m.engaged {
+                // `FUN_0041FB64` for an object-group caller scans the **party
+                // group inside this group's rectangle A** and returns group 0;
+                // `FUN_00420190`/`FUN_00420098` then pick its nearest member.
+                // No party member inside the rectangle means no chase.
+                if let Some(e) = party
+                    .iter()
+                    .filter(|e| rect_contains(rect, e.cell.0, e.cell.1))
+                    .min_by_key(|e| crate::actors::follow_distance(m.cell, e.cell))
+                {
+                    let (target, cell, marker) = (e.target, e.cell, e.marker);
+                    m.combat_target = Some(target);
+                    m.target_marker = marker;
+                    Self::start_motion_walk(m, id, collision, &mut occupied, cell);
+                    if m.walking {
+                        m.action = crate::anim::walk_action(false) as u8;
+                    }
+                }
                 continue;
             }
-            Self::start_motion_walk(m, collision, &mut occupied, goal);
-            if m.walking {
-                m.action = crate::anim::walk_action(false) as u8;
+            if rect_contains(rect, m.cell.0, m.cell.1) {
+                let idle = crate::anim::idle_action(false) as u8;
+                if m.action != idle {
+                    m.action = idle;
+                    m.frame = 0;
+                }
+                continue;
             }
+            if let Some(goal) = Self::recall_wander_goal(rect, collision, &occupied, rng) {
+                Self::start_motion_walk(m, id, collision, &mut occupied, goal);
+                if m.walking {
+                    m.action = crate::anim::walk_action(false) as u8;
+                }
+            }
+        }
+    }
+
+    /// `LAB_004134b3`: random point inside rectangle A plus the forward
+    /// free-cell scan.
+    fn recall_wander_goal(
+        rect: &crate::population::Rect,
+        collision: &[u16],
+        occupied: &HashSet<(i32, i32)>,
+        rng: &mut crate::combat::OriginalRng,
+    ) -> Option<(i32, i32)> {
+        let (x1, x2) = (rect.x1 as i32, rect.x2 as i32);
+        let (y1, y2) = (rect.y1 as i32, rect.y2 as i32);
+        let w = (x2 - x1) - 1;
+        let h = (y2 - y1) - 1;
+        if w < 1 || h < 1 {
+            return None;
+        }
+        let mut cx = (x1 + x2) / 2;
+        let mut cy = (y1 + y2) / 2;
+        let negate = rng.roll() % 2 == 0;
+        let kx = if w / 4 < 2 {
+            0
+        } else {
+            (rng.roll() % (w / 4) as u32) as i32
+        };
+        let ky = if h / 4 < 2 {
+            0
+        } else {
+            (rng.roll() % (h / 4) as u32) as i32
+        };
+        if negate {
+            cx -= kx;
+            cy -= ky;
+        } else {
+            cx += kx;
+            cy += ky;
+        }
+        cx = cx.clamp(x1 + 1, x2 - 1);
+        cy = cy.clamp(y1 + 1, y2 - 1);
+        let total = w * h;
+        let mut i = 0;
+        while i < total && (!crate::actors::is_free(collision, cx, cy) || occupied.contains(&(cx, cy)))
+        {
+            cy += 1;
+            if cy >= y2 - 1 {
+                cy = y1 + 1;
+                cx += 1;
+                if cx >= x2 - 1 {
+                    cx = x1 + 1;
+                }
+            }
+            i += 1;
+        }
+        if i == total {
+            None
+        } else {
+            Some((cx, cy))
         }
     }
 }
@@ -532,4 +666,6 @@ struct EnemyRef {
     target: CombatTarget,
     cell: (i32, i32),
     group: u8,
+    /// One-based occupancy marker (`entity_index + 1`).
+    marker: u16,
 }

@@ -66,12 +66,19 @@ pub(super) struct QuestContext {
     pub npc_entity: usize,
     /// Location the dialogue is running in.
     pub current_map: u32,
+    /// Live actor cells on the current map (`Entity+0x08/+0x0A`), so a settle
+    /// keeps the member where it stands instead of its authored spawn.
+    pub live_cells: HashMap<usize, (i32, i32)>,
     /// Monotonic 60 ms original-frame counter (apprentice elapsed-time gains).
     pub world_frame: u64,
     /// Set by opcode `0x113`; the caller opens interface mode 7 afterwards.
     pub trade_request: Option<usize>,
     /// Opcodes that hit the catch-all arm, for diagnostics.
     pub unknown_ops: Vec<u16>,
+    /// `u16[0x458A06 + key*0x40]` for every possible **signed** target key
+    /// (`0x432120` reads the key as `i8` with no range guard, so the upper half
+    /// lands in the preceding tables). Captured from `konung.res` at build time.
+    pub requirement_timers: [u16; 256],
 }
 
 impl QuestContext {
@@ -97,9 +104,15 @@ impl QuestContext {
             rng: app.combat_rng.clone(),
             npc_entity,
             current_map: app.current_map,
+            live_cells: app
+                .population_cache
+                .get(&app.current_map)
+                .map(|p| p.motion.iter().map(|(&id, m)| (id, m.cell)).collect())
+                .unwrap_or_default(),
             world_frame: app.world_frame,
             trade_request: None,
             unknown_ops: Vec::new(),
+            requirement_timers: requirement_timer_table(&app.world.res),
         }
     }
 
@@ -130,6 +143,11 @@ impl QuestContext {
         app.world.res.set_save_game(&self.item_table);
         if tables_changed || party_changed || settlements_changed {
             app.population_cache.remove(&app.current_map);
+            // Rebuild the world population and the live collision markers from
+            // the applied state (recruit/settle/remove change the group rows).
+            app.ensure_population(app.current_map);
+            app.rebuild_occupancy(app.current_map);
+            app.derive_target_markers();
         }
         if !app.party_selected.iter().any(|&v| v) {
             app.party_selected[0] = true;
@@ -203,6 +221,16 @@ impl QuestContext {
     /// missing row reads `(0, 0)`.
     fn requirement(index: usize) -> (u16, u16) {
         *SETTLEMENT_REQUIREMENT.get(index).unwrap_or(&(0, 0))
+    }
+
+    /// `0x432120`: the raw `u16[0x458A06 + key*0x40]` timer word.
+    ///
+    /// The original reads the key as a **signed** byte and never range-checks
+    /// it, so a `0xFF` padding row reads the word one row *before* the table
+    /// (`0x458A06 - 0x40`). The table is captured from `konung.res` instead of
+    /// inventing a 0.
+    fn requirement_timer(&self, key: u8) -> u16 {
+        self.requirement_timers[key as usize]
     }
 
     /// Target `index` its key byte (`SettlementTarget+0x00`), which selects the
@@ -482,6 +510,27 @@ impl QuestContext {
             }
         }
         None
+    }
+
+    /// `FUN_0041079C` for the leader: add `amount` experience and, while
+    /// `Entity+0x03 & 0x02` (AUTO) is set, spend it through the `FUN_00410B08`
+    /// level/stat raisers. Returns whether anything was spent.
+    fn grant_player_xp(&mut self, amount: i32) -> bool {
+        crate::character::grant_xp(
+            crate::character::XpView {
+                class_index: Some(crate::character::class_index(self.player.class)),
+                temp_effect: self.player.temp_effect_timer,
+                flags_b: self.player.flags_b,
+                level: &mut self.player.level,
+                available_xp: &mut self.player.available_xp,
+                invested_xp: &mut self.player.invested_xp,
+                dexterity: &mut self.player.dexterity_current,
+                charisma: &mut self.player.charisma_current,
+                strength: &mut self.player.strength_current,
+                endurance: &mut self.player.endurance_current,
+            },
+            amount,
+        )
     }
 
     /// Allocate an instance and put it in the first free inventory slot.
@@ -791,8 +840,26 @@ impl QuestContext {
     /// Remove `id` from the party (if present) and from its `Game.N` group.
     ///
     /// The `0x16B` "the NPC leaves" op: unlike `0x14C` the actor is not moved
-    /// into a settlement, it disappears from the population.
+    /// into a settlement, it disappears from the population. `FUN_00422520`
+    /// releases every item instance it carried first (special, 6 equipment,
+    /// 32 bag, 5 additional -> class `0xFF`); the settle path keeps the gear.
     fn remove_world_entity(&mut self, id: usize) -> bool {
+        let mut items: Vec<u16> = Vec::new();
+        if let Some(e) = self.entity_or_party(id).cloned() {
+            items.extend_from_slice(&e.equipment);
+            items.push(e.special_equipment);
+            items.extend_from_slice(&e.inventory);
+            items.extend_from_slice(&e.additional_equipment);
+        }
+        for item in items {
+            if item == 0 {
+                continue;
+            }
+            let o = item as usize * ITEM_INSTANCE_SIZE;
+            if o < self.item_table.len() {
+                self.item_table[o] = 0xFF;
+            }
+        }
         self.dismiss_entity(id);
         self.detach_table_entity(id)
     }
@@ -879,6 +946,14 @@ impl QuestContext {
             return false;
         };
         let was_party = self.party.iter().any(|m| m.entity.index == id);
+        // `FUN_00432954` copies the whole entity, so the settled member keeps
+        // its live cell (`+0x08/+0x0A`); the waypoint is only its destination.
+        let live_cell = self
+            .party
+            .iter()
+            .find(|m| m.entity.index == id)
+            .map(|m| m.motion.cell)
+            .or_else(|| self.live_cells.get(&id).copied());
         if was_party {
             self.dismiss_entity(id);
         }
@@ -907,16 +982,19 @@ impl QuestContext {
         entity.index = dest;
         entity.group_id = settlement.group_id;
         entity.flags_a = 0x60;
+        if let Some((x, y)) = live_cell {
+            entity.x = x.max(0) as u16;
+            entity.y = y.max(0) as u16;
+        }
         if let Some(w) = waypoint {
             // `FUN_00431654` / `FUN_00432954`: the specialist becomes the role
             // holder through the waypoint owner and receives the authored role
             // dialogue id. Clear the apprentice role bits; the waypoint owner is
-            // the authoritative role marker now.
+            // the authoritative role marker now. The waypoint cell is the
+            // *destination* (`+0x0C/+0x0E`); the member walks there, so the
+            // position is left untouched and no facing is written.
             entity.dialogue_id = w.dialogue_id;
             entity.archetype &= !0x38;
-            entity.x = w.x;
-            entity.y = w.y;
-            entity.facing = w.facing;
             if waypoint_slot == Some(0) {
                 // `FUN_00432954` elder slot: flags_a = 0 after stationing.
                 entity.flags_a = 0;
@@ -1016,9 +1094,11 @@ impl QuestContext {
             return false;
         };
         e.archetype |= role;
-        // `FUN_00414A34` clears flags then re-applies the active bit; the
-        // authored citizens already carry `0x40`.
-        e.flags_a |= 0x40;
+        // `FUN_00434364` clears `flags_a (+0x02)` before calling
+        // `FUN_00414A34`, which ORs `0x40` (and `0x20` only for a member in the
+        // leader's group). A settlement villager therefore ends at `0x40`:
+        // peace/idle, never the battle stance bit `0x04`.
+        e.flags_a = 0x40;
         let frame = self.world_frame as i32;
         if let Some(s) = self.settlement_mut() {
             s.apprentice_start[timer_index] = frame;
@@ -1058,30 +1138,36 @@ impl QuestContext {
     /// term and the leader's HP is restored. `0x14F` does the same for the
     /// whole party (`FUN_00433BA0`).
     fn heal_target(&mut self, group_wide: bool) -> bool {
+        // `0x14E`/`0x14F` (`0x433B18`/`0x433BA0`): the healed unit's HP is
+        // restored to `0x640` (1600 internal) and the **healer NPC's** healing
+        // skill rises by `round((1600 - hp) * 0.015 + healing)`. The original
+        // accumulates that skill across the party members, in group-0 order
+        // (leader first) and only for visible, non-death-row members.
         let base = self.npc().map(|e| e.stats.healing as f64).unwrap_or(0.0);
+        let mut heal = base;
         if group_wide {
-            let player_hp = self.player.hp_internal as i32;
-            let delta = (640 - player_hp) as f64 / 1024.0 + base;
-            self.player.healing = delta.round().clamp(0.0, u16::MAX as f64) as u16;
-            self.player.hp_internal = 1600;
+            if !self.player.dead {
+                let hp = self.player.hp_internal as i32;
+                heal = ((1600 - hp) as f64 * 0.015 + heal).round_ties_even();
+                self.player.hp_internal = 1600;
+            }
             for m in self.party.iter_mut() {
-                if m.motion.dead {
+                if m.motion.dead || m.entity.archetype & 0x80 != 0 {
                     continue;
                 }
-                let delta = (640 - m.entity.stats.hp_internal as i32) as f64 / 1024.0 + base;
-                m.entity.stats.healing = delta.round().clamp(0.0, u16::MAX as f64) as u16;
+                let hp = m.entity.stats.hp_internal as i32;
+                heal = ((1600 - hp) as f64 * 0.015 + heal).round_ties_even();
                 m.entity.stats.hp_internal = 1600;
             }
-            true
         } else {
-            let player_hp = self.player.hp_internal as i32;
-            let delta = (1600 - player_hp) as f64 / 1024.0 + base;
-            if let Some(e) = self.npc_mut() {
-                e.stats.healing = delta.round().clamp(0.0, u16::MAX as f64) as u16;
-            }
+            let hp = self.player.hp_internal as i32;
+            heal = ((1600 - hp) as f64 * 0.015 + heal).round_ties_even();
             self.player.hp_internal = 1600;
-            true
         }
+        if let Some(e) = self.npc_mut() {
+            e.stats.healing = heal.clamp(0.0, u16::MAX as f64) as u16;
+        }
+        true
     }
 
     // --- Programs ---------------------------------------------------------
@@ -1244,15 +1330,15 @@ impl QuestContext {
                 true
             }
             0x12B => {
-                self.player.available_xp = self.player.available_xp.saturating_add(10);
+                self.grant_player_xp(10);
                 true
             }
             0x12C => {
-                self.player.available_xp = self.player.available_xp.saturating_add(20);
+                self.grant_player_xp(20);
                 true
             }
             0x12D => {
-                self.player.available_xp = self.player.available_xp.saturating_add(50);
+                self.grant_player_xp(50);
                 true
             }
             0x12E => self
@@ -1348,7 +1434,7 @@ impl QuestContext {
             0x152 => self.requirement_predicate(4),
             0x153 => self.requirement_predicate(6),
             0x154 => self.requirement_predicate(3),
-            0x155 => self.requirement_predicate(2),
+            0x155 => self.requirement_predicate_keyed(2, 1),
             0x156 => self.requirement_predicate(5),
             0x157 => {
                 let Some((base, count)) = self.target_base() else {
@@ -1427,6 +1513,17 @@ impl QuestContext {
     /// (`state == 0 && timer == 0`) and the settlement's highest building
     /// skill covers the requirement table's first value.
     fn requirement_predicate(&mut self, target_index: usize) -> bool {
+        self.requirement_predicate_keyed(target_index, target_index)
+    }
+
+    /// `0x151`..`0x157`: the target must be idle (state **and** timer 0), its
+    /// key byte must be non-negative (the 0xFF padding rows fail), and the
+    /// settlement group's highest building skill must cover the key row's
+    /// requirement (`u16@0x458A02 + key*0x40`).
+    ///
+    /// `key_index` is separate because `0x155` reads its requirement key from
+    /// **target 1** while checking target 2's state/timer (an original quirk).
+    fn requirement_predicate_keyed(&mut self, target_index: usize, key_index: usize) -> bool {
         let Some(s) = self.settlement() else {
             return false;
         };
@@ -1436,7 +1533,13 @@ impl QuestContext {
         if target.state != 0 || target.timer != 0 {
             return false;
         }
-        let (required, _) = Self::requirement(target.key as usize);
+        let Some(key_target) = s.targets.get(key_index).copied() else {
+            return false;
+        };
+        if key_target.key >= 0x80 {
+            return false;
+        }
+        let (required, _) = Self::requirement(key_target.key as usize);
         self.settlement_group_building() >= required
     }
 
@@ -1447,7 +1550,7 @@ impl QuestContext {
         let Some(key) = self.target_key(target_index) else {
             return false;
         };
-        let (_, value) = Self::requirement(key);
+        let value = self.requirement_timer(key as u8);
         let Some(s) = self.settlement_mut() else {
             return false;
         };
@@ -1500,5 +1603,49 @@ impl PlayableApp {
             extra.npc_state_d2 = tables.entities.iter().map(|e| e.state_d2).collect();
         }
         extra
+    }
+}
+
+/// `0x432120` table: `u16[0x458A06 + key*0x40]` for every `u8` key, with the
+/// key interpreted as a **signed** byte (`0x80..=0xFF` read before the table).
+fn requirement_timer_table(res: &crate::res::Res) -> [u16; 256] {
+    requirement_timers_from_konung(&res.konung)
+}
+
+/// Pure form of [`requirement_timer_table`], so the signed-key addressing can be
+/// tested without a full resource pack.
+fn requirement_timers_from_konung(bytes: &[u8]) -> [u16; 256] {
+    let mut out = [0u16; 256];
+    for (key, slot) in out.iter_mut().enumerate() {
+        let va = 0x458A06u32.wrapping_add((key as u8 as i8 as i32 as u32).wrapping_mul(0x40));
+        let off = crate::item::va_to_file(va);
+        if off + 2 <= bytes.len() {
+            *slot = u16::from_le_bytes([bytes[off], bytes[off + 1]]);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The signed key addresses the word `key*0x40` away: `0x00` is the first
+    /// row, `0x10` the row after the table, and `0xFF` the word one row
+    /// **before** the table (`0x458A06 - 0x40`), exactly like `0x432120`.
+    #[test]
+    fn requirement_timer_reads_the_signed_key_address() {
+        let mut bytes = vec![0u8; 0x41000];
+        let base = crate::item::va_to_file(0x458A06);
+        bytes[base..base + 2].copy_from_slice(&0x1234u16.to_le_bytes());
+        let before = base - 0x40;
+        bytes[before..before + 2].copy_from_slice(&0xABCDu16.to_le_bytes());
+        let after = base + 0x10 * 0x40;
+        bytes[after..after + 2].copy_from_slice(&0x0F0Fu16.to_le_bytes());
+
+        let table = requirement_timers_from_konung(&bytes);
+        assert_eq!(table[0x00], 0x1234);
+        assert_eq!(table[0x10], 0x0F0F);
+        assert_eq!(table[0xFF], 0xABCD, "0xFF is -1 and reads before the base");
     }
 }

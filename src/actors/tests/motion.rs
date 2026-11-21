@@ -19,7 +19,7 @@ fn real_game1_group23_owners_stay_non_owners_wander() {
     };
     let tables = crate::population::parse_tables(&game).unwrap();
     let settlements = crate::population::parse_settlements(&game).unwrap();
-    let collision = crate::loc::parse_collision(&k4).unwrap();
+    let mut collision = crate::loc::parse_collision(&k4).unwrap();
     let settlement = settlements
         .iter()
         .find(|s| s.loc_id == 4)
@@ -38,7 +38,7 @@ fn real_game1_group23_owners_stay_non_owners_wander() {
         "Гилли (277) must own a loc-4 home waypoint"
     );
 
-    let mut b = build_population(&tables, 4, &collision);
+    let mut b = build_population(&tables, 4, &mut collision);
     let movers: Vec<usize> = b
         .actors
         .iter()
@@ -49,7 +49,12 @@ fn real_game1_group23_owners_stay_non_owners_wander() {
     let mover_starts: Vec<(i32, i32)> = movers.iter().map(|id| b.motion[id].cell).collect();
 
     for _ in 0..3600 {
-        update_population(&mut b, &collision, Some(settlement), 1.0 / LOGIC_TICK_HZ);
+        update_population(
+            &mut b,
+            &mut collision,
+            Some(settlement),
+            1.0 / LOGIC_TICK_HZ,
+        );
     }
 
     // Waypoint owners stay exactly at their home waypoint.
@@ -92,7 +97,7 @@ fn follow_distance_matches_original_grid_metric() {
 /// starts walking.
 #[test]
 fn followers_walk_toward_a_distant_leader_and_stop_when_close() {
-    let collision = free_collision();
+    let mut collision = free_collision();
     let leader = (100, 80);
     let mut member = PartyMember {
         entity: entity(539, 6, 0x05, 80, 80),
@@ -105,12 +110,25 @@ fn followers_walk_toward_a_distant_leader_and_stop_when_close() {
     member.motion.action = 0;
 
     // 20 cells away (>= FOLLOW_DISTANCE): issues a route and starts walking.
-    update_followers(std::slice::from_mut(&mut member), &collision, leader, 1);
+    let mut rng = crate::combat::OriginalRng::new(1);
+    update_followers(
+        std::slice::from_mut(&mut member),
+        &mut collision,
+        leader,
+        1,
+        &mut rng,
+    );
     assert!(member.motion.walking, "companion starts following");
     let start = member.motion.cell;
 
     for _ in 0..600 {
-        update_followers(std::slice::from_mut(&mut member), &collision, leader, 1);
+        update_followers(
+            std::slice::from_mut(&mut member),
+            &mut collision,
+            leader,
+            1,
+            &mut rng,
+        );
     }
     assert_ne!(
         member.motion.cell, start,
@@ -122,4 +140,120 @@ fn followers_walk_toward_a_distant_leader_and_stop_when_close() {
         member.motion.cell
     );
     assert!(!member.motion.walking, "companion settled");
+}
+
+/// `0x45FF1C` formation table: 2 parity blocks x 8 directions x 12 slots.
+#[test]
+fn follow_slots_match_the_authored_table() {
+    use crate::constants::motion::FOLLOW_SLOTS;
+
+    assert_eq!(FOLLOW_SLOTS.len(), 2);
+    assert_eq!(FOLLOW_SLOTS[0].len(), 8);
+    assert_eq!(FOLLOW_SLOTS[0][0].len(), 12);
+    // Spot checks against the recovered bytes at `0x45FF1C`.
+    assert_eq!(FOLLOW_SLOTS[0][4][0], (1, 1));
+    assert_eq!(FOLLOW_SLOTS[0][4][11], (1, 4));
+    assert_eq!(FOLLOW_SLOTS[1][1][4], (-6, 0));
+    // Every slot is a non-zero offset inside the authored 1..7 cell reach.
+    for block in &FOLLOW_SLOTS {
+        for row in block {
+            for &(dx, dy) in row {
+                assert!(dx != 0 || dy != 0, "empty slot");
+                assert!(dx.abs() <= 7 && dy.abs() <= 7, "slot ({dx},{dy})");
+            }
+        }
+    }
+}
+
+/// `FUN_0041f3c8` consumes exactly one `rand() % 12` draw per attempt and takes
+/// the first free slot from that start index.
+#[test]
+fn follow_goal_draws_a_random_start_slot() {
+    use crate::combat::OriginalRng;
+    use crate::constants::motion::FOLLOW_SLOTS;
+    use crate::coords::direction_from_cells;
+
+    let collision = free_collision();
+    let leader = (100, 80);
+    let member = (110, 80); // distance 10; direction from the leader is 6
+    let dir = direction_from_cells(member.0, member.1, leader.0, leader.1) as usize;
+    assert_eq!(dir, 6);
+
+    let mut rng = OriginalRng::new(7);
+    let mut reference = OriginalRng::new(7);
+    let start = (reference.roll() % 12) as usize;
+
+    let goal = follow_goal(
+        leader,
+        member,
+        &collision,
+        &std::collections::HashSet::new(),
+        &mut rng,
+    )
+    .expect("a free slot");
+    let (dx, dy) = FOLLOW_SLOTS[(leader.0 & 1) as usize][dir][start];
+    assert_eq!(goal, (leader.0 + dx as i32, leader.1 + dy as i32));
+    assert!(follow_distance(goal, leader) >= 1);
+    // Exactly one draw was taken (the slot was free on the first try).
+    assert_eq!(rng.roll(), reference.roll());
+}
+
+/// Every slot blocked: four attempts, four draws, no goal.
+#[test]
+fn follow_goal_retries_four_times_and_consumes_four_draws() {
+    use crate::combat::OriginalRng;
+
+    let mut collision = free_collision();
+    for cell in collision.iter_mut() {
+        *cell = 1; // occupied low bits: `cell & 0xFFF != 0`
+    }
+    let leader = (100, 80);
+    let member = (110, 80);
+    let mut rng = OriginalRng::new(3);
+    let mut reference = OriginalRng::new(3);
+    assert_eq!(
+        follow_goal(
+            leader,
+            member,
+            &collision,
+            &std::collections::HashSet::new(),
+            &mut rng
+        ),
+        None
+    );
+    // Exactly four attempts = four draws: the next value matches a reference
+    // generator advanced by four.
+    for _ in 0..4 {
+        reference.roll();
+    }
+    assert_eq!(rng.roll(), reference.roll());
+}
+
+/// `FUN_0041EFD8` runs follow only after the armed pick and the retaliation
+/// check: a member that still holds an engage order (`Entity+0x02 & 1`) never
+/// follows, even when it is far from the leader.
+#[test]
+fn engaged_companions_do_not_follow() {
+    let mut collision = free_collision();
+    let leader = (100, 80);
+    let mut member = PartyMember {
+        entity: entity(539, 6, 0x05, 80, 80),
+        motion: ActorMotion::default(),
+    };
+    member.motion.cell = (80, 80);
+    member.motion.render_cell = (80, 80);
+    member.motion.engaged = true;
+    member.motion.walk_frames = 4;
+    let mut rng = crate::combat::OriginalRng::new(1);
+    for _ in 0..10 {
+        update_followers(
+            std::slice::from_mut(&mut member),
+            &mut collision,
+            leader,
+            1,
+            &mut rng,
+        );
+    }
+    assert!(!member.motion.walking, "an engaged companion must not follow");
+    assert_eq!(member.motion.cell, (80, 80));
 }

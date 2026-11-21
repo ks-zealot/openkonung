@@ -3,8 +3,11 @@
 //   node web/tools/lighting_smoke.mjs
 //
 // Loads the packed resources, boots Dragomir, then compares the rendered world
-// at day (frame 0, ambient zero) and night (frame 12000, dark ambient) and
-// checks that the per-map LIGHTS.N low/high data was attached.
+// at a bright phase (frame 18000, sunrise) and night (frame 12000, -60/-70
+// ambient delta) and checks that the per-map LIGHTS.N low/high data was
+// attached. Frame 0 is the *neutral* phase (ambient zero), so it cannot be used
+// as the "day" reference: on the dark forest start map the night delta clamps
+// at 0 and barely changes the average.
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -50,7 +53,7 @@ function averageWorld() {
 const lightMaps = wasm.debug_light_map_count();
 if (lightMaps !== 40) throw new Error(`expected 40 LIGHTS.N maps, got ${lightMaps}`);
 
-wasm.debug_set_world_frame(0, 0);
+wasm.debug_set_world_frame(18000, 0);
 const day = averageWorld();
 wasm.debug_set_world_frame(12000, 0);
 const night = averageWorld();

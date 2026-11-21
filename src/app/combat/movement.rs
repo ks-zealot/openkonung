@@ -29,11 +29,15 @@ impl PlayableApp {
     /// Whether the actor is still walking after the advance.
     pub(super) fn advance_motion_walk(
         m: &mut ActorMotion,
-        collision: &[u16],
+        entity_index: usize,
+        collision: &mut [u16],
         occupied: &mut HashSet<(i32, i32)>,
     ) -> bool {
         if !m.walking {
             return false;
+        }
+        if m.turning {
+            return Self::advance_turn(m);
         }
         let wf = if m.walk_frames == 0 {
             crate::actors::FALLBACK_WALK_FRAMES
@@ -44,13 +48,30 @@ impl PlayableApp {
         if m.frame >= wf {
             m.frame = 0;
             if !m.path.is_empty() {
-                crate::actors::begin_actor_segment(m, occupied, collision);
+                crate::actors::begin_actor_segment(m, entity_index, occupied, collision);
             } else {
                 m.walking = false;
                 m.render_cell = m.cell;
                 m.target = None;
             }
         }
+        m.walking
+    }
+
+    /// `FUN_00438090` turn tick: one 45-degree step per logic frame, no cell
+    /// consumed. Keeps `walking` set so the caller keeps servicing the actor.
+    fn advance_turn(m: &mut ActorMotion) -> bool {
+        let Some(&dir) = m.path.first() else {
+            m.turning = false;
+            m.walking = false;
+            m.render_cell = m.cell;
+            return false;
+        };
+        if crate::coords::turn_toward(&mut m.facing, dir) {
+            m.turning = false;
+        }
+        m.frame = 0;
+        m.render_cell = m.cell;
         m.walking
     }
 
@@ -62,7 +83,8 @@ impl PlayableApp {
     /// actor idle on its current cell.
     pub(crate) fn start_motion_walk(
         m: &mut ActorMotion,
-        collision: &[u16],
+        entity_index: usize,
+        collision: &mut [u16],
         occupied: &mut HashSet<(i32, i32)>,
         goal: (i32, i32),
     ) {
@@ -76,7 +98,7 @@ impl PlayableApp {
         match crate::actors::find_path(collision, occupied, m.cell, goal, bounds) {
             Some(p) if !p.is_empty() => {
                 m.path = p;
-                crate::actors::begin_actor_segment(m, occupied, collision);
+                crate::actors::begin_actor_segment(m, entity_index, occupied, collision);
             }
             _ => {
                 m.path.clear();
@@ -95,6 +117,9 @@ impl PlayableApp {
     ) -> bool {
         if !m.walking {
             return false;
+        }
+        if m.turning {
+            return Self::advance_turn(m);
         }
         let wf = if m.walk_frames == 0 {
             crate::actors::FALLBACK_WALK_FRAMES

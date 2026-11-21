@@ -270,13 +270,15 @@ fn build_page(
     let mut y = lay.opt_pos.1;
     for &e in entries.iter().skip(prompt_n).take(opt_n) {
         let Some(o) = quest.option(e) else { continue };
+        // `FUN_00434C74`: an *unconditional* option entry without text
+        // (`text_raw == 0xFFFFFFFF`) is dropped; a conditional one is kept.
+        if o.condition < 0 && o.text_line.is_none() {
+            continue;
+        }
         if !entry_condition_ok(o.condition, eval) {
             continue;
         }
         let label = o.text_line.map(|l| quest.line_text(l)).unwrap_or_default();
-        if label.trim().is_empty() && o.next == LINK_NONE {
-            continue;
-        }
         let lines = wrap(fonts, &label, lay.text_width);
         let h = (lines.len() as i32 * LINE_H).max(LINE_H);
         options.push(DialogOption {
@@ -287,6 +289,11 @@ fn build_page(
             row: (lay.opt_pos.0, y, lay.text_width, h),
         });
         y += h;
+    }
+    // `FUN_00434C74` returns `_81D6D0 != 0`: a page with no surviving option
+    // never opens (no window, no voice).
+    if options.is_empty() {
+        return None;
     }
     Some((node, prompt_lines, options, on_open_actions))
 }
@@ -397,7 +404,17 @@ impl DialogState {
 
 /// Draw the dialog over the frame (`INTR[1]` window + `INTR[0]` band, then the NPC
 /// statement and the option list with the original fonts).
-pub fn draw(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, state: &DialogState) {
+///
+/// `tiled` is `_DAT_0081D614`: when clear the original `FUN_00430430` skips the
+/// stone pass and the (largely transparent) window shows what is behind it.
+pub fn draw(
+    frame: &mut [u8],
+    fw: usize,
+    fh: usize,
+    res: &mut Res,
+    state: &DialogState,
+    tiled: bool,
+) {
     let lay = layout(fw as i32);
 
     let win = res.intr_sprite(WINDOW_SPRITE);
@@ -406,9 +423,11 @@ pub fn draw(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, state: &Dialo
     // the world shows through the frame (the "no lining" look).
     if let Some(w) = &win {
         let rect = (lay.window_pos.0, lay.window_pos.1, w.w as i32, w.h as i32);
-        if let Some(tile) = res.intr_sprite(TILE_SPRITE) {
-            for (tx, ty) in tile_origins(rect, TILE) {
-                blit_clip(frame, fw, fh, &tile, tx, ty, rect);
+        if tiled {
+            if let Some(tile) = res.intr_sprite(TILE_SPRITE) {
+                for (tx, ty) in tile_origins(rect, TILE) {
+                    blit_clip(frame, fw, fh, &tile, tx, ty, rect);
+                }
             }
         }
         blit(frame, fw, fh, &w.data, w.w, w.h, rect.0, rect.1);

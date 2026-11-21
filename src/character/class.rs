@@ -90,7 +90,8 @@ pub const STAT_TIERS: [(u32, u16, u16); 12] = [
     (200, 100, 80),
 ];
 
-/// Cost to raise `stat` by one at `value` (`999` when past the last finite tier).
+/// Cost to raise `stat` by one at `value` (`999999` when past the last finite
+/// tier, the original's 13th sentinel row at `0x45AFB0 + 12*12`).
 pub fn stat_cost(class: CharacterClass, stat: PrimaryStat, value: u16) -> u32 {
     let specialized = class.specialization() == stat;
     for &(cost, spec, normal) in STAT_TIERS.iter() {
@@ -99,7 +100,7 @@ pub fn stat_cost(class: CharacterClass, stat: PrimaryStat, value: u16) -> u32 {
             return cost;
         }
     }
-    999
+    999_999
 }
 
 /// `0x45B0AB`: per-class stat-growth caps, indexed
@@ -190,9 +191,13 @@ fn growth_index(class: CharacterClass) -> usize {
     (class.entity_class() as usize).saturating_sub(1).min(4)
 }
 
+/// `FUN_00410B08` class index for a playable class (`1..=4` mapped to `0..=3`).
+pub fn class_index(class: CharacterClass) -> usize {
+    growth_index(class)
+}
+
 /// Per-level growth cap (`0x45B0AB` low byte) for `stat`.
-pub fn stat_growth_cap(class: CharacterClass, stat: PrimaryStat, level: u8) -> u8 {
-    let lvl = (level as usize).min(12);
+pub fn stat_growth_cap(class: CharacterClass, stat: PrimaryStat, level: u8) -> u8 {    let lvl = (level as usize).min(12);
     STAT_GROWTH_CAPS[growth_index(class)][stat_block(stat)][lvl]
 }
 
@@ -295,7 +300,7 @@ pub fn can_raise_any_index(
 /// `FUN_00410B08(entity, stat)` for a raw class index: the XP cost to raise
 /// `stat` from `value`, or `None` when the per-level cap is reached or the
 /// character cannot afford it. Mirrors the `0x45AFB0` tier table (the final
-/// sentinel tier costs `999`).
+/// sentinel tier costs `999999`).
 pub fn raise_cost_index(
     index: usize,
     stat: PrimaryStat,
@@ -318,8 +323,8 @@ pub fn raise_cost_index(
             };
         }
     }
-    if 999 <= available_xp {
-        Some(999)
+    if 999_999 <= available_xp {
+        Some(999_999)
     } else {
         None
     }

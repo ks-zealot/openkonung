@@ -11,6 +11,7 @@
 //! accumulator, so the next map entry consumes the budget. Save mode `1` never
 //! grows (the population cache is restored directly).
 
+use crate::actors::occupancy::occupy;
 use crate::actors::{place_entity, ActorPlacement, DeterministicRng, RuntimeActor};
 use crate::population::{Entity, GameTables, Group};
 
@@ -68,7 +69,7 @@ pub fn update_group_growth(group: &mut Group) {
 pub fn grow_group(
     tables: &mut GameTables,
     group_index: usize,
-    collision: &[u16],
+    collision: &mut [u16],
     rng: &mut DeterministicRng,
 ) -> Vec<RuntimeActor> {
     let Some(group) = tables.groups.get(group_index).cloned() else {
@@ -115,6 +116,9 @@ pub fn grow_group(
         }
         entity.x = raw.x as u16;
         entity.y = raw.y as u16;
+        // Mark the caller's final placement (the loader does this after the
+        // entity is placed for the visit).
+        occupy(collision, (raw.x, raw.y), new_index);
         {
             let group = &mut tables.groups[group_index];
             group.growth_timer = group.growth_timer.wrapping_add(interval);
@@ -141,7 +145,7 @@ pub fn grow_group(
 pub fn grow_map(
     tables: &mut GameTables,
     loc: u8,
-    collision: &[u16],
+    collision: &mut [u16],
     rng: &mut DeterministicRng,
 ) -> Vec<RuntimeActor> {
     let mut out = Vec::new();
@@ -398,7 +402,7 @@ mod tests {
         t.entities[11].stats.money = 300;
         t.entities[11].visual_index = 0x33;
         let mut rng = DeterministicRng::new(7);
-        let created = grow_group(&mut t, 1, &free_collision(), &mut rng);
+        let created = grow_group(&mut t, 1, &mut free_collision(), &mut rng);
         assert_eq!(
             created.len(),
             1,
@@ -436,7 +440,7 @@ mod tests {
         g.entity_count = 2;
         let mut t = tables(g);
         let mut rng = DeterministicRng::new(11);
-        let created = grow_group(&mut t, 1, &free_collision(), &mut rng);
+        let created = grow_group(&mut t, 1, &mut free_collision(), &mut rng);
         assert_eq!(created.len(), 1);
         assert_eq!(t.groups[1].entity_count, 3);
         assert_eq!(t.groups[1].growth_timer, 0);
@@ -450,7 +454,7 @@ mod tests {
         g.growth_timer = 0;
         let mut t = tables(g);
         let mut rng = DeterministicRng::new(3);
-        assert!(grow_group(&mut t, 1, &free_collision(), &mut rng).is_empty());
+        assert!(grow_group(&mut t, 1, &mut free_collision(), &mut rng).is_empty());
         assert_eq!(t.groups[1].entity_count, 2);
     }
 
@@ -462,7 +466,7 @@ mod tests {
         g.growth_timer = -1;
         let mut t = tables(g);
         let mut rng = DeterministicRng::new(3);
-        assert!(grow_group(&mut t, 1, &free_collision(), &mut rng).is_empty());
+        assert!(grow_group(&mut t, 1, &mut free_collision(), &mut rng).is_empty());
         assert_eq!(t.groups[1].growth_timer, -1);
     }
 
@@ -474,9 +478,9 @@ mod tests {
         g.growth_timer = -1;
         g.entity_count = 2;
         let mut t = tables(g);
-        let blocked = vec![0x0001u16; 320 * 160];
+        let mut blocked = vec![0x0001u16; 320 * 160];
         let mut rng = DeterministicRng::new(5);
-        assert!(grow_group(&mut t, 1, &blocked, &mut rng).is_empty());
+        assert!(grow_group(&mut t, 1, &mut blocked, &mut rng).is_empty());
         assert_eq!(t.groups[1].entity_count, 2);
         assert_eq!(t.groups[1].growth_timer, 0, "failed pass clamps the budget");
     }
@@ -499,7 +503,7 @@ mod tests {
         let mut t = tables(a);
         t.groups.push(b);
         let mut rng = DeterministicRng::new(9);
-        let created = grow_map(&mut t, 1, &free_collision(), &mut rng);
+        let created = grow_map(&mut t, 1, &mut free_collision(), &mut rng);
         assert_eq!(created.len(), 1, "only the second eligible group grows");
         assert_eq!(t.groups[1].entity_count, 2, "first eligible group skipped");
         assert_eq!(t.groups[1].growth_timer, -1);

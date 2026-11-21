@@ -916,3 +916,137 @@ fn c1_doll_sets_npc_state_and_is_consumed() {
     assert_eq!(app.tables.as_ref().unwrap().entities[alive].state_d2, 0x13);
     assert_eq!(app.world.res.item_class(doll), Some(0xFF));
 }
+
+/// `FUN_00414DE4` case 30 filters on the group **class**: peaceful classes
+/// (bit `0x80`, e.g. `0x81`) and class `0x53` survive; object groups die.
+#[test]
+fn c4_skeleton_lamp_spares_citizens_and_class_53() {
+    let Some(mut app) = build_party_app_with_free_location() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.world_frame = 100;
+    app.ensure_population(4);
+    let classes: Vec<(usize, u8)> = app
+        .population_cache
+        .get(&4)
+        .map(|pop| {
+            pop.actors
+                .iter()
+                .filter(|a| a.entity.group_id != 0)
+                .filter_map(|a| {
+                    let class = app
+                        .tables
+                        .as_ref()
+                        .and_then(|t| t.groups.get(a.source_group_id))
+                        .map(|g| g.class_1e)?;
+                    Some((a.source_entity_id(), class))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let hostiles: Vec<usize> = classes
+        .iter()
+        .filter(|(_, c)| *c & 0x80 == 0 && *c != 0x53)
+        .map(|(e, _)| *e)
+        .collect();
+    let citizens: Vec<usize> = classes
+        .iter()
+        .filter(|(_, c)| *c & 0x80 != 0)
+        .map(|(e, _)| *e)
+        .collect();
+    let class53: Vec<usize> = classes
+        .iter()
+        .filter(|(_, c)| *c == 0x53)
+        .map(|(e, _)| *e)
+        .collect();
+    if hostiles.is_empty() || citizens.is_empty() || class53.is_empty() {
+        eprintln!("skipping: loc 4 lacks the required group classes");
+        return;
+    }
+    let lamp = alloc(&mut app, 11, 30, 0);
+    put_in_first_slot(&mut app, lamp);
+    assert!(use_first_slot(&mut app));
+    let pop = app.population_cache.get(&4).unwrap();
+    assert!(
+        hostiles
+            .iter()
+            .all(|e| pop.motion.get(e).map(|m| m.dead).unwrap_or(false)),
+        "object-family groups must die"
+    );
+    assert!(
+        citizens
+            .iter()
+            .all(|e| !pop.motion.get(e).map(|m| m.dead).unwrap_or(false)),
+        "citizen classes (bit 0x80) must survive"
+    );
+    assert!(
+        class53
+            .iter()
+            .all(|e| !pop.motion.get(e).map(|m| m.dead).unwrap_or(false)),
+        "class 0x53 must survive"
+    );
+}
+
+/// `FUN_00414ABC`: when the cell, its neighbours and the actor rectangle are
+/// blocked, a revived **party** unit is placed in the leader `+/-2*radius` box
+/// (20/9 -> +/-40 x, +/-18 y), not by a ring scan.
+#[test]
+fn revive_cell_falls_back_to_the_leader_box() {
+    let Some(app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let lx = app.player_x.round() as i32;
+    let ly = app.player_y.round() as i32;
+    // Everything free except the target cell and its eight neighbours.
+    let mut collision = vec![0u16; 320 * 160];
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            let x = lx + dx;
+            let y = ly + dy;
+            if (0..320).contains(&x) && (0..160).contains(&y) {
+                collision[x as usize * 160 + y as usize] = 1;
+            }
+        }
+    }
+    let rect = crate::population::Rect {
+        x1: 0,
+        x2: 0,
+        y1: 0,
+        y2: 0,
+    };
+    let mut rng = app.combat_rng;
+    let cell = app
+        .revive_cell(rect, (lx, ly), &collision, true, &mut rng)
+        .expect("a free cell inside the leader box");
+    assert!(
+        (cell.0 - lx).abs() <= 2 * crate::constants::timing::WANDER_RADIUS_X,
+        "x {} outside the leader box",
+        cell.0
+    );
+    assert!(
+        (cell.1 - ly).abs() <= 2 * crate::constants::timing::WANDER_RADIUS_Y,
+        "y {} outside the leader box",
+        cell.1
+    );
+    assert_eq!(collision[cell.0 as usize * 160 + cell.1 as usize], 0);
+}
+
+/// `FUN_00414DE4` case 12 sizes the buff from the **current** dexterity
+/// (`+0x56`), not the base stat (`+0x54`), capped at 5.
+#[test]
+fn c2_wine_uses_the_current_dexterity() {    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let wine = alloc(&mut app, 11, 12, 0);
+    app.player.dexterity_base = 60;
+    app.player.dexterity_current = 9;
+    app.player.temp_effect_timer = 0;
+    put_in_first_slot(&mut app, wine);
+    assert!(use_first_slot(&mut app));
+    assert_eq!(app.player.temp_effect_timer, 90, "(9 / 3) * 30");
+    assert_eq!(app.player.dexterity_current, 0, "9 - 3*3");
+    assert_eq!(app.world.res.item_class(wine), Some(0xFF));
+}

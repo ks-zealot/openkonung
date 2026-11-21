@@ -68,12 +68,46 @@ fn an_occupied_cell_blocks_the_line() {
 #[test]
 fn the_walk_is_bounded_by_the_weapon_range() {
     let g = grid();
-    // The melee range value is 1 -> only 8 one-pixel steps: no reach.
+    // A melee sample count of 1 is only 8 samples: no reach.
     assert_eq!(probe(&g, (10, 10), (10, 14), 1), LineOfFire::Blocked);
     // A ranged value reaches the same target.
     assert_eq!(probe(&g, (10, 10), (10, 14), 40), LineOfFire::Clear);
     // Range 0 performs no steps at all.
     assert_eq!(probe(&g, (10, 10), (10, 14), 0), LineOfFire::Blocked);
+}
+
+/// `0x45000C` = 0.25: the dominant axis advances 4 px per sample, not 1 px.
+///
+/// `den = max(|dx|,|dy|) * 0.25 + 0.001`, so a 400 px delta yields a 4 px step
+/// (minus the epsilon term).
+#[test]
+fn the_dda_advances_four_pixels_per_sample() {
+    fn close(got: (f64, f64), want: (f64, f64)) {
+        assert!(
+            (got.0 - want.0).abs() < 1e-3 && (got.1 - want.1).abs() < 1e-3,
+            "{got:?} != {want:?}"
+        );
+    }
+    close(step_for(400.0, 0.0), (4.0, 0.0));
+    close(step_for(0.0, 400.0), (0.0, 4.0));
+    // The dominant axis is chosen from the *scaled* denominators, so a 4:1
+    // delta ratio still gives a 4 px step on the long axis.
+    close(step_for(100.0, 400.0), (1.0, 4.0));
+    close(step_for(-400.0, 0.0), (-4.0, 0.0));
+    // A zero-length delta cannot produce NaN: only the epsilon divides.
+    assert_eq!(step_for(0.0, 0.0), (0.0, 0.0));
+}
+
+/// Four pixels per sample make a long clear row reachable; at the old one-pixel
+/// step the same sample budget covered only a quarter of the distance.
+#[test]
+fn a_long_open_line_is_reachable_within_the_sample_budget() {
+    let g = grid();
+    // 20 cells along `y` is 20*58 = 1160 projected pixels; 40 units give
+    // 320 samples * 4 px = 1280 px.
+    assert_eq!(probe(&g, (10, 10), (10, 30), 40), LineOfFire::Clear);
+    // 10 units give 320 px, which must not reach.
+    assert_eq!(probe(&g, (10, 10), (10, 30), 10), LineOfFire::Blocked);
 }
 
 /// The probe uses a fixed DDA (no RNG), so equal inputs give equal results.

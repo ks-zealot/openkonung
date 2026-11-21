@@ -133,6 +133,20 @@ pub struct EntityStats {
     pub temp_effect_id: u16,
     /// `+0xCE` u16 — temporary-effect timer in logic frames.
     pub temp_effect_timer: u16,
+
+    /// `+0xC4` i16 — armor set bonus written by `FUN_0041C69C` (runtime only,
+    /// recomputed from the equipped items' condition records).
+    #[serde(skip)]
+    pub armor_bonus: i16,
+    /// `+0xC6` i16 — damage set bonus (runtime only).
+    #[serde(skip)]
+    pub damage_bonus: i16,
+    /// `+0xC8` i16 — attack set bonus (runtime only).
+    #[serde(skip)]
+    pub attack_bonus: i16,
+    /// `+0xD1` u8 — add-vs-replace flags for the three bonuses (bits 0/1/2).
+    #[serde(skip)]
+    pub bonus_flags: u8,
 }
 
 /// `Entity[2000]`, stride `0x100` (`KONUNG_SOURCE_OF_TRUTH.md` §5).

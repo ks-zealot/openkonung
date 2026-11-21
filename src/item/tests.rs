@@ -216,3 +216,28 @@ fn class9_price_is_signed_and_uses_charge_count() {
     assert_eq!(inst.current_durability, 7.0);
     assert_eq!(db.instance_trade_value(&inst), 112);
 }
+
+/// `FUN_0042F5F8` class-9 branch: a weak oil/resurrection potion (quality
+/// below 10) is marked `, недостаточная концентрация`.
+#[test]
+fn hover_detail_marks_weak_potions() {
+    let Some((db, _game)) = db_and_game() else {
+        return;
+    };
+    let mut inst = crate::item::ItemInstance {
+        class: 9,
+        condition: -1,
+        modifier_index: -1,
+        subtype: 7,
+        current_durability: 0.0,
+        max_durability: 0.0,
+        quantity: 5.0f32.to_bits(),
+        poison: 0,
+        flags: 0,
+    };
+    let text = db.hover_detail(&inst).unwrap();
+    assert!(text.contains(", недостаточная концентрация"), "{text}");
+    inst.quantity = 10.0f32.to_bits();
+    let text = db.hover_detail(&inst).unwrap();
+    assert!(!text.contains("недостаточная"), "{text}");
+}

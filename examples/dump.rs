@@ -250,12 +250,12 @@ fn main() {
 
         // Phase C1/C2: population selection, runtime placement and per-actor
         // visual resolution. Same contract as the app, without graphics.
-        let collision: Vec<u16> = locs
+        let mut collision: Vec<u16> = locs
             .iter()
             .find(|l| l.loc_id == loc_arg as u32)
             .map(|l| l.collision.clone())
             .unwrap_or_default();
-        let pop = actors::build_population(tables, loc_arg, &collision);
+        let pop = actors::build_population(tables, loc_arg, &mut collision);
         let mut sorted = pop.actors.clone();
         actors::sort_actors(&mut sorted);
         println!(

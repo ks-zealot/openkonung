@@ -228,10 +228,28 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   actor's healing skill (`+0x48`) and gains the row's skill delta (cap 500).
   `FUN_0041DAB0` potion effects (subtypes 4..13) are implemented in
   `inventory::use_item` with the `+0xBC..+0xC2` saved stats and `+0xCA/+0xCE`
-  temporary-effect fields. Cursor operations: click to lift, click to place,
+  temporary-effect fields (subtype 8 cures `periodic - quality*10` only while
+  poisoned, subtypes 7/13 need quality >= 10, subtype 11 sets the ground
+  highlight, subtype 13 revives with placement). Equipped items also drive the
+  **condition-bonus recalculation** (`FUN_0041C69C`, `src/character/effects.rs`):
+  every identified instance whose `+0x01` condition is `>= 0` contributes the
+  three `(stat, op, i16 value)` triples of the 16-byte record at `0x458530`
+  (`active &= op`; a cleared byte replaces, otherwise the value adds), the entity
+  bytes `+0xD2`/`+0xD3` are two more condition indices, the derived
+  `*_base` stats and HP are rewritten from the stored `*_current` ones, and
+  stats 7/8/9 fill `+0xC4/+0xC6/+0xC8` (armor/damage/attack set bonuses) with the
+  `+0xD1` add flags. `PlayableApp::recompute_*_effects` runs it on game start,
+  save load, map entry, equip/deposit/craft, potion and class-11 stat ops, stat
+  raises, the 16-frame temporary-effect pass and the role-4 distribution's
+  requirement check. `0x41B1A4` (`requirement_stat_value`) maps 1/3 charisma,
+  2 dexterity, 4 HP/16, 5 strength, 6 endurance, 7 armor, 8 damage rating,
+  9 attack rating and reads the **derived** fields; `FUN_00410B08` costs use the
+  stored `*_current` ones and return 0 while `Entity+0xCE != 0`. Cursor operations: click to lift, click to place,
   left-click world to drop (`FUN_004138C8`), right-click strip to use, drag with
   the left button for equipment/member/ground drops. Automatic stacking is
-  class-12 only (faithful). The full `FUN_0041D048` settlement block is
+  class-12 only and **only** on the explicit cursor/deposit paths; pickup
+  (`FUN_004110EC`) and give-held (`FUN_00424410`) always front-insert without
+  merging, exactly like the original. The full `FUN_0041D048` settlement block is
   implemented (`app/settlement_pass.rs`, once per 16 original frames,
   `(frame + 7) & 0xF == 0`, for **all 20 settlements**): the worker count
   (`free = visual<3 visible`, minus role apprentices and waypoint owners; 0 when
@@ -240,9 +258,18 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   the `FUN_0041B658` power-ratio defeat (`>= 2.0`, `DEFEAT<loc>.FLM`), the
   `+0x14` money-pool event (`0x2760` passes, `sqrt(leader.trade)`), the target
   timer/state pass (`app/settlement_targets.rs`, live `FUN_004172AC` prop
-  update, `local_30`), role-2/role-4 restock (`app/settlement_trade.rs`), and
+  update from the game RNG: start frame `rand() % frame_count`, FLAMES phases
+  `rand() % (max-min+1) + min`, no draw when a dimension is 1, `local_30`),
+  role-2/role-4 restock (`app/settlement_trade.rs`), and
   the `FUN_00417F84` voivode/barracks training (`app/settlement_training.rs`,
-  skipped when `local_30` is set). Producer slots are the settlement waypoint
+  skipped when `local_30` is set). The target rule is
+  **skip only `state == 6 && workers >= 1`**; every other idle target resets to
+  state 0 and is re-armed with `value*60/workers` (so shipped states `0/2/3`
+  restart construction and completed state-6 targets stay until the workers
+  drop to 0). Temporary effects (`Entity+0xCE`) are counted once per 16-frame
+  pass for the leader, the party and every cached population — `0x41D048`
+  phase A handles non-object groups and `0x41BD3C` every object group, neither
+  filtered by location. Producer slots are the settlement waypoint
   owners (`+0x3DA/+0x3E2/+0x3EA/+0x3F2` = `waypoint[1..4].owner`), exposed as
   `Settlement::producer(slot)`/`voivode()`; `SettlementTrade::prod_role*` only
   mirrors them for save/legacy export. Waypoint `+1` is the **authored role
@@ -294,8 +321,10 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   dispatch the original VK codes; `F1/F2` are the resolution diagnostics and
   `Ctrl+I`/`Ctrl+E` the legacy snapshot import/export. `FUN_0041EB48` adjacent
   retaliation is implemented for the leader and companions: an idle unit
-  acquires an adjacent object-family actor already targeting it and enters
-  battle stance, so a party walking through an aggroed group fights back.
+  (no engage order, `Entity+0x02 & 9 == 0`) acquires an adjacent actor of
+  **another group** that still holds its engage order and targets it, then enters
+  battle stance - so a party walking through an aggroed group fights back. There
+  is no object-family filter: any other-group actor qualifies.
   **Persistent engage order / chain kills (implemented):** `FUN_0041E2D4`
   (called from `FUN_0041ECC8` while `Entity+0x02 & 0x01` is set and the
   approach bit `0x04` is clear) re-acquires after every kill instead of
@@ -419,7 +448,9 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `round(16*(1+(incoming*0.3+max(0,incoming*0.7-armor))/endurance))`; facing
   dodge `0x450DB4`; armor/weapon durability scales `0.001`/`0.0001`). Right-click
   an actor issues order `0x44/0x41` only to selected units already in battle
-  stance (`Entity+0x03 & 4`), never a move. Melee resolves on the last
+  stance (`Entity+0x03 & 4`), never a move. The dialogue branch also requires
+  **no Shift** (`_DAT_0081D624`), so Shift+right-click on a talkable NPC issues
+  the attack order instead of opening the dialogue. Melee resolves on the last
   attack-animation frame; death rows `3`/`9` hold their final frame. Every 16
   logic frames `hp -= periodic_damage`. Corpse markers reproduce
   `FUN_00418480`: money + up to 22 inventory ids + a class-9 subtype-0
@@ -430,12 +461,19 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   action row `4` spawns an arrow on frame `count-6`; bow = `Equipment[1]`,
   ammo = `Entity+0xCC` (class 12, `+0x04` quantity, decremented per shot, zero
   clears the slot); bow durability `-0.1` per shot and breaks at zero. Damage =
-  `(bow modifier vs target archetype or bow rating) * bow rating`, then the
+  `(ammo modifier-table entry vs the target archetype, else the ammo subtype
+  rating) * bow rating` plus the shooter's `+0xC6` set bonus; `FUN_0041BF44`
+  copies the **ammo** instance's modifier/subtype/poison and the **bow's**
+  class rating into the projectile. The hit value (`FUN_0041B42C`) is
+  `100 - (100 - 0.5*dex)/(1.5 + 0.00015*skill)`, the archery branch multiplied
+  by `0.7*(1 + distance/bow_range)`, plus the temp id and the `+0xC8` set bonus
+  (`combat::reaction_of`), then the
   same armor/endurance mitigation; dodge `rand()%101 <= dex_base*0.5`.
   Projectiles use the original 100-entry pool, 8 sub-steps/frame, INTR sprites
   `184 + 2*facing`, and stop on blocked terrain/actors (friendly fire). A ranged
-  kill also gives `power/4` money + `power` archery mastery and passes `power`
-  as corpse-loot bonus. Right-clicking a prop targets it only with plain ammo
+  kill pays `power/4` **experience** + `power` archery mastery and passes `power`
+  as corpse-loot bonus (the old money payout was wrong: money on a body is loot).
+  Right-clicking a prop targets it only with plain ammo
   (`+0x02 == 0`); a blocked-cell pixel hit triggers settlement target state
   `+1=3`/`+6=1` (21%), `+0x4B2 |= 0x15`, and wakes settlement group `+0x02`.
   Fired arrows are **not** recoverable; lootable arrows are the victim's own
@@ -511,7 +549,10 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   the highlight font (`0x58B8F0`) for the selected option (line advance 15 px via
   `FUN_0042BD8C`). A right-click on any other actor (monster / non-talkable
   human) falls through to a move; the original instead issues an attack/order to
-  the party there (unimplemented). Escape closes.
+  the party there (unimplemented). Escape closes. **`T` (VK `0x54`) toggles
+  `_DAT_0081D614`** (`PlayableApp::dialog_background_tiled`): with it set the
+  window tiles the `INTR[5]` stone; with it clear `FUN_00430430` draws nothing
+  and the largely transparent frame shows what is behind it.
   Condition/action programs are **executed** by `script.rs` (framework) +
   `app/dialogue_exec.rs` + `app/dialogue_ops.rs`: the `B4` condition evaluator
   (`FUN_00434FE8`, an AND of group-start terms `0x4000`, `0x8000` negates,
@@ -556,7 +597,9 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   (`+0x56/+0x5A/+0x60/+0x64`) below the voivode raised by one through the
   `0x45AFB0` cost table paid from a temporary `+1000` XP grant, level +1 again,
   then melee/archery mastery `+= (voivode - own)/deficit + 1` and the
-  `FUN_0041C69C` no-effect recalc. See `SETTLEMENT_TRAINING.md`.
+  `FUN_0041C69C` recalc (`character::effects`, which also fills the `+0xC4`/
+  `+0xC6`/`+0xC8` set bonuses and is re-run by the 16-frame temporary-effect
+  pass). See `SETTLEMENT_TRAINING.md`.
 - Trading (**implemented**, `trade.rs` + `trade_screen.rs` + `app/trade.rs`):
   dialogue `0x113` (`FUN_00431E2C`) opens interface mode 7. Four 32-slot rows
   (`0x81CB24`): player bag/offer, partner stock/offer. Cell clicks move the
@@ -569,11 +612,25 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   (role 2, 24), `+0x444` (role 3, 32) or `+0x484` (role 4, 23) and **destroy**
   sold instances (`class = 0xFF`). Trade skill rises by
   `(table_money + sell_value) / 1024`. `app/settlement_trade.rs` restocks role 2
-  (`FUN_004175FC`, herbs/potions) and role 4 (`FUN_004179C8`, equipment,
+  (`FUN_004175FC`, potions/poisons through craft rows `(2,3)->5`, `(0,3)->6`,
+  `(1,3)->7`, quality `healing*0.01`) and role 4 (`FUN_004179C8`, equipment,
   including the full-stock branch that moves stock onto settlement group
-  members and destroys lower-subtype gear). Role 3 has no producer: the
-  per-frame `FUN_0041D048` calls only roles 2/4/5, so it is faithfully
-  buy-only. Full trace: `TRADE_SYSTEM.md`; tests `trade/tests.rs`,
+  members and destroys lower-subtype gear; production delay
+  `round(level*60/sqrt(smithing))`, skill `round(sqrt(s^2+q/24))`). Role 3 has
+  no producer, but it is **not** empty: `FUN_00418E6C` (called from the map
+  loader `FUN_0043ADF0`) seeds the stock of every settlement of the location on
+  entry — 1–3 empty jars into role 2, and the 32-slot role-3 ladder (class
+  6/7/8 goods, class-11 trinkets, weapon/armor suits with the
+  `FUN_004170E0`/`FUN_00417190` kits and their condition rolls). Ported as
+  `app/settlement_stock.rs`, called from `ensure_population` with the location
+  RNG. Role 3 is therefore a real buy-only merchant, not an empty window.
+  **Ground-container window (`FUN_00417010`)**: when a pickup refuses an item
+  because of weight or a full bag, the remake opens the same exchange with the
+  ground pile as the partner (`start_ground_trade`): rows 0/1 are the player
+  bag/offer, rows 2/3 the pile, no NPC, no partner money and no settlement
+  multiplier. Confirm writes the remaining stock back into the `WorldObject`
+  and finalizes an emptied pile; cancel returns the offers unchanged.
+  Full trace: `TRADE_SYSTEM.md`; tests `trade/tests.rs`,
   `app/tests/trade.rs`; headless `tools/trade_smoke.mjs`.
 - Party system (**implemented**, `app/dialogue_exec.rs` + `hud`): the party is the
   original reserved **group 0** (cap 10); `PlayableApp.party` holds recruited
@@ -685,7 +742,7 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
 - Ground shadows (**implemented**): the original has no dirty-rectangle system;
   it keeps 600 per-scanline run lists (`DAT_004C6B50`). `FUN_0043C040` clips a
   sprite-shaped RLE mask into them and `FUN_0043D247` halves the colour of
-  every accumulated pixel — the actor/projectile **shadow** pass, gated by the
+  every accumulated pixel - the actor/prop **shadow** pass, gated by the
   `shadows` config word (`0x81D620`). `render/spans.rs` ports both
   (`add_mask`/`darken`); `res/shadows.rs` resolves the masks. GRAPH frame
   records are `{u32 shadow_offset, u32 sprite_offset}` at
@@ -694,17 +751,25 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   shadow anchor while its second pair is the sprite anchor. `draw_detail`
   collects the body mask plus one mask per equipped overlay
   (`overlay_plan` order, `0x424ED0`) after terrain/props and darkens before the
-  sprite depth blit. Deviations: plain RGBA8 halving instead of the 16-bit
-  `(c & 0xF7DF) >> 1`, no run budget, and projectile shadows are not ported
-  (INTR sprites carry no dedicated shadow mask). `node tools/shadow_smoke.mjs`.
+  sprite depth blit. **Props cast shadows too**: `FUN_00426384` then walks the
+  prop pool and adds each prop's frame mask (object record `+0x80 + frame*8`
+  offset, `+0xC0 + frame*8` anchors, payload at `+0x100`), skipped when the
+  prop has >= 2 flame parts (`+0x08`) or a `-1` offset (`Res::add_prop_shadow`).
+  The frame's run pool is `0x5076D8 = 0x2EDE` (11998 runs). `darken` uses the
+  exact 16-bit arithmetic: recover the 555 palette word, convert to 565
+  (`(c & 0x7FE0) << 1 | c & 0x1F`, the same `0x427A3C` the original applies to
+  its palette table at 16bpp), halve with `(c & 0xF7DF) >> 1`, expand back.
+  Projectiles cast no shadow (the pass never walks their pool).
+  `node tools/shadow_smoke.mjs`.
 - Actor gear refresh (**implemented**): `inventory::auto_equip_slot` /
-  `refresh_equipment` port `FUN_004104D4`/`FUN_004105A0` — on each AI tick every
-  non-party human fills its empty ammo slot (`+0xCC`, class 12) and then slots
-  `0,1,3,4,5,2` from the inventory (class == slot, `FUN_004182D4`
-  requirement), consuming the entry, and recomputes `Entity+0x12`
-  (bow -> 1, slot 0 -> 0, else 2). `app::refresh_npc_equipment` runs it before
-  `update_world_ai`. Deviation: object-family actors are skipped because
-  `Entity+0x12` is their authored M/O walk delay there.
+  `refresh_equipment` port `FUN_004104D4`/`FUN_004105A0` - fills the empty ammo
+  slot (`+0xCC`, class 12) and then slots `0,1,3,4,5,2` from the inventory
+  (class == slot, `FUN_004182D4` requirement), consuming the entry, and
+  recomputes `Entity+0x12` (bow -> 1, slot 0 -> 0, else 2). It is called from
+  the **wake frame** only: a non-object member of a woken group that is still at
+  peace refreshes its gear, charges **one** AI action (`_81D5F0++`), enters
+  battle stance and idles for that frame (`FUN_00412E00` / `FUN_004168A4`,
+  implemented inline in `update_world_ai`). There is no per-tick batch pass.
 - Movies (**implemented**): the shipped `Video\*.flm` are RIFF AVI with Indeo
   Video 5 (`IV50`, 640x360, 12 fps) + PCM audio, which browsers cannot decode.
   `tools/transcode_videos.py` converts them to H.264/AAC MP4 with ffmpeg;
@@ -748,6 +813,19 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `index = x*160 + y`; expanded to `u16` where low 12 bits `== 0` means free. It is
   the same runtime/Entity grid, so it is applied to player and NPC movement (route
   search + per-cell passability). Truncated Konung.N now fails boot.
+- **Runtime actor occupancy (implemented).** `World::collision`/`collision_mut`
+  keep a live per-location copy of the Konung.N table and merge actor occupancy
+  into the same `u16` exactly like `FUN_0041435C`/`0x43B43B`: on entering a cell
+  `collision[cell] |= entity_index + 1`, on leaving/dying `&= 0xF000`. The marker
+  is one-based (leader entity 0 -> `1`). `actors/occupancy.rs` owns the pure
+  marker layer; `app/occupancy.rs` rebuilds it on map entry/save load and marks
+  the party/leader. `begin_actor_segment` and `begin_player_segment` re-check the
+  destination at the walk-segment commit: blocked by the ordered target
+  (`ActorMotion::target_marker`, the `+0x06` one-based id) -> contact attack;
+  blocked by anything else -> stop on the current cell, clear the direction queue
+  and let the AI re-route. Plain-move paths therefore never enter an actor's cell,
+  and a bump cannot wake a group whose rectangle A is that cell (e.g. Sigmar,
+  Game.1 entity 539, group 65).
 - **Movement / pathfinding (verified, `konung.res`).** A world click handler
   (`FUN_0042260C` command 0) stores the destination **inline** on every selected
   unit (`0x81A814`, `[0] = _DAT_0081D56C`) — `Entity+0x0C/+0x0E` = clicked cell,
@@ -774,7 +852,23 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `coords.rs::step_by_direction` (`FUN_0043D922`). Edge weights: dirs 1/3/5/7 cost 10,
   dirs 0/2/4/6 cost 14. `FUN_004123BC` consumes one cell per completed walk cycle and
   requires `facing (Entity+0x01) == queue head` first, so a straight walk keeps a
-  constant facing (the old BFS-cell + `atan2` facing produced the zigzag). Facing a
+  constant facing (the old BFS-cell + `atan2` facing produced the zigzag).
+  **Turning** (`FUN_00438090`): while the facing differs from the queue head the
+  unit turns one 45-degree step per logic frame (`diff = (dir - facing) & 7`,
+  `diff < 5` clockwise else counter-clockwise, wrapping 0..7) and consumes no
+  cell. `coords::turn_toward` implements it; `ActorMotion::turning` keeps
+  `walking` set so the movement tick keeps servicing the actor
+  (`advance_motion_walk`/`_cycle`, `update_population`), and the protagonist has
+  its own per-frame turn gate in `update_player`. The citizen station/home
+  facing also turns one step per tick instead of snapping.
+  **Walk-on transitions (`0x421964`):** the leader's cell is tested against the
+  `Game.N +0x29600` transition table (`edges.rs`, 250 x 17 bytes); the lowest
+  `rec` whose trigger rectangle contains the cell activates the link with the
+  record's `+0x05/+0x07` arrival and `+0x02` facing (`meta & 7`). The record
+  whose table slot equals the current location's **settlement index** is the
+  arrival door and is suppressed while `Settlement+0x3E != 3` (all shipped
+  states are 0), so the party does not bounce back through the door it just
+  used. Facing a
   target uses `FUN_0043897C` → `coords.rs::direction_from_cells`. The remake ports
   this as `actors.rs::find_path`, `ActorMotion.path: Vec<u8>` and
   `app.rs::player_path: Vec<u8>`.
@@ -832,17 +926,39 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   nearest-unengaged-then-nearest `0x43/0x45/0x46/0x4C/0x55`, plain nearest for
   `0x47..0x4B`, `0x4E`, `0x50..0x54`, `0x56` and other object archetypes.
   Citizen groups (`FUN_004168A4`) use plain nearest. Armed archers
-  (`Entity+0x12 == 1`, melee weapon in slot 0 and ammo in `+0xCC`) are gated by
-  the `FUN_0041130C` line-of-fire probe (`combat/los.rs`, port of
-  `FUN_00410E84`): every candidate must be reachable by the unit-step DDA over
-  the collision grid (`8 * u16@0x459B84 + subtype*0x40` samples, start nudge
-  from `0x45ACD0[dir]`, aim `0x1E` px above the target projection, walls
-  `0xC000` and occupants `!= 0/0xFFF` block, `< 3` cells returns `-1`). The
+  (`Entity+0x12 == 1`, bow in `equipment[1]`/`Entity+0x68` and ammo in `+0xCC`)
+  are gated by the `FUN_0041130C` line-of-fire probe (`combat/los.rs`, port of
+  `FUN_00410E84`): a candidate must be reachable by the DDA over the collision
+  grid (`8 * u16@0x459B84 + bow-subtype*0x40` samples, start nudge from
+  `0x45ACD0[dir]`, aim `0x1E` px above the target projection, step
+  `delta / (max(|dx|,|dy|)*0.25 + 0.001)` i.e. **4 px/sample**, walls `0xC000`
+  and occupants `!= 0/0xFFF` block, `< 3` cells returns `-1`; a failed pick
+  falls back to the plain nearest enemy). `FUN_004123BC` case 5 (melee) also
+  ends with the post-attack step-aside (`0x4101E4`): **only archetype `0x49`**
+  draws `rand()%4`, probes `cell +/- (2*20, 9)` with a slide to the positive bound
+  and, on success, issues `FUN_004142D4(cell+offset, 8)`, which writes the whole
+  order byte (target/engage dropped); every other archetype advances its action
+  (`app/combat/approach.rs`, `post_attack_reposition`). A kill pays
+  `power/4` **experience** (`FUN_0041079C`, `character/xp.rs`; AUTO spends it
+  through `FUN_00410B08`) plus `power` into melee `+0x40` or archery `+0x44`
+  mastery (`award_kill_reward`); money on a body is corpse loot, not a reward.
+  The `+0x02 & 4` ranged branch
+  re-probes **every cycle** (`FUN_0041ECC8`): `>0` plays row 4, `<0` clears bit 4,
+  otherwise the target is dropped (a companion/world unit keeps the order and
+  retries; the leader clears it). `CombatTarget::Prop` targets are exempt - a
+  prop is a mouse-path target, not an `Entity+0x06` one. The
   relation pass reads the
   live `ActorMotion.cell` (not the authored Entity x/y) and skips hidden/corpse
   members, matching `FUN_00412C30`. `Group+0x1A` is parsed from `Game.N` and
-  rehydrated on save load; activity is already in `SaveExtra`. `0x20` only
-  returns members to rectangle A (invalid authored rectangles are skipped).
+  rehydrated on save load; activity is already in `SaveExtra`. Activity `0x20`
+  (recall) chases the nearest party member **inside the group's rectangle A**
+  when the member still holds its engage order, and otherwise walks it to a
+  **random cell inside rectangle A**
+  (`rand()%2` sign + one `rand()%((dim-1)/4)` per axis, then a forward free-cell
+  scan, `FUN_004142D4(...,8)`); invalid authored rectangles are skipped.
+  `FUN_00412E00` also returns early for archetypes `0x51`/`0x52`/`0x53`, and a
+  woken citizen is forced into battle stance + idle for its entry frame before it
+  may acquire.
   Role-station waypoints (archetype `0x38` → waypoint slot 1..3) are handled
   before the home waypoint, so a `0x162` apprentice walks to the master's
   workstation. Citizen groups keep their existing wander
@@ -852,6 +968,20 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   ceiling (`Res::entity_raw_d7`), applied at each walk-cycle boundary.
   `update_world_combat` now resolves `CombatTarget::World` cells/death state, so
   autonomous melee/ranged world actors and world-vs-world targets work.
+  **AI schedule (`FUN_004116CC`, implemented):** one logic frame charges at most
+  **three** AI actions (`_DAT_0081D5F0 < 3`) and serves a unit only when it sorts
+  after the round-robin cursor (`_DAT_0081D568`; `FUN_00421B50` clears the budget
+  at entry and resets the cursor at exit when the frame served nobody).
+  `app/combat/schedule.rs::AiSchedule` models it exactly (one-based order keys,
+  because the original compares entity addresses); `combat_tick` opens/closes the
+  frame and runs **group 0 first**, `update_player_combat`/`update_party_combat`
+  gate acquisition + retaliation per unit, `update_world_ai` gates each member in
+  group/member order, and the armed pick (`FUN_00410E84`) + every line-of-fire
+  probe charge one. The cursor reset reproduces the original stutter: the frame
+  after a unit acted skips units below its order; movement/animation are not
+  gated. The wake-frame equipment refresh (`FUN_004105A0`) charges one action.
+  Not yet charged: the citizen AI (`0x416D62`, separate timer) and the follower
+  timer (F-AI-13). `debug_combat_state` reports `ai_actions`/`ai_cursor`.
 
 ## Package F: growth, character screen, audio, legacy saves (implemented)
 - **Population growth** (`src/actors/growth.rs`): `FUN_00420A8C` runs only from

@@ -1543,10 +1543,15 @@ and the caller places again. Growth state (`+0x02`/`+0x06`) is persisted in
 
 Actors OR their entity index into the collision `u16` and clear it on leaving
 (§8.1). `FUN_0043da1f` accepts a blocked destination only when
-`(cell & 0x0FFF) == Entity+0x06`. **Implemented**: `find_path_with_exception`
-accepts a blocked goal only when the cell's low 12 bits are non-zero, not
-`0xFFF`, and equal the ordered target id (`Entity+0x06`); the order low bits are
-non-zero. Ordinary `find_path` remains the no-exception form.
+`(cell & 0x0FFF) == Entity+0x06`. **Implemented**: `World::collision` /
+`collision_mut` keep the live per-location table; `actors/occupancy.rs` uses the
+one-based marker `entity_index + 1`; placement (`build_population`/growth),
+party arrival, map entry and save load mark actors; the walk-segment commit
+(`begin_actor_segment`, `begin_player_segment`) stops on a blocked cell or, when
+the blocker is the ordered target, converts the step into a contact attack.
+`find_path_with_exception` still accepts a blocked goal only when the cell's low
+12 bits are non-zero, not `0xFFF`, and equal the ordered target id; ordinary
+`find_path` remains the no-exception form.
 
 ## 28.3 Entity-type activity table `0x81B954`
 

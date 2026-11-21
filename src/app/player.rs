@@ -11,9 +11,9 @@ impl PlayableApp {
         start: (i32, i32),
         goal: (i32, i32),
     ) -> Option<Vec<u8>> {
-        let l = self.world.loc(self.current_map)?;
+        let collision = self.world.collision(self.current_map)?;
         find_path(
-            &l.collision,
+            collision,
             &HashSet::new(),
             start,
             goal,
@@ -30,23 +30,69 @@ impl PlayableApp {
     /// take the draw projection (`+0xE8`) from the CURRENT cell at entry, then
     /// commit one cell step into `+0x08/+0x0A` and reset the frame counter. The
     /// stored cell therefore leads the drawn sprite by one step.
+    ///
+    /// The committed destination is re-checked against live actor occupancy.
+    /// A blocked plain move stops on the current cell and sets
+    /// [`Self::player_blocked`] for the next-tick re-route; a blocked step into
+    /// the ordered attack target becomes a contact attack (the target is left
+    /// adjacent in place, and the next combat tick resolves the hit).
     pub(super) fn begin_player_segment(&mut self) {
         let Some(&dir) = self.player_path.first() else {
             return;
         };
+        // `FUN_004123BC` gate: a step is only committed when the facing equals
+        // the queue head. `update_player` turns one step per logic frame and
+        // calls this again once aligned.
+        if self.player_dir != dir as i32 {
+            return;
+        }
+        let old = (self.player_x.round() as i32, self.player_y.round() as i32);
+        let (nx, ny) = step_by_direction(old.0, old.1, dir);
+        let loc = self.current_map;
+        let leader = self.leader_entity_index;
+        let (free, occupant) = {
+            let Some(collision) = self.world.collision_mut(loc) else {
+                self.player_path.clear();
+                self.player_active = false;
+                return;
+            };
+            let free = crate::actors::is_free(collision, nx, ny);
+            let occupant = crate::actors::occupancy::occupant(collision, (nx, ny));
+            if free {
+                crate::actors::occupancy::vacate(collision, old);
+                crate::actors::occupancy::occupy(collision, (nx, ny), leader);
+            }
+            (free, occupant)
+        };
         self.player_render_x = self.player_x;
         self.player_render_y = self.player_y;
         self.player_dir = dir as i32;
-        let (nx, ny) = step_by_direction(
-            self.player_x.round() as i32,
-            self.player_y.round() as i32,
-            dir,
-        );
-        self.player_x = nx as f64;
-        self.player_y = ny as f64;
-        self.player_path.remove(0);
+        if free {
+            self.player_x = nx as f64;
+            self.player_y = ny as f64;
+            self.player_path.remove(0);
+            self.player_step_t = 0.0;
+            self.player_active = true;
+            self.player_blocked = false;
+            return;
+        }
+        // Blocked: the original clears the direction queue (`+0x13 = 0xFF`)
+        // and either stops or converts the step into a contact attack.
+        self.player_path.clear();
+        self.player_active = false;
         self.player_step_t = 0.0;
-        self.player_active = true;
+        self.player_render_x = self.player_x;
+        self.player_render_y = self.player_y;
+        let ordered = self
+            .player_attack_target
+            .and_then(|t| self.combat_target_marker(t));
+        if ordered.is_some() && ordered == Some(occupant) && occupant != 0xFFF {
+            self.player.flags_b |= crate::anim::FLAG_BATTLE;
+            self.target = Some((nx as f64, ny as f64));
+            self.player_blocked = false;
+        } else {
+            self.player_blocked = true;
+        }
     }
 
     /// The runtime/entity cell under a window-space pointer, or `None` when the
@@ -93,12 +139,19 @@ impl PlayableApp {
 
     /// Test-only: place the protagonist on a runtime cell and settle the camera.
     pub fn debug_set_player_cell(&mut self, x: i32, y: i32) {
+        let loc = self.current_map;
+        let old = (self.player_x.round() as i32, self.player_y.round() as i32);
+        if let Some(collision) = self.world.collision_mut(loc) {
+            crate::actors::occupancy::vacate(collision, old);
+            crate::actors::occupancy::occupy(collision, (x, y), self.leader_entity_index);
+        }
         self.player_x = x as f64;
         self.player_y = y as f64;
         self.player_render_x = self.player_x;
         self.player_render_y = self.player_y;
         self.player_path.clear();
         self.player_active = false;
+        self.player_blocked = false;
         self.player_step_t = 0.0;
         self.target = None;
         self.player_attack_target = None;
@@ -127,10 +180,7 @@ impl PlayableApp {
         let Some(pop) = population_cache.get_mut(&loc) else {
             return;
         };
-        let collision = world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        let collision = world.collision_mut(loc).unwrap_or(&mut []);
         let settlement = settlements.iter().find(|s| s.loc_id as u32 == loc);
         update_population(pop, collision, settlement, dt);
     }
@@ -178,8 +228,64 @@ impl PlayableApp {
         if self.player.dead {
             return;
         }
+        // `FUN_0041ECC8`: a blocked step set `+0x02 |= 0x40` and cleared the
+        // direction queue; the next idle tick re-runs `FUN_0043DA1F` from the
+        // committed cell. The runtime collision now contains the blocker, so the
+        // new route detours around it.
+        if self.player_blocked {
+            self.player_blocked = false;
+            if let Some((tx, ty)) = self.target {
+                let goal = (tx.round() as i32, ty.round() as i32);
+                let cur = (self.player_x.round() as i32, self.player_y.round() as i32);
+                if cur == goal {
+                    self.target = None;
+                } else {
+                    match self.compute_player_path(cur, goal) {
+                        Some(p) if !p.is_empty() => {
+                            self.player_path = p;
+                            self.begin_player_segment();
+                        }
+                        _ => {
+                            self.target = None;
+                            self.player_path.clear();
+                            self.player_active = false;
+                            self.player_step_t = 0.0;
+                            self.player_render_x = self.player_x;
+                            self.player_render_y = self.player_y;
+                        }
+                    }
+                }
+            }
+        }
         self.anim_time += dt;
         self.teleport_cooldown = (self.teleport_cooldown - dt).max(0.0);
+
+        // `FUN_00438090` facing gate: while the direction queue head is not the
+        // current facing, turn one 45-degree step per logic frame and consume no
+        // cell; once aligned the walk starts on that same tick.
+        if let Some(&head) = self.player_path.first() {
+            if self.player_dir != head as i32 {
+                self.player_turn_t += dt.max(0.0);
+                let turn_period = 1.0 / LOGIC_TICK_HZ;
+                if self.player_turn_t >= turn_period {
+                    self.player_turn_t = 0.0;
+                    let mut facing = self.player_dir as u8;
+                    crate::coords::turn_toward(&mut facing, head);
+                    self.player_dir = facing as i32;
+                    self.player_active = false;
+                    self.player_step_t = 0.0;
+                    self.player_render_x = self.player_x;
+                    self.player_render_y = self.player_y;
+                }
+            } else {
+                self.player_turn_t = 0.0;
+                if !self.player_active {
+                    self.begin_player_segment();
+                }
+            }
+        } else {
+            self.player_turn_t = 0.0;
+        }
 
         // Movement is driven by the direction queue (`FUN_0043DA1F` →
         // `Entity+0x13`), not by the raw target. One completed walk-animation
@@ -250,14 +356,36 @@ impl PlayableApp {
                     }
                 }
             }
-            if let Some((_, ei)) = best {
-                let e = self.edges[ei].clone();
-                let dst = e.to;
-                let facing = self.player_dir;
-                if !self.travel_to_map(e.from, dst, e.arrival()[0], e.arrival()[1], facing, e.rec) {
-                    // The transition fired but its destination Konung.N is not
-                    // loaded; keep the trigger from retrying every frame.
-                    self.teleport_cooldown = 0.9;
+            if let Some((rec, ei)) = best {
+                // `0x421964`: the location's settlement suppresses the record
+                // whose table slot equals its own index — the door the party
+                // arrived through. The original guard is
+                // `settlement[+0x3E] != 3 && state >= 0`; every shipped
+                // settlement stores 0 there, and the remake does not model the
+                // byte, so the guard is always active for the shipped data.
+                let arrival_door = self
+                    .settlements
+                    .iter()
+                    .any(|s| s.loc_id as u32 == self.current_map && s.index == rec);
+                if !arrival_door {
+                    let e = self.edges[ei].clone();
+                    let dst = e.to;
+                    // `+0x02` is the record's facing: `0x421964` copies it into
+                    // the leader group's arrival facing, so the walk-on path must
+                    // use it like the world-map path does.
+                    let facing = (e.meta & 7) as i32;
+                    if !self.travel_to_map(
+                        e.from,
+                        dst,
+                        e.arrival()[0],
+                        e.arrival()[1],
+                        facing,
+                        e.rec,
+                    ) {
+                        // The transition fired but its destination Konung.N is
+                        // not loaded; keep the trigger from retrying every frame.
+                        self.teleport_cooldown = 0.9;
+                    }
                 }
             }
         }
@@ -286,6 +414,7 @@ impl PlayableApp {
         // Original mode-0 map entry rebuilds the population and applies growth;
         // cached motion from the previous visit must not suppress that pass.
         self.population_cache.remove(&dst);
+        self.world.reset_collision(dst);
         self.player_x = ax as f64;
         self.player_y = ay as f64;
         self.player_render_x = ax as f64;
@@ -304,11 +433,16 @@ impl PlayableApp {
         self.target = None;
         self.player_path.clear();
         self.player_active = false;
+        self.player_blocked = false;
         self.player_step_t = 0.0;
         self.player_interact = false;
         self.reset_object_group_activity();
         self.apply_settlement_props();
         self.rebuild_world_objects();
+        // Rebuild NPC occupancy on the destination before the first move can
+        // start; companions snap onto the arrival cell and are re-marked too.
+        self.ensure_population(dst);
+        self.rebuild_occupancy(dst);
         self.dialog = None;
         self.teleport_cooldown = 0.9;
         self.fit_detail();

@@ -37,6 +37,51 @@ pub struct Span {
 /// Inclusive viewport clip rectangle `(x0, y0, x1, y1)`.
 pub type Clip = (i32, i32, i32, i32);
 
+/// `FUN_0043E4B7`: one frame's run capacity (`0x5076D8 = 0x2EDE`). When the
+/// budget is exhausted `FUN_0043C040` emits no further runs for that frame.
+pub const RUN_BUDGET: usize = 0x2EDE;
+
+/// Expand a 5-bit channel to 8 bits (`(v << 3) | (v >> 2)`).
+#[inline]
+pub fn expand5(v: u16) -> u8 {
+    (((v & 31) << 3) | ((v & 31) >> 2)) as u8
+}
+
+/// Expand a 6-bit channel to 8 bits (`(v << 2) | (v >> 4)`).
+#[inline]
+pub fn expand6(v: u16) -> u8 {
+    (((v & 63) << 2) | ((v & 63) >> 4)) as u8
+}
+
+/// Recover the 5-bit palette channel from an 8-bit `*255/31` expansion.
+#[inline]
+fn collapse5(c: u8) -> u16 {
+    ((c as u32 * 31 + 127) / 255) as u16
+}
+
+/// `FUN_00427A3C` (the 16bpp palette conversion, `0x43A31C`): a 555 palette
+/// word becomes a 565 screen word with `(c & 0x7FE0) << 1 | (c & 0x1F)`.
+#[inline]
+pub fn palette555_to_565(p: u16) -> u16 {
+    ((p & 0x7FE0) << 1) | (p & 0x1F)
+}
+
+/// `FUN_0043D247`: halve one screen pixel, in 565.
+///
+/// The framebuffer holds the `*255/31` expansion of the 555 palette, so the
+/// palette word is recovered, converted to 565 exactly like the original's
+/// 16bpp path, halved with `(c & 0xF7DF) >> 1`, and expanded back.
+#[inline]
+pub fn darken_pixel(rgb: [u8; 3]) -> [u8; 3] {
+    let p = (collapse5(rgb[0]) << 10) | (collapse5(rgb[1]) << 5) | collapse5(rgb[2]);
+    let d = (palette555_to_565(p) & 0xF7DF) >> 1;
+    [
+        expand5(d >> 11),
+        expand6((d >> 5) & 63),
+        expand5(d & 31),
+    ]
+}
+
 /// `FUN_0043C040`: append one sprite-shaped mask's opaque runs to `out`.
 ///
 /// `(x, y)` is the screen origin of the mask (its own anchor already applied).
@@ -95,6 +140,11 @@ pub fn add_mask(
             let x1 = (x + cursor + count - 1).min(clip.2);
             cursor += count;
             if x0 <= x1 {
+                // `0x5076D8`: the frame's run budget; once exhausted the
+                // original stores nothing more.
+                if out.len() >= RUN_BUDGET {
+                    return out.len() > before;
+                }
                 out.push(Span {
                     row: screen_row,
                     x0,
@@ -108,9 +158,9 @@ pub fn add_mask(
 
 /// `FUN_0043D247`: halve every pixel of every span.
 ///
-/// Deviation (documented, deliberate): the original halves a 16-bit RGB555 word
-/// with `(c & mask) >> 1`; the remake's framebuffer is RGBA8, so each of the
-/// three colour channels is halved with integer truncation. Alpha is untouched.
+/// Exact 16-bit arithmetic: the palette word is recovered, converted to 565
+/// like the original's 16bpp path, halved with `(c & 0xF7DF) >> 1`, expanded
+/// back. Alpha is untouched.
 pub fn darken(frame: &mut [u8], stride: usize, height: usize, spans: &[Span]) {
     for s in spans {
         let row = s.row;
@@ -128,9 +178,10 @@ pub fn darken(frame: &mut [u8], stride: usize, height: usize, spans: &[Span]) {
             if i + 3 >= frame.len() {
                 break;
             }
-            frame[i] >>= 1;
-            frame[i + 1] >>= 1;
-            frame[i + 2] >>= 1;
+            let out = darken_pixel([frame[i], frame[i + 1], frame[i + 2]]);
+            frame[i] = out[0];
+            frame[i + 1] = out[1];
+            frame[i + 2] = out[2];
         }
     }
 }
@@ -217,22 +268,63 @@ mod tests {
         assert!(!add_mask(&payload, 0, 0, 0, (0, 0, 799, 599), &mut out));
     }
 
-    /// `darken` halves RGB inside the spans, leaves alpha and every pixel
-    /// outside them untouched, and never touches other scanlines.
+    /// `darken` halves RGB inside the spans in the original 565 form, leaves
+    /// alpha and every pixel outside them untouched, and never touches other
+    /// scanlines.
     #[test]
     fn darken_halves_every_channel_of_the_spans_only() {
-        let mut frame = vec![200u8; 8 * 4 * 2];
+        // White (a 555 palette entry expanded by `*255/31`).
+        let mut frame = vec![255u8; 8 * 4 * 2];
         let spans = [Span {
             row: 0,
             x0: 1,
             x1: 2,
         }];
         darken(&mut frame, 8, 2, &spans);
-        assert_eq!(&frame[0..4], &[200, 200, 200, 200]); // untouched
-        assert_eq!(&frame[4..8], &[100, 100, 100, 200]); // halved
-        assert_eq!(&frame[8..12], &[100, 100, 100, 200]);
-        assert_eq!(&frame[12..16], &[200, 200, 200, 200]);
+        // `0x7FFF` -> 565 `0xFFDF`, `(c & 0xF7DF) >> 1` = `0x7BEF`:
+        // r5 15, g6 31, b5 15.
+        assert_eq!(&frame[0..4], &[255, 255, 255, 255]); // untouched
+        assert_eq!(&frame[4..8], &[123, 125, 123, 255]); // exact 565 halving
+        assert_eq!(&frame[8..12], &[123, 125, 123, 255]);
+        assert_eq!(&frame[12..16], &[255, 255, 255, 255]);
         // The second row is untouched.
-        assert_eq!(&frame[32..36], &[200, 200, 200, 200]);
+        assert_eq!(&frame[32..36], &[255, 255, 255, 255]);
+    }
+
+    /// Every 555 palette colour halves to `(r5 >> 1, g5, b5 >> 1)` in the
+    /// expanded 565 form: the green field keeps the 5-bit value (its 6-bit
+    /// screen word was `g5 << 1`).
+    #[test]
+    fn darken_matches_the_original_palette_arithmetic() {
+        for r5 in 0u16..32 {
+            for g5 in 0u16..32 {
+                for b5 in 0u16..32 {
+                    let pre = [expand5(r5), expand5(g5), expand5(b5)];
+                    let post = darken_pixel(pre);
+                    assert_eq!(
+                        post,
+                        [expand5(r5 >> 1), expand6(g5), expand5(b5 >> 1)],
+                        "r5 {r5} g5 {g5} b5 {b5}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `0x5076D8`: at most `RUN_BUDGET` runs are accumulated per frame.
+    #[test]
+    fn the_run_budget_caps_the_accumulator() {
+        let (payload, off) = mask(4, &[&[0x04, 0x00]]);
+        let mut out = vec![
+            Span {
+                row: 0,
+                x0: 0,
+                x1: 0,
+            };
+            RUN_BUDGET
+        ];
+        let before = out.len();
+        assert!(!add_mask(&payload, off, 0, 0, (0, 0, 799, 599), &mut out));
+        assert_eq!(out.len(), before, "the budget must stop new runs");
     }
 }

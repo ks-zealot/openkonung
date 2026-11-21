@@ -104,6 +104,10 @@ pub fn parse_entity_record(index: usize, b: &[u8]) -> Entity {
         saved_endurance: u16(b, 0xC2) as u16,
         temp_effect_id: u16(b, 0xCA) as u16,
         temp_effect_timer: u16(b, 0xCE) as u16,
+        armor_bonus: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
+        bonus_flags: 0,
     };
     let mut equipment = [0u16; 6];
     for (i, slot) in equipment.iter_mut().enumerate() {

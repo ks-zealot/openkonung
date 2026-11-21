@@ -189,5 +189,41 @@ pub fn direction_from_cells(tx: i32, ty: i32, cx: i32, cy: i32) -> u8 {
     }
 }
 
+/// `FUN_00438640`: direction from `(cx, cy)` that actually reaches
+/// `(tx, ty)` in one `0x43D922` step.
+///
+/// Same column: `0` when the target is above, else `4`. Otherwise the first of
+/// the steps `6, 7, 5, 2, 3` that lands on the target; a non-adjacent target
+/// falls back to `1` (the original has no distance model here).
+pub fn face_direction(tx: i32, ty: i32, cx: i32, cy: i32) -> u8 {
+    if cx == tx {
+        return if ty < cy { 0 } else { 4 };
+    }
+    for dir in [6u8, 7, 5, 2, 3] {
+        if step_by_direction(cx, cy, dir) == (tx, ty) {
+            return dir;
+        }
+    }
+    1
+}
+
+/// `FUN_00438090`: rotate the facing one step toward `dir` (wrapping `0..7`).
+///
+/// `diff = (dir - facing) & 7`; `diff < 5` turns clockwise (`+1`), otherwise
+/// counter-clockwise (`-1`). Returns `true` when the facing already matches
+/// (nothing to do), `false` after one turn step.
+pub fn turn_toward(facing: &mut u8, dir: u8) -> bool {
+    let diff = dir.wrapping_sub(*facing) & 7;
+    if diff == 0 {
+        return true;
+    }
+    *facing = if diff < 5 {
+        (*facing + 1) & 7
+    } else {
+        (*facing + 7) & 7
+    };
+    false
+}
+
 #[cfg(test)]
 mod tests;

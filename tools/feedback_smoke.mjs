@@ -258,10 +258,12 @@ wasm.step(0.016);
 await save('trade_merchant.png');
 wasm.debug_trade_cancel();
 if (wasm.debug_trade_open(279) !== 1) fail('#4 role-3 merchant did not open');
-if (wasm.debug_trade_cell(2, 0) !== 0) fail('#4 role-3 merchant unexpectedly has stock');
+if (wasm.debug_trade_cell(2, 0) === 0) {
+  fail('#4 role-3 merchant has no map-entry seeded stock');
+}
 wasm.step(0.016);
 wasm.step(0.016);
-await save('trade_empty.png');
+await save('trade_role3.png');
 wasm.debug_trade_cancel();
 
 // ---------------------------------------------------------------- 8 aggro

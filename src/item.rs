@@ -82,7 +82,7 @@ fn table_for(class: u8) -> Option<(u32, usize, u32)> {
 }
 
 /// Convert a `konung.res` DGROUP VA to a file offset.
-fn va_to_file(va: u32) -> usize {
+pub(crate) fn va_to_file(va: u32) -> usize {
     (ITEM_DGROUP_FILE as i64 + (va as i64 - ITEM_DGROUP_VA as i64)) as usize
 }
 
@@ -474,11 +474,19 @@ impl ItemDb {
             }
             9 => {
                 out.push_str(&info.name);
+                let quality = f32::from_bits(inst.quantity);
                 // Potions/charges: +0x04 is a float charge count and a negative
                 // prototype price makes the original print it as concentration.
                 if info.price < 0 {
                     out.push_str(", концентрация ");
-                    out.push_str(&format!("{:5.2}", f32::from_bits(inst.quantity)));
+                    out.push_str(&format!("{:5.2}", quality));
+                }
+                // `FUN_0042F5F8` class-9 branch: oil (7) and the resurrection
+                // potion (13) need quality >= 10, the XP potion (12) >= 6.
+                if (matches!(inst.subtype, 7 | 13) && quality < 10.0)
+                    || (inst.subtype == 12 && quality < 6.0)
+                {
+                    out.push_str(", недостаточная концентрация");
                 }
                 out.push_str(", вес ");
                 out.push_str(&format!("{:4.2}", info.weight as f64 / 1000.0));

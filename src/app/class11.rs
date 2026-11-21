@@ -115,7 +115,8 @@ impl PlayableApp {
                 let Some(snapshot) = self.snapshot(owner) else {
                     return false;
                 };
-                let n = (snapshot.dexterity_base as u32 / 3).min(5) as i32;
+                // `(int)(Entity+0x54) >> 16` = `+0x56`, the CURRENT dexterity.
+                let n = (snapshot.dexterity_current as u32 / 3).min(5) as i32;
                 let mut ops = Vec::with_capacity(7);
                 if snapshot.temp_effect_timer == 0 {
                     ops.push(StatOp::SaveStats);
@@ -392,8 +393,8 @@ impl PlayableApp {
         let loc = self.current_map;
         let collision = self
             .world
-            .loc(loc)
-            .map(|l| l.collision.clone())
+            .collision(loc)
+            .map(|c| c.to_vec())
             .unwrap_or_default();
 
         let actors: Vec<(usize, (i32, i32), crate::population::Rect)> = self
@@ -420,7 +421,10 @@ impl PlayableApp {
             .unwrap_or_default();
 
         for (eid, cell, rect) in actors {
-            let Some(new_cell) = self.revive_cell(rect, cell, &collision) else {
+            let mut rng = self.combat_rng;
+            let placed = self.revive_cell(rect, cell, &collision, false, &mut rng);
+            self.combat_rng = rng;
+            let Some(new_cell) = placed else {
                 continue;
             };
             let special = self
@@ -449,6 +453,7 @@ impl PlayableApp {
                     m.path.clear();
                     m.target = None;
                     m.combat_target = None;
+                    m.target_marker = 0;
                     m.ranged_order = false;
                     m.ranged_fired = false;
                     m.action = crate::anim::idle_action(battle) as u8;
@@ -480,7 +485,10 @@ impl PlayableApp {
             if !dead {
                 continue;
             }
-            let Some(new_cell) = self.revive_cell(rect, cell, &collision) else {
+            let mut rng = self.combat_rng;
+            let placed = self.revive_cell(rect, cell, &collision, true, &mut rng);
+            self.combat_rng = rng;
+            let Some(new_cell) = placed else {
                 continue;
             };
             let roll = if special {
@@ -496,6 +504,7 @@ impl PlayableApp {
                 m.motion.path.clear();
                 m.motion.target = None;
                 m.motion.combat_target = None;
+                m.motion.target_marker = 0;
                 m.motion.ranged_order = false;
                 m.motion.ranged_fired = false;
                 m.motion.action = crate::anim::idle_action(battle) as u8;
@@ -518,22 +527,36 @@ impl PlayableApp {
             self.player_active = false;
             self.player_path.clear();
         }
+        self.rebuild_occupancy(loc);
 
         self.consume_class11(owner, id);
         true
     }
 
-    /// First free cell for a revived actor: current cell, else anywhere in its
-    /// authored spawn rectangle, else a ring scan out to 10 cells.
+    /// `FUN_00414ABC`: place a revived actor on a free cell.
+    ///
+    /// The current cell is kept when free; otherwise `FUN_00410FFC` takes the
+    /// first free neighbour in direction order. When every neighbour is
+    /// blocked the original scans a box — the party's leader `+/- 2*radius`
+    /// (`20/9` at 800x600) for a party unit, the actor's own group rectangle A
+    /// otherwise — starting at one `rand()` offset per axis and walking
+    /// forward (y then x, wrapping) for at most 100 probes.
     ///
     /// A cell is free when the Konung.N collision word is free and no live
-    /// actor stands on it. `None` means the actor cannot be placed and is left
-    /// dead rather than stacked on another body.
-    fn revive_cell(
+    /// actor stands on it. `party` selects the leader box; the original decides
+    /// it from the group class (`& 0xC0 == 0` = reserved party group 0).
+    ///
+    /// Note: the shipped `0x414ABC` party branch reads the box's upper x bound
+    /// from an uninitialised stack slot (the two `MOV [EBP-0x1c]` stores
+    /// overwrite each other); the remake uses the intended symmetric bound
+    /// `leader.x +/- 2*radius`.
+    pub(in crate::app) fn revive_cell(
         &self,
         rect: crate::population::Rect,
         cell: (i32, i32),
         collision: &[u16],
+        party: bool,
+        rng: &mut crate::combat::OriginalRng,
     ) -> Option<(i32, i32)> {
         let free = |x: i32, y: i32| {
             crate::loc::collision_is_free(collision, x, y) && !self.live_actor_cell(x, y)
@@ -541,36 +564,116 @@ impl PlayableApp {
         if free(cell.0, cell.1) {
             return Some(cell);
         }
-        let (x1, x2, y1, y2) = (
-            rect.x1 as i32,
-            rect.x2 as i32,
-            rect.y1 as i32,
-            rect.y2 as i32,
-        );
-        if x2 >= x1 && y2 >= y1 {
-            for x in x1..=x2 {
-                for y in y1..=y2 {
-                    if free(x, y) {
-                        return Some((x, y));
-                    }
-                }
+        // `FUN_00410FFC`: the first free 8-neighbour, direction 0..=7.
+        for dir in 0u8..8 {
+            let (nx, ny) = crate::coords::step_by_direction(cell.0, cell.1, dir);
+            if free(nx, ny) {
+                return Some((nx, ny));
             }
         }
-        for radius in 1i32..=10 {
-            for dx in -radius..=radius {
-                for dy in -radius..=radius {
-                    if dx.abs() != radius && dy.abs() != radius {
-                        continue;
-                    }
-                    let x = cell.0 + dx;
-                    let y = cell.1 + dy;
-                    if free(x, y) {
-                        return Some((x, y));
-                    }
+        let (x1, x2, y1, y2) = if party {
+            let lx = self.player_x.round() as i32;
+            let ly = self.player_y.round() as i32;
+            (
+                lx - 2 * crate::constants::timing::WANDER_RADIUS_X,
+                lx + 2 * crate::constants::timing::WANDER_RADIUS_X,
+                ly - 2 * crate::constants::timing::WANDER_RADIUS_Y,
+                ly + 2 * crate::constants::timing::WANDER_RADIUS_Y,
+            )
+        } else {
+            (
+                rect.x1 as i32,
+                rect.x2 as i32,
+                rect.y1 as i32,
+                rect.y2 as i32,
+            )
+        };
+        // Random start offset per axis (`rand() % (bound - lower)`, no +1: an
+        // original off-by-one that keeps the lower bound out of the roll).
+        let start_x = if x2 - x1 < 2 {
+            0
+        } else {
+            (rng.next_u32() % (x2 - x1) as u32) as i32
+        };
+        let start_y = if y2 - y1 < 2 {
+            0
+        } else {
+            (rng.next_u32() % (y2 - y1) as u32) as i32
+        };
+        let mut x = x1 + start_x;
+        let mut y = y1 + start_y;
+        for _ in 0..100 {
+            if (0..crate::coords::RUNTIME_W).contains(&x)
+                && (0..crate::coords::RUNTIME_H).contains(&y)
+                && free(x, y)
+            {
+                return Some((x, y));
+            }
+            y += 1;
+            if y > y2 {
+                y = y1;
+                x += 1;
+                if x > x2 {
+                    x = x1;
                 }
             }
         }
         None
+    }
+
+    /// `FUN_00414ABC` for the user of a class-9 resurrection potion
+    /// (`FUN_0041DAB0` case 13): the revived owner is moved onto a free cell,
+    /// exactly like the class-11 resurrection (`0x414ABC` is the same helper).
+    pub(in crate::app) fn revive_owner_on_free_cell(&mut self, owner: InventoryOwner) {
+        let loc = self.current_map;
+        let collision = self
+            .world
+            .collision(loc)
+            .map(|c| c.to_vec())
+            .unwrap_or_default();
+        match owner {
+            InventoryOwner::Protagonist => {
+                let cell = (
+                    self.player_x.round() as i32,
+                    self.player_y.round() as i32,
+                );
+                let rect = self
+                    .tables
+                    .as_ref()
+                    .and_then(|t| t.groups.first())
+                    .map(|g| g.rect_a)
+                    .unwrap_or_default();
+                let mut rng = self.combat_rng;
+                let placed = self.revive_cell(rect, cell, &collision, true, &mut rng);
+                self.combat_rng = rng;
+                if let Some(new_cell) = placed {
+                    self.player_x = new_cell.0 as f64;
+                    self.player_y = new_cell.1 as f64;
+                    self.player_render_x = new_cell.0 as f64;
+                    self.player_render_y = new_cell.1 as f64;
+                    self.player_active = false;
+                    self.player_path.clear();
+                }
+            }
+            InventoryOwner::Party(i) => {
+                let Some((cell, rect)) = self.party.get(i).map(|m| (m.motion.cell, m.motion.rect_a))
+                else {
+                    return;
+                };
+                let mut rng = self.combat_rng;
+                let placed = self.revive_cell(rect, cell, &collision, true, &mut rng);
+                self.combat_rng = rng;
+                if let Some(new_cell) = placed {
+                    if let Some(m) = self.party.get_mut(i) {
+                        m.motion.cell = new_cell;
+                        m.motion.render_cell = new_cell;
+                        m.motion.walking = false;
+                        m.motion.path.clear();
+                    }
+                }
+            }
+        }
+        self.rebuild_occupancy(loc);
     }
 
     /// `FUN_00414DE4` case 13: move other groups' money to the leader and their
@@ -644,6 +747,10 @@ impl PlayableApp {
     }
 
     /// Case 30: kill every other group's living actor in the location.
+    ///
+    /// The original filters on `Group+0x1E` (class): bit `0x80` must be clear
+    /// (this spares the peaceful/citizen classes such as `0x81`) and the class
+    /// must not be exactly `0x53`.
     fn class11_skeleton_lamp(&mut self, owner: InventoryOwner, id: u16) -> bool {
         let loc = self.current_map;
         let level = self.player.level;
@@ -654,8 +761,10 @@ impl PlayableApp {
                 pop.actors
                     .iter()
                     .filter(|a| {
+                        let class = self.group_class(a.source_group_id);
                         a.entity.group_id != 0
-                            && self.group_loc(a.source_group_id) != 0x53
+                            && class & 0x80 == 0
+                            && class != 0x53
                             && !pop
                                 .motion
                                 .get(&a.source_entity_id())
@@ -678,10 +787,10 @@ impl PlayableApp {
     /// whistle/pipe are reusable.
     fn class11_scatter(&mut self, _owner: InventoryOwner, _id: u16) -> bool {
         let loc = self.current_map;
-        let collision = self
+        let mut collision = self
             .world
-            .loc(loc)
-            .map(|l| l.collision.clone())
+            .collision(loc)
+            .map(|c| c.to_vec())
             .unwrap_or_default();
         let actors: Vec<(usize, (i32, i32))> = self
             .population_cache
@@ -715,10 +824,11 @@ impl PlayableApp {
             if let Some(pop) = self.population_cache.get_mut(&loc) {
                 if let Some(m) = pop.motion.get_mut(&eid) {
                     let mut occupied = HashSet::new();
-                    Self::start_motion_walk(m, &collision, &mut occupied, goal);
+                    Self::start_motion_walk(m, eid, &mut collision, &mut occupied, goal);
                 }
             }
         }
+        self.rebuild_occupancy(loc);
         true
     }
 
@@ -797,13 +907,12 @@ impl PlayableApp {
         true
     }
 
-    /// `Group+0x1B` (location id) of `group_id`, or `0` when the table is
-    /// absent (the skeleton lamp exempts location `0x53`).
-    fn group_loc(&self, group_id: usize) -> u8 {
+    /// `Group+0x1E` class of `group_id`, or `0` when the table is absent.
+    fn group_class(&self, group_id: usize) -> u8 {
         self.tables
             .as_ref()
             .and_then(|t| t.groups.get(group_id))
-            .map(|g| g.loc_id)
+            .map(|g| g.class_1e)
             .unwrap_or(0)
     }
 
@@ -826,6 +935,7 @@ impl PlayableApp {
                 }
             }
         }
+        self.recompute_owner_effects(owner);
     }
 
     /// `Entity+0x03 & 0x02` (AUTO) for the owner: the original per-unit flag

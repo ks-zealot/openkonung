@@ -204,8 +204,10 @@ pub struct PopulationBuild {
 
 /// Select, and (for `(0,0)` records) place, the current location's population.
 /// Pure: `tables` is never mutated. Deterministic per location. Runtime
-/// placement validates against the location's collision table (source §16).
-pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> PopulationBuild {
+/// placement validates against the location's **live** collision table and marks
+/// every accepted cell with the one-based entity id, so later placements avoid
+/// earlier actors (source §16 / §28.2).
+pub fn build_population(tables: &GameTables, loc_id: u8, collision: &mut [u16]) -> PopulationBuild {
     let mut rng = location_rng(loc_id);
     let mut out = PopulationBuild::default();
     out.rng = location_rng(loc_id);
@@ -252,6 +254,9 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                         ..Default::default()
                     },
                 );
+                if should_mark(e, out.motion.get(&e.index)) {
+                    occupy(collision, (e.x as i32, e.y as i32), e.index);
+                }
             } else {
                 out.runtime_candidates += 1;
                 match place_entity(g, &mut rng, collision) {
@@ -278,6 +283,7 @@ pub fn build_population(tables: &GameTables, loc_id: u8, collision: &[u16]) -> P
                                 ..Default::default()
                             },
                         );
+                        occupy(collision, (raw.x, raw.y), e.index);
                     }
                     Err(_) => {
                         out.runtime_failed += 1;

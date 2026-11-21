@@ -45,6 +45,10 @@ pub struct World {
     pub light_maps: HashMap<u32, crate::res::LightMap>,
     /// Rendered map thumbnails keyed by `(loc_id, width, height)`.
     thumb_cache: HashMap<(u32, i32, i32), Img>,
+    /// Per-location live copy of [`Location::collision`] with actor occupancy
+    /// markers in the low 12 bits (original `DAT_004ee6b0`). The authored
+    /// [`Location::collision`] stays untouched as the terrain source.
+    runtime_collision: HashMap<u32, Vec<u16>>,
 }
 
 /// Counts of background layer tiles drawn in the last viewport pass.
@@ -126,6 +130,7 @@ impl World {
             loc_index,
             light_maps: HashMap::new(),
             thumb_cache: HashMap::new(),
+            runtime_collision: HashMap::new(),
         }
     }
 
@@ -133,6 +138,59 @@ impl World {
     /// loaded set (the original refuses to enter a missing `Konung.N`).
     pub fn loc(&self, loc_id: u32) -> Option<&Location> {
         self.loc_index.get(&loc_id).map(|&i| &self.locs[i])
+    }
+
+    /// Gameplay collision table for `loc_id`: the runtime copy with actor
+    /// occupancy markers when it exists, otherwise the authored terrain table.
+    ///
+    /// The original keeps one live `u16` array per location and merges actor
+    /// occupancy into its low 12 bits (`KONUNG_SOURCE_OF_TRUTH.md` §8.1/§28.2).
+    pub fn collision(&self, loc_id: u32) -> Option<&[u16]> {
+        if let Some(c) = self.runtime_collision.get(&loc_id) {
+            return Some(c.as_slice());
+        }
+        self.loc(loc_id).map(|l| l.collision.as_slice())
+    }
+
+    /// Mutable gameplay collision table, cloning the authored table on first
+    /// use. Callers mark/clear actor occupancy through
+    /// [`crate::actors::occupancy`].
+    pub fn collision_mut(&mut self, loc_id: u32) -> Option<&mut [u16]> {
+        let index = *self.loc_index.get(&loc_id)?;
+        if !self.runtime_collision.contains_key(&loc_id) {
+            let base = self.locs[index].collision.clone();
+            self.runtime_collision.insert(loc_id, base);
+        }
+        self.runtime_collision
+            .get_mut(&loc_id)
+            .map(|c| c.as_mut_slice())
+    }
+
+    /// Split borrow of the gameplay collision table and the resource pack.
+    ///
+    /// Combat/AI passes need both at once (`collision` is mutated by movement,
+    /// `res` supplies animation frame tables). They are disjoint fields, so this
+    /// helper keeps the borrow checker happy without cloning either.
+    pub fn collision_and_res_mut(&mut self, loc_id: u32) -> Option<(&mut [u16], &crate::res::Res)> {
+        let index = *self.loc_index.get(&loc_id)?;
+        if !self.runtime_collision.contains_key(&loc_id) {
+            let base = self.locs[index].collision.clone();
+            self.runtime_collision.insert(loc_id, base);
+        }
+        let collision = self.runtime_collision.get_mut(&loc_id)?.as_mut_slice();
+        let res = &self.res;
+        Some((collision, res))
+    }
+
+    /// Drop the runtime collision copy for `loc_id`, restoring the authored
+    /// terrain table. Used on map entry and before rebuilding occupancy.
+    pub fn reset_collision(&mut self, loc_id: u32) {
+        self.runtime_collision.remove(&loc_id);
+    }
+
+    /// True when a runtime collision copy exists for `loc_id`.
+    pub fn has_runtime_collision(&self, loc_id: u32) -> bool {
+        self.runtime_collision.contains_key(&loc_id)
     }
 
     /// Mutable location access, used by the prop-flame tick and by the map

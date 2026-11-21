@@ -334,6 +334,7 @@ impl PlayableApp {
         self.player_attack_ranged = false;
         for m in self.party.iter_mut() {
             m.motion.combat_target = None;
+            m.motion.target_marker = 0;
             m.motion.ranged_order = false;
         }
         self.world_move_command(x, y);
@@ -381,10 +382,13 @@ impl PlayableApp {
         };
         let (vx, vy) = (vx.round() as i32, vy.round() as i32);
         if let Some((entity, archetype, dialogue_id, _group_id)) = self.actor_at(vx, vy) {
-            // Human visual family (`archetype & 0x40 == 0`) with a dialogue id
-            // and the leader not in battle stance (`FUN_0042260C` dialogue gate).
+            // Human visual family (`archetype & 0x40 == 0`) with a dialogue id,
+            // no Shift (`_DAT_0081D624`) and the leader not in battle stance
+            // (`FUN_0042260C` dialogue gate). Shift+right-click skips the
+            // dialogue and issues the attack order instead.
             if archetype & 0x40 == 0
                 && dialogue_id != 0xFF
+                && !self.shift_down
                 && !crate::anim::battle_from_flags(self.player.flags_b)
             {
                 self.open_dialog(entity, dialogue_id);
@@ -544,6 +548,13 @@ impl PlayableApp {
     /// halt, `C`/`I` = `FUN_00424330` character screen, `V` camera follow,
     /// `Home` re-centre, and `R` clears the world caches.
     pub fn key_down(&mut self, code: u32) {
+        // `FUN_004364...` VK 0x54: toggle the dialogue stone background
+        // (`_DAT_0081D614`, tested by `FUN_00430430`). Global, like the original
+        // key dispatch, so it also works while a dialogue is open.
+        if code == KEY_T {
+            self.dialog_background_tiled = !self.dialog_background_tiled;
+            return;
+        }
         // Exchange captures the keyboard: Escape cancels/returns the offers.
         if self.trade.is_some() {
             if code == KEY_ESCAPE {

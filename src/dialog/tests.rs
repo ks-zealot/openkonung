@@ -107,8 +107,9 @@ fn select_follows_link() {
     put_u16(&mut b, B2_OFF + 3 * 2, 10);
     header(&mut b, 10, 0, 1);
     text_entry(&mut b, 11, LINE_A, 20); // -> node 20
-    header(&mut b, 20, 1, 0); // page with one prompt, no options
+    header(&mut b, 20, 1, 1); // page with one prompt and one option
     text_entry(&mut b, 21, LINE_B, LINK_NONE);
+    text_entry(&mut b, 22, LINE_A, LINK_END);
     b6_line(&mut b, LINE_A, 0);
     b6_line(&mut b, LINE_B, 0);
     b3_str(&mut b, 0, b"Hi");
@@ -117,7 +118,7 @@ fn select_follows_link() {
     let mut d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
     assert!(d.select(&q, &fonts, 0, 800, &mut |_| false));
     assert_eq!(d.page, 20);
-    assert!(d.options.is_empty());
+    assert_eq!(d.options.len(), 1);
 }
 
 /// A branch page (`+0x0A == -2`) whose first case has no condition is followed
@@ -135,15 +136,56 @@ fn branch_node_is_followed() {
     put_u16(&mut b, o + 6, 0xFFFF); // first case condition: none
     put_u16(&mut b, o + 10, 0xFFFE); // branch marker
     put_u16(&mut b, o + 14, 1); // one case
-    header(&mut b, 11, 1, 0);
+    header(&mut b, 11, 1, 1);
     text_entry(&mut b, 12, LINE_A, LINK_NONE);
+    text_entry(&mut b, 13, LINE_B, LINK_END);
     b6_line(&mut b, LINE_A, 0);
+    b6_line(&mut b, LINE_B, 0);
     b3_str(&mut b, 0, b"Hi");
     let q = QuestData::parse(&b).unwrap();
     let fonts = crate::font::Fonts::empty();
     let d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
     assert_eq!(d.page, 11);
     assert_eq!(d.prompt_lines, vec!["Hi".to_string()]);
+}
+
+/// `FUN_00434C74` returns false when no option survives: such a page never
+/// opens (no window, no voice).
+#[test]
+fn zero_option_page_does_not_open() {
+    let mut b = blank();
+    put_u16(&mut b, B2_OFF + 3 * 2, 10);
+    header(&mut b, 10, 1, 0); // one prompt, no options
+    text_entry(&mut b, 11, LINE_A, LINK_NONE);
+    b6_line(&mut b, LINE_A, 0);
+    b3_str(&mut b, 0, b"Hi");
+    let q = QuestData::parse(&b).unwrap();
+    let fonts = crate::font::Fonts::empty();
+    assert!(
+        DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).is_none(),
+        "no surviving option means no dialogue"
+    );
+}
+
+/// An *unconditional* option entry whose text is `0xFFFFFFFF` is dropped, while
+/// a conditional one is kept (checked by `FUN_00434C74`).
+#[test]
+fn unconditional_option_without_text_is_skipped() {
+    let mut b = blank();
+    put_u16(&mut b, B2_OFF + 3 * 2, 10);
+    header(&mut b, 10, 0, 2);
+    let o = 11 * NODE_STRIDE;
+    put_u32(&mut b, o, 0xFFFF_FFFF); // no text
+    put_u16(&mut b, o + 4, 20); // valid link
+    put_u16(&mut b, o + 6, 0xFFFF); // unconditional
+    put_u16(&mut b, o + 10, 0xFFFF);
+    text_entry(&mut b, 12, LINE_A, LINK_END);
+    b6_line(&mut b, LINE_A, 0);
+    b3_str(&mut b, 0, b"Hi");
+    let q = QuestData::parse(&b).unwrap();
+    let fonts = crate::font::Fonts::empty();
+    let d = DialogState::start(&q, &fonts, 1, 3, 800, &mut |_| false).unwrap();
+    assert_eq!(d.options.len(), 1, "the textless unconditional entry is gone");
 }
 
 /// Stacked option rows hit-test in virtual space and nothing outside matches.

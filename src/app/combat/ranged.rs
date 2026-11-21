@@ -146,6 +146,9 @@ impl PlayableApp {
         let Some(dstats) = self.combatant_stats(defender) else {
             return;
         };
+        let Some(ostats) = self.combatant_stats(shooter) else {
+            return;
+        };
         let (roll, armor) = {
             let res = &self.world.res;
             let Some(db) = res.item_db.as_ref() else {
@@ -155,6 +158,7 @@ impl PlayableApp {
                 db,
                 &res.save_game,
                 &bow,
+                &ostats,
                 &dstats,
                 &mut self.combat_rng,
             );
@@ -184,40 +188,13 @@ impl PlayableApp {
         }
         self.apply_armor_wear(defender, roll.incoming as i32, armor);
     }
-    /// Pay the ranged kill reward: `power / 4` money and `power` archery mastery
-    /// to the shooter.
+    /// Pay the ranged kill reward: `power / 4` experience and `power` archery
+    /// mastery to the shooter (`FUN_00420F30`).
     ///
     /// Ranged kills (unlike melee) always credit the shooter, and the same
     /// `power` is passed on as the corpse-loot bonus. `power <= 0` is ignored.
     fn award_ranged_kill(&mut self, owner: CombatTarget, power: i32) {
-        if power <= 0 {
-            return;
-        }
-        let money = power / RANGED_KILL_MONEY_DIVISOR;
-        let skill = power.clamp(0, u16::MAX as i32) as u16;
-        match owner {
-            CombatTarget::Player => {
-                self.player.money = self.player.money.saturating_add(money);
-                self.player.archery_mastery = self.player.archery_mastery.saturating_add(skill);
-            }
-            CombatTarget::Party(i) => {
-                if let Some(m) = self.party.get_mut(i) {
-                    m.entity.stats.money = m.entity.stats.money.saturating_add(money);
-                    m.entity.stats.archery_mastery =
-                        m.entity.stats.archery_mastery.saturating_add(skill);
-                }
-            }
-            CombatTarget::World(id) => {
-                if let Some(pop) = self.population_cache.get_mut(&self.current_map) {
-                    if let Some(a) = pop.actors.iter_mut().find(|a| a.entity.index == id) {
-                        a.entity.stats.money = a.entity.stats.money.saturating_add(money);
-                        a.entity.stats.archery_mastery =
-                            a.entity.stats.archery_mastery.saturating_add(skill);
-                    }
-                }
-            }
-            CombatTarget::Prop(_) => {}
-        }
+        self.award_kill_reward(owner, power, false);
     }
     /// Resolve an arrow that stopped on a blocked prop cell.
     ///
@@ -307,11 +284,7 @@ impl PlayableApp {
                 let cy = py.round() as i32;
                 let cell = crate::coords::local_px_to_entity(cx, cy);
                 let blocked = {
-                    let collision = self
-                        .world
-                        .loc(loc)
-                        .map(|l| l.collision.as_slice())
-                        .unwrap_or(&[]);
+                    let collision = self.world.collision(loc).unwrap_or(&[]);
                     let idx = cell.0 * COLLISION_ROW_STRIDE + cell.1;
                     collision
                         .get(idx as usize)

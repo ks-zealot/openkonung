@@ -41,6 +41,7 @@ mod input;
 mod inventory;
 mod lighting;
 mod map;
+mod occupancy;
 mod party;
 mod player;
 mod population;
@@ -48,6 +49,7 @@ mod quest_log;
 mod save;
 mod settlement_defense;
 mod settlement_pass;
+mod settlement_stock;
 mod settlement_targets;
 mod settlement_trade;
 mod settlement_training;
@@ -208,10 +210,16 @@ pub struct PlayableApp {
     player_path: Vec<u8>,
     /// Seconds accumulated toward the next player cell step.
     player_step_t: f64,
+    /// FUN_00438090 turn accumulator: one 45-degree step per logic frame.
+    player_turn_t: f64,
     /// True while a walk segment is animating. Kept separate from `player_path`
     /// because the final segment's direction is consumed at segment START, so
     /// the queue is already empty while the sprite is still walking.
     player_active: bool,
+    /// Set when a plain move step was blocked by an occupied cell. The next
+    /// [`Self::update_player`] re-runs the route builder from the current cell,
+    /// mirroring `FUN_0041ECC8` after `+0x02 |= 0x40`.
+    player_blocked: bool,
     anim_time: f64,
     teleport_cooldown: f64,
 
@@ -249,6 +257,14 @@ pub struct PlayableApp {
     detail_pan: [f64; 2],
     camera_follow: bool,
     camera_follow_strength: f64,
+    /// `_DAT_0081D614`: `FUN_00430430` tiles the dialogue stone background when
+    /// set (default) and leaves the frame untouched when clear. VK `T` toggles
+    /// it; not persisted (the original global is not saved).
+    pub dialog_background_tiled: bool,
+    /// `FUN_00417010` ground-container window: index into
+    /// [`Self::active_world_objects`] whose pile is the "partner" side of the
+    /// open [`Self::trade`] state. Transient; not saved.
+    pub ground_pile: Option<usize>,
 
     // presentation
     /// 800x600 RGBA framebuffer, row-major, read by `frame_ptr`/`frame_w`/`frame_h`.
@@ -277,6 +293,9 @@ pub struct PlayableApp {
     pub(super) map_overlay: Option<(u64, crate::res::Img)>,
     /// Active NPC dialogue (original `FUN_0042CBD0` mode 1). Escape closes it.
     pub dialog: Option<crate::dialog::DialogState>,
+    /// Last dialogue window template / voice id (`_DAT_0081D68C`): humanoids
+    /// re-roll `rand()%4 + 0x0D` when the fresh `rand()%4 + 0x0C` repeats it.
+    pub(super) dialog_template: u8,
     /// Active exchange (interface mode 7), opened by quest opcode `0x113`.
     pub trade: Option<crate::trade::TradeState>,
     /// Timed trade rejection message (`FUN_0042E9CC`).
@@ -330,8 +349,6 @@ pub struct PlayableApp {
     pub held_item: Option<crate::inventory::HeldItem>,
     /// Visible inventory strip scroll offset (`_81D708`).
     pub inventory_scroll: usize,
-    /// Fractional logic-frame accumulator for temporary potion effects.
-    temp_effect_accum: f64,
     /// Left mouse button currently down (for drag detection).
     mouse_left_down: bool,
     /// Press position of the current lift, used to start a drag.
@@ -355,6 +372,9 @@ pub struct PlayableApp {
     pub(super) sound_rng: crate::combat::OriginalRng,
     /// Logic-frame counter; the DOT pass runs on `& 0xF == 0` (every 16 frames).
     pub(super) combat_frame: u64,
+    /// `_DAT_0081D5F0` / `_DAT_0081D568`: the per-frame AI action budget and the
+    /// round-robin cursor (`FUN_004116CC`, driven by `FUN_00421B50`).
+    pub(super) ai_schedule: combat::AiSchedule,
     /// Protagonist melee target (`None` = not fighting).
     pub(super) player_attack_target: Option<crate::combat::CombatTarget>,
     /// Protagonist persistent engage order (`Entity+0x02 & 0x01`, `FUN_00421458`
@@ -467,7 +487,9 @@ impl PlayableApp {
             target: None,
             player_path: Vec::new(),
             player_step_t: 0.0,
+            player_turn_t: 0.0,
             player_active: false,
+            player_blocked: false,
             anim_time: 0.0,
             teleport_cooldown: 0.0,
             tables,
@@ -486,6 +508,8 @@ impl PlayableApp {
             detail_pan: [0.0, 0.0],
             camera_follow: true,
             camera_follow_strength: 11.0,
+            dialog_background_tiled: true,
+            ground_pile: None,
             frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H * 4) as usize],
             texts: Vec::new(),
             sounds: Vec::new(),
@@ -497,6 +521,7 @@ impl PlayableApp {
             hud_press: None,
             map_overlay: None,
             dialog: None,
+            dialog_template: 0,
             trade: None,
             trade_message: None,
             trade_message_t: 0.0,
@@ -518,7 +543,6 @@ impl PlayableApp {
             inventory_owner: crate::inventory::InventoryOwner::Protagonist,
             held_item: None,
             inventory_scroll: 0,
-            temp_effect_accum: 0.0,
             mouse_left_down: false,
             drag_start: None,
             dragging: false,
@@ -528,6 +552,7 @@ impl PlayableApp {
             combat_rng: crate::combat::OriginalRng::new(0x4B4F_4E55),
             sound_rng: crate::combat::OriginalRng::new(0x534F_554E),
             combat_frame: 0,
+            ai_schedule: combat::AiSchedule::default(),
             player_attack_target: None,
             player_engaged: false,
             player_attack_frame: 0,
@@ -555,6 +580,10 @@ impl PlayableApp {
         app.sweep_all_owners();
         app.apply_settlement_props();
         app.rebuild_world_objects();
+        // Build the starting location and seed the live collision table with
+        // one-based actor markers before the first movement command.
+        app.ensure_population(start_map);
+        app.rebuild_occupancy(start_map);
         app.center_camera_on_player(true, 0.0);
         app
     }
@@ -611,12 +640,14 @@ impl PlayableApp {
         }
         self.tick_ambient_sound();
         self.ensure_population(self.current_map);
+        if !self.world.has_runtime_collision(self.current_map) {
+            self.rebuild_occupancy(self.current_map);
+        }
         self.update_actors(dt);
         self.update_player(dt);
         self.update_party(dt);
         self.update_combat(dt);
         self.check_game_over_video();
-        self.tick_temp_effects(dt);
         if self.camera_follow {
             self.center_camera_on_player(false, dt);
         }

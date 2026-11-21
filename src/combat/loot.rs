@@ -41,12 +41,16 @@ pub struct LootPlan {
     /// Total money placed on the corpse (may be negative? original stores the
     /// signed sum; callers clamp).
     pub money: i32,
+    /// An otherwise empty body still creates a marker when the
+    /// `rand()%101 > 0x1E` early-out does **not** fire (`FUN_00418480`).
+    pub empty_marker: bool,
 }
 
 impl LootPlan {
-    /// True when the corpse would carry nothing at all.
+    /// True when the corpse would carry nothing at all **and** the original
+    /// early-out fired (no marker).
     pub fn is_empty(&self) -> bool {
-        self.existing.is_empty() && self.generated.is_empty() && self.money == 0
+        !self.empty_marker && self.existing.is_empty() && self.generated.is_empty() && self.money == 0
     }
 }
 
@@ -108,6 +112,12 @@ pub fn plan_corpse_loot(
     let mut plan = LootPlan::default();
     let inv: Vec<u16> = inventory.iter().copied().filter(|&id| id != 0).collect();
     if inv.is_empty() && money == 0 && entity_0x52 == 0 {
+        // `FUN_00418480`: an otherwise empty body returns NULL on
+        // `rand()%101 > 0x1E`; below that it still creates an empty marker.
+        if rng.roll() > 0x1E {
+            return plan;
+        }
+        plan.empty_marker = true;
         return plan;
     }
     // `FUN_00418480`: money += signed entity money + rand()%bonus (bonus<2 -> 0).

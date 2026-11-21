@@ -52,14 +52,14 @@ Input (`FUN_0042260C`, mode 7):
 `sell_value(total)`:
 
 ```text
-round(total * 0.5 * (1 + (player_trade - npc_trade) * 0.008)
+round(total * 0.5 * (1 + (player_trade - npc_trade) * 0.002)
       * (role_sign > 0 ? 2/3 : 1))
 ```
 
 `buy_value(total)`:
 
 ```text
-round(total * (1 - (player_trade - npc_trade) * 0.008)
+round(total * (1 - (player_trade - npc_trade) * 0.002)
       * (role_sign > 0 ? 1.5 : 1))
 ```
 
@@ -67,8 +67,10 @@ round(total * (1 - (player_trade - npc_trade) * 0.008)
 (negative otherwise); roles 0/1/5 use `+6`. Flag `0x10` means the settlement is
 **independent / not yet yours**; conquest `0x16D` and force defeat clear it, which
 is why a player-controlled village uses the negative price multiplier. Constants:
-`0x450024` = 0.008,
-`0x45002C` = 0.5, `0x450034` = 2/3, `0x4500C4` = 0.008, `0x4500CC` = 1.5.
+`0x450024` = 0.002,
+`0x45002C` = 0.5, `0x450034` = 2/3, `0x4500C4` = 0.002, `0x4500CC` = 1.5.
+The skill coefficient is read with `FMUL double ptr` and the stored doubles
+decode to 0.002; `round` is x87 `FISTP` (half-to-even).
 
 `FUN_0041B2A8` per-instance value:
 
@@ -141,19 +143,38 @@ Apply:
 
 ## 7. Merchant restock
 
-Stock arrays are initially empty in all shipped `Game.0/1/2` saves.
+Stock arrays are initially empty in all shipped `Game.0/1/2` saves, but the
+**map loader seeds them** (`FUN_00418E6C`, called from `FUN_0043ADF0` mode 0
+for every settlement of the loaded location) before the player can trade.
 
+- **Map entry** (`FUN_00418E6C`): 1–3 empty jars (`class 9 subtype 3`) into
+  role-2 elements 0 and 14 (`+0x412 + 0x1C*i`, the array is measured from the
+  `+0x40C` quota words), then the 32-slot role-3 row: slots 0–2 at 70%
+  (class 8/7/6 goods, subtype span `level/5`), 3–4 at 50% (class 11, subtype
+  `rand%10`), 5–7 at 30% (melee weapons, `FUN_004170E0` kit), 8–13 at 50%
+  (class 3/5/4 armor, `FUN_004170E0` kit), and the fixed 18-item ladder 14–31
+  (class 7/6/8 goods, two weapon/bow/armor suits with `FUN_00417190` kits, then
+  five plain pieces using `rand%2`/`rand%3` kits). Conditions come from
+  `(rand%4(+1))*10 + span*3 + rand%2` with the `level/8` span, the 10%/7%
+  gates use `level_tier`; gear durability is `u16@+0x2E`. Already occupied
+  slots are left alone, so a re-entry only tops up.
 - **Role 2** (`FUN_004175FC`, producer entity `+0x3DA`): timer `+0x4`
   (`0x5A0` frames), quota words `+0x40C/+0x40E/+0x410`, free slots in the
-  combined `+0x40C` array (`5..0x1B`), herb/potion production and pair crafting.
+  combined `+0x40C` array (`5..0x1B`). Simple slots allocate class-9 subtypes
+  `2/0/1` and run `FUN_0041BB70` against the stack target `{class 9, subtype 3}`,
+  so the stock is the *products* subtype `5/6/7` (healing potion, poison, weapon
+  poison) with quality `healing(+0x48)*0.01` and the row's healing gain
+  (`0/3/2`); the six pair rows combine the stocked elements `0x13/0x14/0x15/0x16/0x17`.
 - **Role 4** (`FUN_004179C8`, producer entity `+0x3EA`): merchant smithing
   `Entity+0x4C` gates recipe levels from `0x45A2FC`, `0x459ABC`, `0x45A0FC`;
-  pending slot `+0x4B4`, timer `+0x8`; classes 12/2/0/1/3/5/4 by slot.
+  pending slot `+0x4B4`, timer `+0x8 = round(level*60/sqrt(smithing))`;
+  classes 12/2/0/1/3/5/4 by slot; after production
+  `smithing = round(sqrt(smithing^2 + q/24))` (`0x45001C = 1/24`).
 - **Role 3** (`+0x3E2`) has **no producer**: the per-frame settlement tick
   `FUN_0041D048` calls only `FUN_004175FC` (role 2), `FUN_004179C8` (role 4),
-  and `FUN_00417F84` (role 5/training); no code writes `+0x444`, and every
-  shipped `Game.N` role-3 array is zero. Role 3 is therefore a faithful
-  **buy-only** merchant/fence.
+  and `FUN_00417F84` (role 5/training). Its stock comes entirely from the map
+  loader above, so it is a faithful **buy-only** merchant/fence with real
+  inventory.
 
 ## 8. Remake implementation
 
@@ -174,8 +195,10 @@ Stock arrays are initially empty in all shipped `Game.0/1/2` saves.
 
 ## 9. Unknowns / approximations
 
-- Role-2 simple herb quality is a fixed value; original recipe RNG/quality is
-  approximated. Role-4 per-item RNG quality/smithing roll is also approximated.
+- Role-2 produced items are the row products (`5/6/7`) with the exact
+  `healing*0.01` quality; only the 25th `+0x40C` element (`i = 27`) is not
+  modelled because the trade window never reads it (`+0x412`, 24 entries).
+  Role-4 quality is the `u16@+0x2E` prototype value, exactly as the original.
 - Ground/container `partner == 0` commit path (`FUN_004203F4`) is not wired to
   gameplay yet.
 - Button sprite labels (`INTR[180]`/`[182]`) should be verified visually.

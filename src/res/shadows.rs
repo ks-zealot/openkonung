@@ -20,7 +20,9 @@
 //!
 //! The world render pass (`FUN_00426384`) collects the body mask of every
 //! visible actor, the mask of every equipped-item overlay (`FUN_00424ED0`) and
-//! every projectile mask, then calls `FUN_0043D247` to halve those pixels.
+//! the ground mask of every prop (object record `+0x80`/`+0xC0`, frame-indexed),
+//! then calls `FUN_0043D247` to halve those pixels. Projectiles cast no shadow:
+//! the pass never walks the projectile pool.
 //!
 //! Verified sample data (shipped resources): the first human base frame 0 has
 //! `w=43 h=85` at offset 0 and its shadow `w=107 h=22` at offset 2167; object 0
@@ -209,6 +211,58 @@ impl Res {
             }
         }
         added
+    }
+
+    /// Append the ground-shadow spans of one **prop** frame.
+    ///
+    /// Prop object records (`id >= 30`) carry, per animation frame:
+    ///
+    /// ```text
+    /// +0x80 + frame*8   {u32 shadow_offset, u32 sprite_offset}
+    /// +0xC0 + frame*8   {u16 shadow_gx, u16 shadow_gy, i16 sprite_gx, i16 sprite_gy}
+    /// ```
+    ///
+    /// with the payload based at `+0x100`. `FUN_00426384` draws a prop shadow
+    /// only when the record's flame-part count (`+0x08`) is `< 2` (burning
+    /// props skip it) and the shadow offset is not `-1`.
+    pub fn add_prop_shadow(
+        &self,
+        object_id: usize,
+        frame: usize,
+        origin: (i32, i32),
+        clip: crate::render::spans::Clip,
+        out: &mut Vec<crate::render::spans::Span>,
+    ) -> bool {
+        let blk = self.object_block(object_id);
+        if blk.len() < 0xC8 {
+            return false;
+        }
+        // `*(int *)(obj + 8) < 2`: flame/effect parts.
+        if u32(blk, 0x08) >= 2 {
+            return false;
+        }
+        let rec = 0x80 + frame * 8;
+        if rec + 8 > blk.len() {
+            return false;
+        }
+        let off = u32(blk, rec);
+        if off == 0 || off == 0xFFFF_FFFF {
+            return false;
+        }
+        let ao = 0xC0 + frame * 8;
+        let (gx, gy) = if ao + 4 <= blk.len() {
+            (i16(blk, ao) as i32, i16(blk, ao + 2) as i32)
+        } else {
+            (0, 0)
+        };
+        crate::render::spans::add_mask(
+            &blk[0x100..],
+            off as usize,
+            origin.0 + gx,
+            origin.1 + gy,
+            clip,
+            out,
+        )
     }
 
     /// Overlay blocks active for this pose: `(block_pos, fi, anchor_x, anchor_y)`.
@@ -402,10 +456,30 @@ mod tests {
         assert!(max_y - min_y >= 5, "multi-row mask: y {min_y}..{max_y}");
     }
 
+    /// A settlement prop frame contributes its own ground mask; burning props
+    /// (`+0x08 >= 2`) and records with a `-1` shadow offset do not.
+    #[test]
+    fn props_contribute_their_frame_ground_mask() {
+        let Some(res) = load() else {
+            return;
+        };
+        let mut out = Vec::new();
+        assert!(
+            res.add_prop_shadow(30, 0, (400, 300), CLIP, &mut out),
+            "object 30 has a 226x236 ground mask"
+        );
+        assert!(!out.is_empty());
+        // Object 34 has four flame parts -> the shadow is skipped.
+        let mut burning = Vec::new();
+        assert!(!res.add_prop_shadow(34, 0, (400, 300), CLIP, &mut burning));
+        // Object 37 stores -1 in its frame-0 shadow slot.
+        let mut none = Vec::new();
+        assert!(!res.add_prop_shadow(37, 0, (400, 300), CLIP, &mut none));
+    }
+
     /// `0x81D620` is the plain `shadows` config word and defaults to enabled.
     #[test]
-    fn the_config_gate_is_a_plain_flag() {
-        // `0x81D620` is `GameConfig::shadows`; the draw pass is skipped when 0.
+    fn the_config_gate_is_a_plain_flag() {        // `0x81D620` is `GameConfig::shadows`; the draw pass is skipped when 0.
         assert_eq!(crate::config::GameConfig::DEFAULT.shadows, 1);
     }
 }

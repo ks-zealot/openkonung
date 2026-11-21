@@ -244,7 +244,7 @@ fn apprentice_stands_next_to_the_master_not_on_him() {
         .copied()
         .expect("smith station");
     let station = (waypoint.x as i32, waypoint.y as i32);
-    let collision = app
+    let mut collision = app
         .world
         .loc(4)
         .map(|l| l.collision.clone())
@@ -259,7 +259,7 @@ fn apprentice_stands_next_to_the_master_not_on_him() {
             break;
         };
         let settlement = settlements.iter().find(|s| s.loc_id == 4);
-        update_population(pop, &collision, settlement, 1.0 / LOGIC_TICK_HZ);
+        update_population(pop, &mut collision, settlement, 1.0 / LOGIC_TICK_HZ);
     }
 
     let motion = app
@@ -331,9 +331,10 @@ fn target_pass_scales_by_workers_and_gates_training() {
     assert!(entity_level(&app, 183) > before_level);
 }
 
-/// Key 255 is a sentinel, and a finished target (state 6) resets to state 0 with a fresh timer.
+/// Key 255 is a sentinel; a completed target with workers stays complete, and
+/// every other idle target restarts construction with a fresh timer.
 #[test]
-fn target_pass_ignores_sentinels_and_resets_completed_targets() {
+fn target_pass_ignores_sentinels_and_resets_idle_targets() {
     let Some(mut app) = build_party_app() else {
         eprintln!("skipping: original resources not present");
         return;
@@ -341,15 +342,76 @@ fn target_pass_ignores_sentinels_and_resets_completed_targets() {
     add_free_location(&mut app, 19);
     app.ensure_population(19);
     let si = settlement_index(&app, 19);
-    app.settlements[si].targets = vec![target(255, 0, 0, 5), target(0, 6, 0, 0)];
+    app.settlements[si].targets = vec![
+        target(255, 0, 0, 5),
+        target(0, 6, 0, 0),
+        target(0, 3, 0, 0),
+    ];
     let group_id = app.settlements[si].group_id as usize;
     app.tables.as_mut().unwrap().groups[group_id].activity_1d = 0;
 
     app.tick_settlement_pass(1);
     assert_eq!(app.settlements[si].targets[0].state, 0, "key 255 sentinel");
     assert_eq!(app.settlements[si].targets[0].timer, 5);
-    assert_eq!(app.settlements[si].targets[1].state, 0, "state 6 resets");
-    assert_eq!(app.settlements[si].targets[1].timer, 180);
+    assert_eq!(
+        app.settlements[si].targets[1].state, 6,
+        "completed target with workers stays complete"
+    );
+    assert_eq!(app.settlements[si].targets[1].timer, 0);
+    assert_eq!(
+        app.settlements[si].targets[2].state, 0,
+        "idle state 3 restarts construction"
+    );
+    assert_eq!(
+        app.settlements[si].targets[2].timer, 180,
+        "armed with 24 * 60 / 8 workers"
+    );
+}
+
+/// The temporary-effect countdown reaches every cached world actor, not only the
+/// current map's citizen groups (`FUN_0041D048` phase A and `FUN_0041BD3C` have
+/// no location or class filter).
+#[test]
+fn temp_effect_pass_ticks_cached_world_actors() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    add_free_location(&mut app, 19);
+    app.ensure_population(19);
+    let id = app.population_cache[&19].actors[0].source_entity_id();
+    {
+        let pop = app.population_cache.get_mut(&19).unwrap();
+        let actor = pop
+            .actors
+            .iter_mut()
+            .find(|a| a.source_entity_id() == id)
+            .expect("cached actor");
+        actor.entity.stats.saved_charisma = 14;
+        actor.entity.stats.charisma_current = 9;
+        actor.entity.stats.temp_effect_timer = 2;
+    }
+    app.tick_temp_effect_pass();
+    let after_first = app.population_cache[&19]
+        .actors
+        .iter()
+        .find(|a| a.source_entity_id() == id)
+        .unwrap()
+        .entity
+        .stats
+        .charisma_current;
+    assert_eq!(after_first, 9, "first pass only decrements the timer");
+    app.tick_temp_effect_pass();
+    let restored = app.population_cache[&19]
+        .actors
+        .iter()
+        .find(|a| a.source_entity_id() == id)
+        .unwrap()
+        .entity
+        .stats
+        .clone();
+    assert_eq!(restored.charisma_current, 14, "stats restored at zero");
+    assert_eq!(restored.temp_effect_timer, 0);
 }
 
 /// An armed foreign party inside rectangle A clears `+0x1A`, sets `+0x1D = 1` and targets group 0.
@@ -559,9 +621,15 @@ fn building_progresses_construction_damage_and_rebuild_sprites() {
         );
         app.settlements[si].targets[0].timer = 1;
     }
+    // A finished settlement (state 6) only restarts when the worker pool is
+    // empty — `FUN_0041D048` phase B skips `state == 6 && workers >= 1`.
     app.settlements[si].targets[0].timer = 0;
+    app.tables.as_mut().unwrap().groups[group_id].activity_1d = 1;
     app.tick_settlement_pass(1);
-    assert_eq!(app.settlements[si].targets[0].state, 0, "state 6 rebuilds");
+    assert_eq!(
+        app.settlements[si].targets[0].state, 0,
+        "state 6 rebuilds with no workers"
+    );
     assert_eq!(app.world.locs[0].props.last().unwrap().object_id, 37);
 }
 
@@ -592,4 +660,113 @@ fn target_state_change_updates_the_current_map_prop() {
     app.tick_settlement_pass(1);
     // key 0 base = 7; state 1 -> object id 7 + 1 + 30 = 38.
     assert_eq!(app.world.locs[0].props[0].object_id, 38);
+}
+
+/// `FUN_00435870`: entering a location releases the dead actors' item instances
+/// and clears the settlement waypoint owners that point at them.
+#[test]
+fn map_entry_releases_dead_actor_items_and_waypoints() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    add_free_location(&mut app, 4);
+    let Some(si) = app.settlements.iter().position(|s| s.loc_id == 4) else {
+        eprintln!("skipping: no loc 4 settlement");
+        return;
+    };
+    let group = app.settlements[si].group_id as usize;
+    let (first, count) = {
+        let t = app.tables.as_ref().expect("tables");
+        let g = &t.groups[group];
+        (g.first_entity as usize, g.entity_count as usize)
+    };
+    assert!(count > 0, "loc 4 settlement group has members");
+    let member = first;
+    let item = app
+        .world
+        .res
+        .alloc_item_instance(3, 34, 0, -1, 1.0, 0, 0)
+        .expect("armor instance");
+    if let Some(t) = app.tables.as_mut() {
+        let e = &mut t.entities[member];
+        e.flags_b |= 0x80; // dead
+        e.equipment[3] = item;
+    }
+    // `FUN_00435870` itself (the map-entry hook runs it before the stock
+    // seeding, which would recycle the freed instance slot).
+    app.cleanup_dead_at_location(4);
+    assert_eq!(
+        app.world.res.item_class(item),
+        Some(0xFF),
+        "dead actor items released"
+    );
+    // The map-entry path also clears the settlement waypoint owner.
+    app.settlements[si].waypoints[2].owner = member as u16;
+    app.population_cache.remove(&4);
+    app.ensure_population(4);
+    assert_eq!(
+        app.settlements[si].waypoints[2].owner, 0,
+        "settlement waypoint owner cleared"
+    );
+}
+
+/// `FUN_004172AC`: the prop start frame and every flame phase come from the
+/// game RNG (`rand() % count`, `rand() % (max-min+1) + min`), not a stable hash.
+#[test]
+fn settlement_prop_phases_come_from_the_game_rng() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.ensure_population(app.current_map);
+    let loc = app.current_map;
+    let target = crate::population::SettlementTarget {
+        key: 0,
+        state: 0,
+        prop_index: 0,
+        timer: 0,
+    };
+    let base = {
+        let db = app.world.res.item_db.as_ref().expect("item db");
+        db.settlement_prop_base(0).expect("key 0 base")
+    };
+    let object_id = base as usize + 30;
+    let frame_count = app.world.res.object_frame_count(object_id).max(1);
+    let emitters = app.world.res.object_flames(object_id);
+    let ranges: Vec<(u8, u8)> = emitters
+        .iter()
+        .filter_map(|e| crate::res::flame_range(e.selector))
+        .collect();
+
+    let mut expect = app.combat_rng;
+    let expected_frame = if frame_count < 2 {
+        0
+    } else {
+        (expect.next_u32() % frame_count as u32) as u8
+    };
+    let mut expected_phases = Vec::new();
+    for (min, max) in &ranges {
+        let span = (*max - *min) as u32 + 1;
+        let off = if span < 2 {
+            0
+        } else {
+            (expect.next_u32() % span) as u8
+        };
+        expected_phases.push(*min + off);
+    }
+
+    app.apply_settlement_prop(loc, &target);
+    assert_eq!(
+        app.combat_rng, expect,
+        "the prop rebuild must consume the game RNG in the original order"
+    );
+    if let Some(prop) = app
+        .world
+        .loc(loc)
+        .and_then(|l| l.props.iter().find(|p| p.ri == 0))
+    {
+        assert_eq!(prop.frame, expected_frame);
+        assert_eq!(prop.flame_frames, expected_phases);
+    }
 }

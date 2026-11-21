@@ -275,6 +275,14 @@ pub struct OwnerSnapshot {
     pub saved_strength: u16,
     /// `Entity+0xC2` saved endurance current.
     pub saved_endurance: u16,
+    /// `Entity+0xC4` armor set bonus (`FUN_0041C69C`).
+    pub armor_bonus: i16,
+    /// `Entity+0xC6` damage set bonus.
+    pub damage_bonus: i16,
+    /// `Entity+0xC8` attack set bonus.
+    pub attack_bonus: i16,
+    /// `Entity+0xD1` add-vs-replace flags.
+    pub bonus_flags: u8,
 }
 
 impl OwnerSnapshot {
@@ -315,6 +323,10 @@ impl OwnerSnapshot {
             saved_charisma: p.saved_charisma,
             saved_strength: p.saved_strength,
             saved_endurance: p.saved_endurance,
+            armor_bonus: p.armor_bonus,
+            damage_bonus: p.damage_bonus,
+            attack_bonus: p.attack_bonus,
+            bonus_flags: p.bonus_flags,
         }
     }
 
@@ -357,6 +369,10 @@ impl OwnerSnapshot {
             saved_charisma: s.saved_charisma,
             saved_strength: s.saved_strength,
             saved_endurance: s.saved_endurance,
+            armor_bonus: s.armor_bonus,
+            damage_bonus: s.damage_bonus,
+            attack_bonus: s.attack_bonus,
+            bonus_flags: s.bonus_flags,
         }
     }
 }
@@ -373,7 +389,12 @@ pub fn item_weight(res: &Res, id: u16) -> i32 {
         return 0;
     };
     let class = res.item_class(id).unwrap_or(info.class);
-    if class == 12 {
+    // `FUN_0041B0C4`: classes `0..=5`, `11` and `12` read a table weight,
+    // `12` is multiplied by the stack quantity, and **everything else** —
+    // including class `10` — is 0.
+    if class == 10 {
+        0
+    } else if class == 12 {
         let q = res.item_quantity(id).unwrap_or(0);
         info.weight.saturating_mul(q as i32)
     } else {
@@ -456,12 +477,17 @@ pub fn requirement_stat_value(
     slots: &SlotsRef,
     stat_id: u16,
 ) -> i32 {
+    // `FUN_0041B1A4`: the stat ids are 1/3 charisma (`+0x58`), 2 dexterity
+    // (`+0x54`), 4 HP/16 (`+0x5C`), 5 strength (`+0x5E`), 6 endurance
+    // (`+0x62`), 7 armor, 8 weapon damage rating, 9 attack rating. The first
+    // six read the **derived** fields, i.e. the `*_base` values that
+    // `FUN_0041C69C` recomputes from the stored `*_current` ones.
     match stat_id {
-        1 | 3 => snap.dexterity_current as i32,
-        2 => snap.raw_0x52 as i32,
-        4 => snap.charisma_current as i32 / 16,
-        5 => snap.hp_internal as i32,
-        6 => snap.strength_current as i32,
+        1 | 3 => snap.charisma_base as i32,
+        2 => snap.dexterity_base as i32,
+        4 => snap.hp_internal as i32 / 16,
+        5 => snap.strength_base as i32,
+        6 => snap.endurance_base as i32,
         7 => {
             let mut armor = snap.base_armor as i32;
             for slot in 3..6 {
@@ -469,29 +495,114 @@ pub fn requirement_stat_value(
                     armor += info.rating as i32;
                 }
             }
+            if snap.armor_bonus != 0 {
+                if snap.bonus_flags & 1 == 0 {
+                    armor = snap.armor_bonus as i32;
+                } else {
+                    armor += snap.armor_bonus as i32;
+                }
+            }
             armor
         }
+        // `FUN_0041AEA8(entity, -1)`: active weapon rating plus the instance
+        // poison and the `+0xC6` set bonus.
         8 => {
             let s = snap.raw_0x12 as usize;
+            let mut rating = 0;
             if s < MAIN_SLOTS {
-                res.item_info(slots.equipment[s])
-                    .map(|i| i.rating as i32)
+                if let Some(info) = res.item_info(slots.equipment[s]) {
+                    rating = info.rating as i32;
+                }
+                if let Some(inst) = res.item_instance(slots.equipment[s]) {
+                    rating += inst.poison as i32;
+                }
+            }
+            if snap.damage_bonus != 0 {
+                if snap.bonus_flags & 2 == 0 {
+                    rating = snap.damage_bonus as i32;
+                } else {
+                    rating += snap.damage_bonus as i32;
+                }
+            }
+            rating
+        }
+        // `FUN_0041B42C(entity, 1)`: the reaction/attack value at distance 1
+        // (object family is not reachable from an item requirement).
+        9 => {
+            let bow = snap.raw_0x12 == 1;
+            let range = if bow {
+                res.item_info(slots.equipment[1])
+                    .map(|i| i.range)
                     .unwrap_or(0)
             } else {
                 0
-            }
+            };
+            crate::combat::reaction_of(&crate::combat::ReactionInput {
+                object_family: false,
+                dexterity: snap.dexterity_base,
+                bow,
+                skill: if bow {
+                    snap.archery_mastery
+                } else {
+                    snap.melee_mastery
+                },
+                distance: 1,
+                bow_range: range,
+                temp_timer: snap.temp_effect_timer,
+                temp_id: snap.temp_effect_id,
+                attack_bonus: snap.attack_bonus,
+                bonus_flags: snap.bonus_flags,
+            })
         }
         _ => 0,
     }
 }
 
-/// `FUN_004182D4`: prototype requirement check. The condition-modifier table
-/// requirement branch is not applied (documented unknown layout); the
-/// prototype requirement (`prototype+0x30/+0x32`) is.
+/// `FUN_004182D4`: equip/use requirement predicate.
+///
+/// `_DAT_0081D638` (the "ignore requirements" debug word) short-circuits
+/// everything; it has no writer in the shipped executable. Otherwise, by item
+/// class:
+///
+/// * `0..=5` and `12`: the **condition record** requirement
+///   (`u8[0x458533 + cond*0x10]`, 0 = none, stat id `u8[0x458532]`), then the
+///   prototype requirement (`prototype+0x30/+0x32`);
+/// * `6..=8`: the condition requirement only;
+/// * `9..=11` (and any other class): always pass.
+///
+/// All 16 shipped condition records store `+2 = +3 = 0`, so the condition gate
+/// currently passes for every item; the branch is still executed.
 pub fn requirement_ok(snap: &OwnerSnapshot, res: &Res, slots: &SlotsRef, id: u16) -> bool {
+    // `_DAT_0081D638` has no writer (all xrefs are reads), so the bypass never
+    // triggers in normal play.
+    const BYPASS: bool = false;
+    if BYPASS {
+        return true;
+    }
     let Some(info) = res.item_info(id) else {
         return false;
     };
+    let class = res.item_class(id).unwrap_or(info.class);
+    // Classes `9..=11` and any unknown class always pass.
+    let prototype_class = matches!(class, 0..=5 | 12);
+    let condition_class = prototype_class || matches!(class, 6..=8);
+    if !condition_class {
+        return true;
+    }
+    if let Some(inst) = res.item_instance(id) {
+        if inst.condition >= 0 {
+            if let Some(rec) = crate::character::effects::condition_record(res, inst.condition as u8) {
+                let stat = rec[2] as u16;
+                let need = rec[3] as i32;
+                if need != 0 && requirement_stat_value(snap, res, slots, stat) < need {
+                    return false;
+                }
+            }
+        }
+    }
+    if !prototype_class {
+        return true;
+    }
     if info.requirement_value == 0 {
         return true;
     }
@@ -906,9 +1017,11 @@ pub fn craft(res: &mut Res, healing: &mut u16, held: u16, target: u16) -> Option
     if held == 0 || target == 0 || held == target {
         return None;
     }
-    let (ca, sa) = res.item_class_subtype(held)?;
+    let (_ca, sa) = res.item_class_subtype(held)?;
     let (cb, sb) = res.item_class_subtype(target)?;
-    if ca != 9 || cb != 9 {
+    // `FUN_0041BB70` is reached only when the **target** is a class-9 item; the
+    // held item's class is not re-checked.
+    if cb != 9 {
         return None;
     }
     let quality = res.item_quality(held).unwrap_or(0.0);
@@ -933,7 +1046,8 @@ pub fn craft(res: &mut Res, healing: &mut u16, held: u16, target: u16) -> Option
         4 => target_quality + skill,
         _ => quality,
     };
-    q = q.min(15.0).max(0.0);
+    // The original caps the quality at 15.0 and has no lower clamp.
+    q = q.min(15.0);
     res.set_item_quality(held, q);
     res.set_item_subtype(held, recipe.out_a);
     res.set_item_subtype(target, recipe.out_b);
@@ -948,6 +1062,34 @@ pub fn craft(res: &mut Res, healing: &mut u16, held: u16, target: u16) -> Option
         skill_gain: gain,
         default_mix: false,
     })
+}
+
+/// `FUN_004175FC` role-2 restock production: fresh class-9 `input` instance
+/// passed through the `FUN_0041BB70` recipe `(input, 3)`.
+///
+/// The original allocates the instance, then crafts it against a synthetic
+/// **on-stack** target `{class 9, subtype 3}` (never a table item). The three
+/// restock rows — `#25 (2,3)`, `#21 (0,3)`, `#23 (1,3)` — all use the `op 0`
+/// quality formula, so the product is `row.out_a` (`5` healing potion, `6`
+/// poison, `7` weapon poison) with quality `healing * 0.01` capped at `15` and
+/// the row's healing gain. The target's own quality/`out_b` never matter here.
+pub fn craft_restock(res: &mut Res, healing: &mut u16, input: u8) -> Option<u16> {
+    let recipe = RECIPES.iter().find(|r| r.a == input && r.b == 3).copied()?;
+    let id = res.alloc_item_instance(9, input, 0, -1, 0.0, 0, 0)?;
+    let skill = *healing as f32 * 0.01;
+    // `FUN_0041BB70` switch on `row[5]`; the synthetic target has no quality.
+    let q = match recipe.op {
+        1 | 4 => skill,
+        2 => 0.0,
+        3 => 0.0,
+        _ => skill,
+    };
+    res.set_item_quality(id, q.min(15.0).max(0.0));
+    res.set_item_subtype(id, recipe.out_a);
+    *healing = (*healing)
+        .saturating_add(recipe.skill_gain as u16)
+        .min(500);
+    Some(id)
 }
 
 /// One mutation produced by potion use.
@@ -996,6 +1138,9 @@ pub enum StatOp {
     AddIdentification(u16),
     /// Clear the dead flag (`flags_b & 0x80`).
     Revive,
+    /// Set the ground-marker highlight (`_DAT_0081D628 = 1`, the torch flag).
+    /// The app applies it; the entity stat passes ignore it.
+    HighlightGround,
 }
 
 /// Errors from using an item.
@@ -1045,7 +1190,8 @@ pub fn use_item_on(
     let quality = res.item_quality(used_id).unwrap_or(0.0);
     match subtype {
         7 => {
-            if target_class != 12 || quality < 0.0 {
+            // `0x4501C4` = 10.0: weak oil cannot be applied.
+            if target_class != 12 || quality < 10.0 {
                 return Err(UseError::NotUsable);
             }
             if !res.set_item_modifier(target_id, 0) {
@@ -1058,7 +1204,12 @@ pub fn use_item_on(
             if !matches!(target_class, 0 | 2 | 12) {
                 return Err(UseError::NotUsable);
             }
-            let poison = quality.round().clamp(0.0, u16::MAX as f32) as u16;
+            // The original adds the potion quality to the target's existing
+            // `+0x0C` word instead of replacing it.
+            let existing = res.item_instance(target_id).map(|i| i.poison).unwrap_or(0);
+            let poison = (existing as f32 + quality)
+                .round()
+                .clamp(0.0, u16::MAX as f32) as u16;
             if !res.set_item_poison(target_id, poison) {
                 return Err(UseError::NotUsable);
             }
@@ -1089,8 +1240,15 @@ pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<
         6 => vec![StatOp::AddPeriodic(qr as i32)],
         7 => return Err(UseError::NeedsTarget),
         8 => {
-            let v = (q * 10.0 - snapshot.base_armor as f32).round().max(0.0);
-            vec![StatOp::SetPeriodic(v as u16)]
+            // Antidote: only cures an active poison, `periodic - quality*10`
+            // clamped at 0 (`0x4501CC` = 10.0). A non-poisoned user still
+            // consumes the item, it just has no effect.
+            if snapshot.periodic_damage == 0 {
+                Vec::new()
+            } else {
+                let v = (snapshot.periodic_damage as f32 - q * 10.0).round().max(0.0);
+                vec![StatOp::SetPeriodic(v as u16)]
+            }
         }
         9 => {
             if snapshot.temp_effect_timer != 0 {
@@ -1133,13 +1291,14 @@ pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<
         }
         11 => {
             let local = qr as i32;
-            let mut ops = vec![
-                StatOp::SetTempTimer((local.max(0) as u16).saturating_mul(30)),
-                StatOp::SetTempId((local.max(0) as f32 * 0.1).round() as u16),
-            ];
+            // `_DAT_0081D628 = 1` runs before the effect: the user sees the
+            // ground markers highlighted until the next map load.
+            let mut ops = vec![StatOp::HighlightGround];
             if snapshot.temp_effect_timer == 0 {
-                ops.insert(0, StatOp::SaveStats);
+                ops.push(StatOp::SaveStats);
             }
+            ops.push(StatOp::SetTempTimer((local.max(0) as u16).saturating_mul(30)));
+            ops.push(StatOp::SetTempId((local.max(0) as f32 * 0.1).round() as u16));
             ops
         }
         12 => {
@@ -1164,6 +1323,10 @@ pub fn use_item(res: &mut Res, snapshot: &OwnerSnapshot, id: u16) -> Result<Vec<
             ops
         }
         13 => {
+            // `0x4501EC` = 10.0: a weak resurrection potion is rejected.
+            if q < 10.0 {
+                return Err(UseError::TooWeak);
+            }
             let mut ops = vec![StatOp::SetHp(1600)];
             if snapshot.dead {
                 ops.push(StatOp::Revive);
@@ -1230,12 +1393,14 @@ fn apply_ops_common(
             StatOp::AddAvailableXp(v) => *available_xp = (*available_xp).saturating_add(v),
             StatOp::Revive => *dead = false,
             // Skill operations are applied by `apply_player_ops` /
-            // `apply_entity_ops` after this common pass.
+            // `apply_entity_ops` after this common pass; the highlight is an
+            // app-level flag applied by the caller.
             StatOp::AddHealing(_)
             | StatOp::AddBuilding(_)
             | StatOp::AddSmithing(_)
             | StatOp::AddTrade(_)
-            | StatOp::AddIdentification(_) => {}
+            | StatOp::AddIdentification(_)
+            | StatOp::HighlightGround => {}
         }
     }
 }

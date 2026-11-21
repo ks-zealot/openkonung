@@ -130,3 +130,66 @@ fn inverse_clamps_to_runtime_bounds() {
         (RUNTIME_MAX_X, RUNTIME_MAX_Y)
     );
 }
+
+/// `FUN_00438640`: the step-list probe, including its `1` fallback.
+#[test]
+fn face_direction_uses_the_original_step_order() {
+    // Same column: above -> 0, below/equal -> 4.
+    assert_eq!(face_direction(10, 5, 10, 6), 0);
+    assert_eq!(face_direction(10, 7, 10, 6), 4);
+    assert_eq!(face_direction(10, 6, 10, 6), 4);
+    // Adjacent cells resolve to a step that actually reaches them.
+    for dir in 0u8..8 {
+        let (tx, ty) = step_by_direction(10, 6, dir);
+        if tx == 10 {
+            continue; // covered by the same-column rule
+        }
+        let got = face_direction(tx, ty, 10, 6);
+        let (rx, ry) = step_by_direction(10, 6, got);
+        assert_eq!((rx, ry), (tx, ty), "dir {dir} -> {got}");
+    }
+    // Non-adjacent targets fall back to 1.
+    assert_eq!(face_direction(40, 40, 10, 6), 1);
+}
+
+/// `FUN_00438090`: one 45-degree step per call, clockwise for `diff < 5` and
+/// counter-clockwise otherwise, wrapping at 0/7.
+#[test]
+fn turn_toward_steps_one_direction_per_call() {
+    let mut f = 0u8;
+    assert!(!turn_toward(&mut f, 2));
+    assert_eq!(f, 1);
+    assert!(!turn_toward(&mut f, 2));
+    assert_eq!(f, 2);
+    assert!(turn_toward(&mut f, 2), "already facing the target");
+    assert_eq!(f, 2);
+
+    // `diff < 5` turns clockwise: 2 -> 3 -> 4 -> 5 -> 6.
+    let mut g = 2u8;
+    for expect in [3u8, 4, 5, 6] {
+        assert!(!turn_toward(&mut g, 6));
+        assert_eq!(g, expect);
+    }
+    assert!(turn_toward(&mut g, 6));
+
+    // `diff >= 5` turns counter-clockwise: 2 -> 1 -> 0.
+    let mut h = 2u8;
+    assert!(!turn_toward(&mut h, 0));
+    assert_eq!(h, 1);
+    assert!(!turn_toward(&mut h, 0));
+    assert_eq!(h, 0);
+    assert!(turn_toward(&mut h, 0));
+
+    // Every start/target pair is reached within four steps.
+    for start in 0u8..8 {
+        for target in 0u8..8 {
+            let mut f = start;
+            let mut steps = 0;
+            while !turn_toward(&mut f, target) {
+                steps += 1;
+                assert!(steps <= 4, "{start} -> {target}");
+            }
+            assert_eq!(f, target);
+        }
+    }
+}

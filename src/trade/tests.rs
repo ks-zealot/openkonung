@@ -163,3 +163,31 @@ fn role_sign_applies_the_settlement_price_multiplier() {
     assert_eq!(buy_value(100, 10, 10, 0), 100);
     assert_eq!(buy_value(100, 10, 10, 1), 150);
 }
+
+/// `0x450024`/`0x4500C4` decode to **0.002**: the trade-skill difference moves
+/// the base price by 0.2 % per point (`FUN_0041AE00`/`FUN_0041B5A8`).
+#[test]
+fn price_uses_the_authored_skill_coefficient() {
+    // 1000 base, player 20 vs partner 10 -> +10 points = +2 %.
+    assert_eq!(sell_value(1000, 20, 10, 0), 510);
+    assert_eq!(buy_value(1000, 20, 10, 0), 980);
+    // Negative difference: -10 points = -2 %.
+    assert_eq!(sell_value(1000, 10, 20, 0), 490);
+    assert_eq!(buy_value(1000, 10, 20, 0), 1020);
+    // A 250-point edge moves the price by half of the base, not by 2x.
+    assert_eq!(sell_value(1000, 250, 0, 0), 750);
+    assert_eq!(buy_value(1000, 250, 0, 0), 500);
+    // The settlement multiplier is applied after the skill term.
+    assert_eq!(sell_value(1000, 20, 10, 1), 340);
+    assert_eq!(buy_value(1000, 20, 10, 1), 1470);
+}
+
+/// `FUN_0043EAAE` is the x87 `FISTP` round with the default control word, i.e.
+/// half-to-even; `f64::round` (half away from zero) would differ on exact .5.
+#[test]
+fn price_rounds_half_to_even() {
+    assert_eq!(sell_value(5, 0, 0, 0), 2); // 2.5 -> 2
+    assert_eq!(sell_value(3, 0, 0, 0), 2); // 1.5 -> 2
+    assert_eq!(sell_value(1, 0, 0, 0), 0); // 0.5 -> 0
+    assert_eq!(buy_value(5, 0, 0, 0), 5);
+}

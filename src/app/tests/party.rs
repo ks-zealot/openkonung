@@ -179,6 +179,10 @@ fn apprentice_option_does_not_wake_the_settlement_or_recruit_immediately() {
         .expect("apprentice option");
     app.dialog_click_option(apprentice);
     assert_eq!(app.dialog.as_ref().unwrap().page, 2083);
+    // Put the candidate in battle stance first: `0x162` must clear it.
+    if let Some(t) = app.tables.as_mut() {
+        t.entities[281].flags_a = 0x44;
+    }
     let start = app
         .dialog
         .as_ref()
@@ -201,6 +205,14 @@ fn apprentice_option_does_not_wake_the_settlement_or_recruit_immediately() {
         .map(|e| e.archetype)
         .unwrap();
     assert_eq!(arch & 0x18, 0x18, "smith role bits (prod4)");
+    assert_eq!(
+        app.tables
+            .as_ref()
+            .and_then(|t| t.entities.get(apprentice_id))
+            .map(|e| e.flags_a),
+        Some(0x40),
+        "0x162 forces the apprentice to peace/idle (battle stance cleared)"
+    );
     assert_eq!(
         app.tables
             .as_ref()
@@ -256,6 +268,9 @@ fn selected_companion_receives_the_world_click_move() {
     // clicked cell on every selected unit, so the companion is commanded too.
     let start = app.party[0].motion.cell;
     let goal = (100 + 8, 80);
+    // Pre-align both units east: the turn gate is covered separately.
+    app.player_dir = 6;
+    app.party[0].motion.facing = 6;
     let (sx, sy) = {
         let (lx, ly) = crate::coords::entity_to_local_px_f(goal.0 as f64, goal.1 as f64);
         (app.detail_pan[0] + lx, app.detail_pan[1] + ly)

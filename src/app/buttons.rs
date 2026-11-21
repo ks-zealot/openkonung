@@ -123,6 +123,7 @@ impl PlayableApp {
                 m.motion.target = None;
                 m.motion.walking = false;
                 m.motion.combat_target = None;
+                m.motion.target_marker = 0;
                 m.motion.ranged_order = false;
                 // `FUN_0042246C` writes `Entity+0x02 = 0x60`, clearing the
                 // engage/approach bits.

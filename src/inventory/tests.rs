@@ -211,7 +211,8 @@ fn oil_turns_arrows_into_plain_ammo_and_is_consumed() {
         return;
     };
     // Class 9 subtype 7 = Масло; class 12 subtype 30 = Кремниевые стрелы.
-    let oil = res.alloc_item_instance(9, 7, 0, -1, 1.0, 0, 0).unwrap();
+    // `0x4501C4` = 10.0: the oil must be at least that strong.
+    let oil = res.alloc_item_instance(9, 7, 0, -1, 10.0, 0, 0).unwrap();
     let arrows = res.alloc_item_instance(12, 30, 0, -1, 30.0, 0, 0).unwrap();
     let snap = OwnerSnapshot::default();
     let ops = use_item_on(&mut res, &snap, oil, arrows).expect("oil applies");
@@ -228,7 +229,7 @@ fn oil_rejects_non_ammo_without_consuming() {
         eprintln!("skipping: original resources not present");
         return;
     };
-    let oil = res.alloc_item_instance(9, 7, 0, -1, 1.0, 0, 0).unwrap();
+    let oil = res.alloc_item_instance(9, 7, 0, -1, 10.0, 0, 0).unwrap();
     let sword = res.alloc_item_instance(2, 0, 0, -1, 1.0, 0, 0).unwrap();
     let snap = OwnerSnapshot::default();
     assert_eq!(
@@ -236,6 +237,24 @@ fn oil_rejects_non_ammo_without_consuming() {
         Err(UseError::NotUsable)
     );
     assert_eq!(res.item_class_subtype(oil), Some((9, 7)));
+}
+
+/// `0x4501C4` = 10.0: oil below that quality is rejected without consuming it.
+#[test]
+fn oil_below_ten_quality_is_rejected() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let oil = res.alloc_item_instance(9, 7, 0, -1, 9.9, 0, 0).unwrap();
+    let arrows = res.alloc_item_instance(12, 30, 0, -1, 30.0, 0, 0).unwrap();
+    let snap = OwnerSnapshot::default();
+    assert_eq!(
+        use_item_on(&mut res, &snap, oil, arrows),
+        Err(UseError::NotUsable)
+    );
+    assert_eq!(res.item_class_subtype(oil), Some((9, 7)), "not consumed");
+    assert_eq!(res.item_instance(arrows).unwrap().modifier_index, -1);
 }
 
 /// Poison writes its rounded quality into the target's poison field and is
@@ -252,6 +271,84 @@ fn poison_coats_weapons_and_arrows() {
     assert!(use_item_on(&mut res, &snap, poison, arrows).is_ok());
     assert_eq!(res.item_instance(arrows).unwrap().poison, 5);
     assert_eq!(res.item_class_subtype(poison), Some((9, 3)));
+}
+
+/// The target's existing `+0x0C` poison is extended, not replaced.
+#[test]
+fn poison_adds_to_the_existing_target_poison() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let poison = res.alloc_item_instance(9, 6, 0, -1, 5.0, 0, 0).unwrap();
+    let sword = res.alloc_item_instance(2, 0, 0, -1, 1.0, 20, 0).unwrap();
+    let snap = OwnerSnapshot::default();
+    assert!(use_item_on(&mut res, &snap, poison, sword).is_ok());
+    assert_eq!(res.item_instance(sword).unwrap().poison, 25);
+}
+
+/// Subtype 8 cures `quality*10` of the periodic damage, clamped at 0, and only
+/// while the user is actually poisoned.
+#[test]
+fn antidote_reduces_periodic_damage_only_while_poisoned() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let id = res.alloc_item_instance(9, 8, 0, -1, 3.0, 0, 0).unwrap();
+    let poisoned = OwnerSnapshot {
+        periodic_damage: 100,
+        ..OwnerSnapshot::default()
+    };
+    let ops = use_item(&mut res, &poisoned, id).expect("antidote");
+    assert_eq!(ops, vec![StatOp::SetPeriodic(70)]);
+    assert_eq!(res.item_class_subtype(id), Some((9, 3)));
+
+    let id = res.alloc_item_instance(9, 8, 0, -1, 100.0, 0, 0).unwrap();
+    let ops = use_item(&mut res, &poisoned, id).expect("antidote");
+    assert_eq!(ops, vec![StatOp::SetPeriodic(0)], "clamped at 0");
+
+    let id = res.alloc_item_instance(9, 8, 0, -1, 3.0, 0, 0).unwrap();
+    let clean = OwnerSnapshot::default();
+    let ops = use_item(&mut res, &clean, id).expect("no-op antidote");
+    assert!(ops.is_empty(), "no effect when not poisoned");
+    assert_eq!(res.item_class_subtype(id), Some((9, 3)), "still consumed");
+}
+
+/// Subtype 11 highlights ground markers (`_DAT_0081D628 = 1`).
+#[test]
+fn subtype_eleven_requests_the_ground_highlight() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let id = res.alloc_item_instance(9, 11, 0, -1, 5.0, 0, 0).unwrap();
+    let ops = use_item(&mut res, &OwnerSnapshot::default(), id).expect("highlight");
+    assert!(ops.contains(&StatOp::HighlightGround));
+    assert!(ops.contains(&StatOp::SetTempTimer(150)));
+}
+
+/// `0x4501EC` = 10.0: a weak resurrection potion is rejected, a strong one
+/// restores 1600 HP and revives a dead user.
+#[test]
+fn resurrection_potion_requires_quality_ten() {
+    let Some(mut res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let dead = OwnerSnapshot {
+        dead: true,
+        hp_internal: 0,
+        ..OwnerSnapshot::default()
+    };
+    let weak = res.alloc_item_instance(9, 13, 0, -1, 9.9, 0, 0).unwrap();
+    assert_eq!(use_item(&mut res, &dead, weak), Err(UseError::TooWeak));
+    assert_eq!(res.item_class_subtype(weak), Some((9, 13)));
+
+    let strong = res.alloc_item_instance(9, 13, 0, -1, 10.0, 0, 0).unwrap();
+    let ops = use_item(&mut res, &dead, strong).expect("resurrect");
+    assert!(ops.contains(&StatOp::SetHp(1600)));
+    assert!(ops.contains(&StatOp::Revive));
 }
 
 /// Matching class-12 stack keys add quantities and mark the incoming instance
@@ -321,9 +418,13 @@ fn synthetic_save(instances: &[(u16, u8, u8)]) -> Vec<u8> {
 fn permissive_snapshot() -> OwnerSnapshot {
     OwnerSnapshot {
         hp_internal: 60_000,
+        dexterity_base: 60_000,
         dexterity_current: 60_000,
+        strength_base: 60_000,
         strength_current: 60_000,
+        charisma_base: 60_000,
         charisma_current: 60_000,
+        endurance_base: 60_000,
         endurance_current: 60_000,
         raw_0x52: 60_000,
         ..OwnerSnapshot::default()
@@ -423,4 +524,46 @@ fn refresh_equipment_fills_ammo_then_slots_and_recomputes_the_weapon_slot() {
     let out = refresh_equipment(&snap, &res, &mut slots);
     assert!(!out.changed);
     assert_eq!(out.weapon_slot, 2);
+}
+
+/// `FUN_0041B1A4` stat ids: 1/3 charisma, 2 dexterity, 4 HP/16, 5 strength,
+/// 6 endurance, 9 attack — all read from the **derived** fields.
+#[test]
+fn requirement_stat_map_reads_the_derived_fields() {
+    let Some(res) = test_res() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let snap = OwnerSnapshot {
+        dexterity_base: 2,
+        dexterity_current: 20,
+        charisma_base: 3,
+        charisma_current: 30,
+        hp_internal: 640,
+        strength_base: 5,
+        strength_current: 50,
+        endurance_base: 6,
+        endurance_current: 60,
+        melee_mastery: 7,
+        archery_mastery: 8,
+        raw_0x12: 0,
+        ..OwnerSnapshot::default()
+    };
+    let equipment = [0u16; MAIN_SLOTS];
+    let inventory = [0u16; INVENTORY_SLOTS];
+    let additional = [0u16; ADDITIONAL_SLOTS];
+    let slots = SlotsRef {
+        equipment: &equipment,
+        inventory: &inventory,
+        additional: &additional,
+        special: 0,
+    };
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 1), 3);
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 3), 3);
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 2), 2);
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 4), 40);
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 5), 5);
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 6), 6);
+    // Stat 9 is the `0x41B42C(entity, 1)` reaction value, not the mastery.
+    assert_eq!(requirement_stat_value(&snap, &res, &slots, 9), 34);
 }

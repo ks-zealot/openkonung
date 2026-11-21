@@ -26,13 +26,13 @@ impl PlayableApp {
             world,
             party,
             current_map,
+            combat_rng,
             ..
         } = self;
-        let collision = world
-            .loc(*current_map)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
-        crate::actors::update_followers(party, collision, leader, ticks);
+        let collision = world.collision_mut(*current_map).unwrap_or(&mut []);
+        // `FUN_0041f3c8` picks its formation slot with `rand() % 12`, so the
+        // follower consumes the shared combat RNG like every other AI path.
+        crate::actors::update_followers(party, collision, leader, ticks, combat_rng);
     }
 
     /// Original `FUN_00421554` battle/peace stance toggle over the current
@@ -113,6 +113,7 @@ impl PlayableApp {
                 // `Entity+0x02 &= 0xFA`: peace clears the engage/approach order.
                 m.motion.engaged = false;
                 m.motion.combat_target = None;
+                m.motion.target_marker = 0;
                 m.motion.ranged_order = false;
             }
             let battle = crate::anim::battle_from_flags(m.entity.flags_b);
@@ -217,10 +218,7 @@ impl PlayableApp {
             party_selected,
             ..
         } = self;
-        let collision = world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        let collision = world.collision_mut(loc).unwrap_or(&mut []);
         let mut occupied: HashSet<(i32, i32)> = party.iter().map(|m| m.motion.cell).collect();
         occupied.insert(leader);
         for (i, m) in party.iter_mut().enumerate() {
@@ -248,8 +246,10 @@ impl PlayableApp {
                 m.motion.frame as usize,
             ) {
                 Ok((im, gx, gy)) => {
-                    let (lx, ly) =
-                        entity_to_local_px_f(m.motion.render_cell.0 as f64, m.motion.render_cell.1 as f64);
+                    let (lx, ly) = entity_to_local_px_f(
+                        m.motion.render_cell.0 as f64,
+                        m.motion.render_cell.1 as f64,
+                    );
                     out.push(WorldSprite {
                         img: im,
                         gx,

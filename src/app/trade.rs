@@ -94,6 +94,7 @@ impl PlayableApp {
     /// Open the exchange for `npc_entity` (`FUN_00431E2C`).
     pub(crate) fn start_trade(&mut self, npc_entity: usize) {
         self.trade = None;
+        self.ground_pile = None;
         let role = self.trade_role(npc_entity);
         let Some((partner_inv, partner_money, partner_trade)) =
             self.partner_snapshot(npc_entity, role)
@@ -147,6 +148,44 @@ impl PlayableApp {
         self.hovered_slot = None;
     }
 
+    /// `FUN_00417010`: open the ground-container window for the active pile at
+    /// `index`.
+    ///
+    /// The pile becomes the "partner" side (its 22 item slots used as the stock
+    /// row), with no NPC, no partner money and no settlement multiplier. Trade
+    /// pricing still applies to whatever the player drops, so the original's
+    /// shared `FUN_004203F4` confirm path is used unchanged.
+    pub(crate) fn start_ground_trade(&mut self, index: usize) {
+        self.trade = None;
+        let Some(obj) = self.active_world_objects.get(index) else {
+            self.ground_pile = None;
+            return;
+        };
+        let mut stock = [0u16; 32];
+        for (slot, id) in obj.items.iter().take(22).enumerate() {
+            stock[slot] = *id;
+        }
+        let state = TradeState::open(
+            0,
+            0,
+            0,
+            self.player.inventory,
+            self.player.money,
+            self.player.trade,
+            stock,
+            0,
+            0,
+        );
+        self.trade = Some(state);
+        self.ground_pile = Some(index);
+        self.trade_message = None;
+        self.trade_message_t = 0.0;
+        self.dialog = None;
+        self.character_screen = false;
+        self.hovered_slot = None;
+        self.trade_balance();
+    }
+
     /// Re-run the `FUN_00430D6C` money auto-balance for the open exchange.
     ///
     /// Called after every cell move and every page change, so the visible price
@@ -185,6 +224,7 @@ impl PlayableApp {
         let Some(state) = self.trade.take() else {
             return;
         };
+        self.ground_pile = None;
         self.player.inventory = state.cancel();
         self.trade_message = None;
         self.trade_message_t = 0.0;
@@ -220,6 +260,36 @@ impl PlayableApp {
         };
         let role = state.role;
         let npc = state.npc_entity;
+
+        // `FUN_00417010` ground container: write the pile back and close instead
+        // of reopening an NPC exchange.
+        if let Some(index) = self.ground_pile.take() {
+            self.trade = None;
+            self.player.inventory = outcome.player_inventory;
+            self.player.trade = self.player.trade.saturating_add(outcome.trade_gain).min(100);
+            self.trade_message = None;
+            self.trade_message_t = 0.0;
+            if let Some(obj) = self.active_world_objects.get_mut(index) {
+                obj.items = outcome
+                    .partner_inventory
+                    .iter()
+                    .copied()
+                    .filter(|&id| id != 0)
+                    .collect();
+                if obj.items.is_empty() {
+                    let source = obj.source;
+                    self.active_world_objects.remove(index);
+                    self.finish_world_object(source);
+                } else {
+                    let first = obj.items.first().copied();
+                    let info = first.and_then(|id| self.world.res.item_info(id));
+                    obj.sprite = super::world_items::world_object_sprite(info, &obj.items, obj.money);
+                }
+            }
+            self.rebuild_world_objects();
+            return;
+        }
+        self.ground_pile = None;
 
         self.player.inventory = outcome.player_inventory;
         self.player.money = (self.player.money + outcome.player_money_delta).max(0);

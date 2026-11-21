@@ -111,17 +111,28 @@ pub struct TradeState {
     pub table_money: [i32; 2],
 }
 
+/// `0x450024` / `0x4500C4`: authored skill-price coefficient (double). The
+/// decompiler prints `(float)_DAT_00450024`, but the x87 body loads it with
+/// `FMUL double ptr`, and the stored bytes decode to **0.002**, not 0.008.
+const TRADE_SKILL_COEFFICIENT: f64 = 0.002;
+/// `0x45002C`: sell base factor.
+const SELL_BASE: f64 = 0.5;
+/// `0x450034`: sell factor while `_DAT_0081D63C > 0` (settlement mult. 2/3).
+const SETTLEMENT_SELL_FACTOR: f64 = 2.0 / 3.0;
+/// `0x4500CC`: buy factor while `_DAT_0081D63C > 0`.
+const SETTLEMENT_BUY_FACTOR: f64 = 1.5;
+
 /// `FUN_0041AE00`: player sell value.
 pub fn sell_value(total: i32, player_trade: u16, partner_trade: u16, role_sign: i32) -> i32 {
     if total == 0 {
         return 0;
     }
     let diff = player_trade as f64 - partner_trade as f64;
-    let mut v = total as f64 * 0.5 * (1.0 + diff * 0.008);
+    let mut v = total as f64 * SELL_BASE * (1.0 + diff * TRADE_SKILL_COEFFICIENT);
     if role_sign > 0 {
-        v *= 2.0 / 3.0;
+        v *= SETTLEMENT_SELL_FACTOR;
     }
-    v.round() as i32
+    v.round_ties_even() as i32
 }
 
 /// `FUN_0041B5A8`: player buy value.
@@ -130,11 +141,11 @@ pub fn buy_value(total: i32, player_trade: u16, partner_trade: u16, role_sign: i
         return 0;
     }
     let diff = player_trade as f64 - partner_trade as f64;
-    let mut v = total as f64 * (1.0 - diff * 0.008);
+    let mut v = total as f64 * (1.0 - diff * TRADE_SKILL_COEFFICIENT);
     if role_sign > 0 {
-        v *= 1.5;
+        v *= SETTLEMENT_BUY_FACTOR;
     }
-    v.round() as i32
+    v.round_ties_even() as i32
 }
 
 impl TradeState {

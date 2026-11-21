@@ -19,8 +19,11 @@ mod tests;
 
 mod build;
 mod class;
+pub mod effects;
 mod player;
+mod xp;
 
 pub use self::build::*;
 pub use self::class::*;
 pub use self::player::*;
+pub use self::xp::*;

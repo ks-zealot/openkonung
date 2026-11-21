@@ -19,7 +19,7 @@ fn skips_group_zero_and_inactive_groups() {
         entity(2, 6, 0x00, 7, 8),
     ];
     let t = tables(groups, entities);
-    let b = build_population(&t, 1, &free_collision());
+    let b = build_population(&t, 1, &mut free_collision());
     assert_eq!(b.matching_groups, 3);
     assert_eq!(b.reserved_group_zero, 1);
     assert_eq!(b.inactive_groups, 1);
@@ -50,7 +50,7 @@ fn enumerates_first_plus_count_not_capacity_nor_one_per_group() {
     let mut entities: Vec<Entity> = (0..14).map(|i| entity(i, 0, 0, 1, 1)).collect();
     entities[13] = entity(13, 0, 0, 4, 4);
     let t = tables(vec![g], entities);
-    let b = build_population(&t, 1, &free_collision());
+    let b = build_population(&t, 1, &mut free_collision());
     assert_eq!(b.enumerated_entities, 3);
     assert_eq!(b.persisted_position_actors(), 3);
     let ids: Vec<usize> = b.actors.iter().map(|a| a.source_entity_id()).collect();
@@ -71,7 +71,7 @@ fn zero_position_is_runtime_placed_and_source_unchanged() {
     let entities = vec![entity(0, 0, 0x4F, 0, 0), entity(1, 0, 0x4F, 0, 0)];
     let t = tables(groups, entities);
 
-    let b = build_population(&t, 1, &free_collision());
+    let b = build_population(&t, 1, &mut free_collision());
     assert_eq!(b.runtime_candidates, 2);
     assert_eq!(b.runtime_placed, 2);
     assert_eq!(b.runtime_failed, 0);
@@ -105,8 +105,8 @@ fn deterministic_repeatability_per_location() {
     let entities: Vec<Entity> = (0..6).map(|i| entity(i, 0, 0x4F, 0, 0)).collect();
     let t = tables(groups, entities);
 
-    let a = build_population(&t, 1, &free_collision());
-    let b = build_population(&t, 1, &free_collision());
+    let a = build_population(&t, 1, &mut free_collision());
+    let b = build_population(&t, 1, &mut free_collision());
     let coords = |p: &PopulationBuild| p.actors.iter().map(|x| x.display_raw()).collect::<Vec<_>>();
     assert_eq!(coords(&a), coords(&b));
 }
@@ -156,7 +156,7 @@ fn invalid_range_is_counted_not_silently_dropped() {
     let groups = vec![group(1, 1999, 5, 1, 65, Rect::default())];
     let entities: Vec<Entity> = (0..2000).map(|i| entity(i, 0, 0, 0, 0)).collect();
     let t = tables(groups, entities);
-    let b = build_population(&t, 1, &free_collision());
+    let b = build_population(&t, 1, &mut free_collision());
     assert_eq!(b.invalid_ranges, 1);
     assert_eq!(b.enumerated_entities, 0);
 }
@@ -235,13 +235,13 @@ fn update_population_moves_only_wanderers() {
     citizen.flags_a = FLAG_WANDER;
     let mob = entity(1, 6, 0x05, 40, 15); // flags_a 0 -> stays put
     let t = tables(groups, vec![citizen, mob]);
-    let collision = free_collision();
-    let mut b = build_population(&t, 1, &collision);
+    let mut collision = free_collision();
+    let mut b = build_population(&t, 1, &mut collision);
 
     let start_c = b.motion[&0].cell;
     let start_m = b.motion[&1].cell;
     for _ in 0..600 {
-        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+        update_population(&mut b, &mut collision, None, 1.0 / LOGIC_TICK_HZ);
     }
     assert_ne!(b.motion[&0].cell, start_c, "citizen must wander");
     assert_eq!(b.motion[&1].cell, start_m, "mob must stay at spawn");
@@ -265,13 +265,13 @@ fn object_group_mobs_hold_position() {
     let mut mob = entity(0, 6, 0x41, 50, 16);
     mob.flags_a = FLAG_WANDER;
     let t = tables(groups, vec![mob]);
-    let collision = free_collision();
-    let mut b = build_population(&t, 1, &collision);
+    let mut collision = free_collision();
+    let mut b = build_population(&t, 1, &mut collision);
     assert!(!b.motion[&0].citizen, "class 0x41 is not a citizen group");
 
     let start = b.motion[&0].cell;
     for _ in 0..900 {
-        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+        update_population(&mut b, &mut collision, None, 1.0 / LOGIC_TICK_HZ);
     }
     assert_eq!(b.motion[&0].cell, start, "object-group mob must stay put");
     assert_eq!(b.motion[&0].frame, 0, "idle frame must be held");
@@ -291,13 +291,13 @@ fn citizen_group_wanders() {
     let mut c = entity(0, 6, 0x05, 50, 16);
     c.flags_a = FLAG_WANDER;
     let t = tables(groups, vec![c]);
-    let collision = free_collision();
-    let mut b = build_population(&t, 1, &collision);
+    let mut collision = free_collision();
+    let mut b = build_population(&t, 1, &mut collision);
     assert!(b.motion[&0].citizen);
 
     let start = b.motion[&0].cell;
     for _ in 0..900 {
-        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+        update_population(&mut b, &mut collision, None, 1.0 / LOGIC_TICK_HZ);
     }
     assert_ne!(b.motion[&0].cell, start, "citizen group member must wander");
     assert!(rect_contains(&rect, b.motion[&0].cell));
@@ -319,8 +319,8 @@ fn idle_wanderer_holds_its_frame_not_loops() {
     let mut mob = entity(1, 6, 0x45, 50, 20);
     mob.flags_a = FLAG_WANDER;
     let t = tables(groups, vec![entity(0, 6, 0x45, 0, 0), mob]);
-    let collision = free_collision();
-    let mut b = build_population(&t, 1, &collision);
+    let mut collision = free_collision();
+    let mut b = build_population(&t, 1, &mut collision);
     // Home waypoint owned by entity 1 at its own cell -> the actor idles there.
     let settlement = Settlement {
         index: 0,
@@ -342,7 +342,12 @@ fn idle_wanderer_holds_its_frame_not_loops() {
         }],
     };
     for _ in 0..120 {
-        update_population(&mut b, &collision, Some(&settlement), 1.0 / LOGIC_TICK_HZ);
+        update_population(
+            &mut b,
+            &mut collision,
+            Some(&settlement),
+            1.0 / LOGIC_TICK_HZ,
+        );
     }
     let m = &b.motion[&1];
     assert_eq!(m.cell, (50, 20), "home owner must stay at its waypoint");
@@ -367,8 +372,8 @@ fn actor_commits_the_first_step_at_segment_start() {
     let mut c = entity(0, 6, 0x05, 50, 16);
     c.flags_a = FLAG_WANDER;
     let t = tables(groups, vec![c]);
-    let collision = free_collision();
-    let mut b = build_population(&t, 1, &collision);
+    let mut collision = free_collision();
+    let mut b = build_population(&t, 1, &mut collision);
 
     // Idle at spawn: no segment in flight, draw cell == stored cell.
     assert!(!b.motion[&0].walking);
@@ -377,7 +382,7 @@ fn actor_commits_the_first_step_at_segment_start() {
 
     let mut issued = false;
     for _ in 0..600 {
-        update_population(&mut b, &collision, None, 1.0 / LOGIC_TICK_HZ);
+        update_population(&mut b, &mut collision, None, 1.0 / LOGIC_TICK_HZ);
         let m = &b.motion[&0];
         if m.walking {
             // The first committed step advanced the stored cell, while the draw

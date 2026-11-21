@@ -35,13 +35,27 @@ impl PlayableApp {
             }
             self.update_group_relations();
             self.apply_dot();
+            self.tick_temp_effect_pass();
         }
         self.advance_all_death_frames();
-        self.refresh_npc_equipment();
-        self.update_world_ai();
+        // `FUN_00421B50`: open the AI frame (`_DAT_0081D5F0 = 0`, remember the
+        // cursor). Group 0 (leader + companions) is served before the object /
+        // citizen groups, matching the original's group-index traversal.
+        self.ai_schedule.begin_frame();
         self.update_player_combat();
         self.update_party_combat();
+        self.update_world_ai();
+        self.ai_schedule.end_frame();
         self.update_world_combat();
+    }
+
+    /// One logic frame, exactly as the fixed-rate driver runs it.
+    ///
+    /// Test-only: the app tests step single frames without going through the
+    /// 60 ms accumulator (`update_combat`).
+    #[cfg(test)]
+    pub(in crate::app) fn combat_tick_once(&mut self) {
+        self.combat_tick();
     }
 
     /// Fixed-rate combat update (60 ms logic ticks, capped at 10 per frame).

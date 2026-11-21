@@ -104,6 +104,15 @@ pub struct PlayerCharacter {
     pub saved_strength: u16,
     /// `Entity+0xC2` — saved endurance current.
     pub saved_endurance: u16,
+
+    /// `Entity+0xC4` — armor set bonus (`FUN_0041C69C`, runtime only).
+    pub armor_bonus: i16,
+    /// `Entity+0xC6` — damage set bonus (runtime only).
+    pub damage_bonus: i16,
+    /// `Entity+0xC8` — attack set bonus (runtime only).
+    pub attack_bonus: i16,
+    /// `Entity+0xD1` — add-vs-replace flags for the three bonuses.
+    pub bonus_flags: u8,
 }
 
 impl PlayerCharacter {
@@ -151,6 +160,10 @@ impl PlayerCharacter {
             saved_charisma: 0,
             saved_strength: 0,
             saved_endurance: 0,
+            armor_bonus: 0,
+            damage_bonus: 0,
+            attack_bonus: 0,
+            bonus_flags: 0,
         }
     }
 

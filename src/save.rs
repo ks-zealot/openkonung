@@ -223,6 +223,10 @@ impl PlayerSave {
             saved_charisma: self.saved_charisma,
             saved_strength: self.saved_strength,
             saved_endurance: self.saved_endurance,
+            armor_bonus: 0,
+            damage_bonus: 0,
+            attack_bonus: 0,
+            bonus_flags: 0,
         })
     }
 }

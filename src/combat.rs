@@ -21,7 +21,7 @@ pub mod projectile;
 
 /// Original LCG (`FUN_0043ea46`): `seed = seed*0x41c64e6d + 0x3039`,
 /// result `(seed >> 16) & 0x7FFF`.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OriginalRng {
     state: u32,
 }
@@ -144,6 +144,21 @@ pub struct CombatStats {
     pub archery_mastery: u16,
     /// `Entity+0x50` periodic damage (poison), also the stinger loot value.
     pub periodic_damage: u16,
+    /// `Entity+0xC4` armor set bonus (`FUN_0041C69C`; the app recomputes it).
+    pub armor_bonus: i16,
+    /// `Entity+0xC6` damage set bonus (`FUN_0041C69C`).
+    pub damage_bonus: i16,
+    /// `Entity+0xC8` attack/reaction set bonus (`FUN_0041C69C`).
+    pub attack_bonus: i16,
+    /// `Entity+0xD1` add-vs-replace flags (bit 0 armor, bit 1 damage, bit 2 attack).
+    pub bonus_flags: u8,
+    /// `Entity+0xCC` ammo (`+0xCC` is `special_equipment`): the arrow instance
+    /// whose modifier/subtype/poison `FUN_0041BF44` copies into a projectile.
+    pub ammo: u16,
+    /// `Entity+0xCE` temporary-effect timer in logic frames.
+    pub temp_effect_timer: u16,
+    /// `Entity+0xCA` temporary-effect id (`+0xCA` is added to `0x41B42C`).
+    pub temp_effect_id: u16,
     /// `Entity+0x66` six equipped item instance ids (`0` = empty slot).
     pub equipment: [u16; 6],
 }
@@ -164,6 +179,13 @@ impl CombatStats {
             melee_mastery: p.melee_mastery,
             archery_mastery: p.archery_mastery,
             periodic_damage: p.periodic_damage,
+            armor_bonus: p.armor_bonus,
+            damage_bonus: p.damage_bonus,
+            attack_bonus: p.attack_bonus,
+            bonus_flags: p.bonus_flags,
+            ammo: p.special_equipment,
+            temp_effect_timer: p.temp_effect_timer,
+            temp_effect_id: p.temp_effect_id,
             equipment: p.equipment,
         }
     }
@@ -183,6 +205,13 @@ impl CombatStats {
             melee_mastery: e.stats.melee_mastery,
             archery_mastery: e.stats.archery_mastery,
             periodic_damage: e.stats.periodic_damage,
+            armor_bonus: e.stats.armor_bonus,
+            damage_bonus: e.stats.damage_bonus,
+            attack_bonus: e.stats.attack_bonus,
+            bonus_flags: e.stats.bonus_flags,
+            ammo: e.special_equipment,
+            temp_effect_timer: e.stats.temp_effect_timer,
+            temp_effect_id: e.stats.temp_effect_id,
             equipment: e.equipment,
         }
     }
@@ -203,26 +232,113 @@ impl CombatStats {
     }
 }
 
-/// `FUN_0041b42c`: reaction roll used by the hit test.
-pub fn reaction(s: &CombatStats) -> i32 {
-    if s.is_object_family() {
-        return round_even(MONSTER_REACTION_BASE + s.dexterity as f64 * MONSTER_REACTION_DEX)
-            as i32;
-    }
-    let dex_term = (100.0 - s.dexterity as f64 * 0.5).max(1.0);
-    let value = if s.weapon_slot == 1 {
-        let denom = ARCHERY_REACTION_SCALE * dex_term;
-        (REACTION_BASE + s.archery_mastery as f64 * REACTION_SKILL_SCALE) / denom.max(1e-9)
+/// Pure inputs of `FUN_0041b42c` (`reaction`/hit value).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReactionInput {
+    /// `Entity+0x04 & 0x40` object/monster family.
+    pub object_family: bool,
+    /// Derived dexterity (`Entity+0x54`).
+    pub dexterity: u16,
+    /// `Entity+0x12 == 1` (bow active).
+    pub bow: bool,
+    /// `Entity+0x40` melee or `+0x44` archery mastery.
+    pub skill: u16,
+    /// `param_2`: `0` for the melee hit test, `1` for the stat-9 query.
+    pub distance: i32,
+    /// The active bow prototype's `u16@+0x34` reach.
+    pub bow_range: u16,
+    /// `Entity+0xCE` temporary-effect timer.
+    pub temp_timer: u16,
+    /// `Entity+0xCA` temporary-effect id.
+    pub temp_id: u16,
+    /// `Entity+0xC8` attack set bonus.
+    pub attack_bonus: i16,
+    /// `Entity+0xD1` add-vs-replace flags (bit 2 = attack).
+    pub bonus_flags: u8,
+}
+
+/// `FUN_0041b42c`: reaction / hit value 0..100.
+///
+/// Object family: `round(50 + 0.25*dex)` (`0x45006C` = 0.5, `0x450074` = 100).
+/// Humans: `round(100 - (100 - 0.5*dex) / (1.5 + 0.00015*skill))`; with a bow
+/// active the numerator is multiplied by `0.7 * (1 + distance/range)`
+/// (`0x45007C` = 0.7, `0x450084` = 0.5, `0x45008C` = 100, `0x450094` = 0.00015,
+/// `0x45009C` = 1.5, `0x4500A4` = 0.5, `0x4500AC` = 100, `0x4500B4` = 0.00015,
+/// `0x4500BC` = 1.5). While a temporary effect runs `+0xCA` is added, then the
+/// `+0xC8` set bonus replaces or adds by `+0xD1 & 4`.
+pub fn reaction_of(i: &ReactionInput) -> i32 {
+    let dex = i.dexterity as f64;
+    let mut value = if i.object_family {
+        round_even(MONSTER_REACTION_BASE + dex * MONSTER_REACTION_DEX) as i32
     } else {
-        (REACTION_BASE + s.melee_mastery as f64 * REACTION_SKILL_SCALE) / dex_term.max(1e-9)
+        let denom = REACTION_BASE + REACTION_SKILL_SCALE * i.skill as f64;
+        let dext = 100.0 - DODGE_DEX_SCALE * dex;
+        if i.bow {
+            let range = i.bow_range.max(1) as f64;
+            let factor =
+                ARCHERY_REACTION_SCALE * (1.0 + i.distance as f64 / range);
+            round_even(100.0 - factor * dext / denom) as i32
+        } else {
+            round_even(100.0 - dext / denom) as i32
+        }
     };
-    round_even(100.0 - value) as i32
+    if i.temp_timer != 0 {
+        value += i.temp_id as i32;
+    }
+    if i.attack_bonus != 0 {
+        if i.bonus_flags & 4 == 0 {
+            value = i.attack_bonus as i32;
+        } else {
+            value += i.attack_bonus as i32;
+        }
+    }
+    value
+}
+
+/// `FUN_0041b42c`: reaction roll used by the hit test.
+///
+/// `distance` is `0` for the melee hit test; `bow_range` is the active bow's
+/// prototype reach (only read when `Entity+0x12 == 1`).
+pub fn reaction(s: &CombatStats, distance: i32, bow_range: u16) -> i32 {
+    let bow = s.weapon_slot == 1;
+    reaction_of(&ReactionInput {
+        object_family: s.is_object_family(),
+        dexterity: s.dexterity,
+        bow,
+        skill: if bow {
+            s.archery_mastery
+        } else {
+            s.melee_mastery
+        },
+        distance,
+        bow_range,
+        temp_timer: s.temp_effect_timer,
+        temp_id: s.temp_effect_id,
+        attack_bonus: s.attack_bonus,
+        bonus_flags: s.bonus_flags,
+    })
+}
+
+/// `FUN_0041b42c` bow reach: the active bow prototype's `u16@+0x34`.
+pub fn bow_range(db: &ItemDb, save: &[u8], s: &CombatStats) -> u16 {
+    if s.weapon_slot != 1 {
+        return 0;
+    }
+    let Some(id) = s.equipment.get(1).copied() else {
+        return 0;
+    };
+    let Some(inst) = ItemDb::decode_instance(save, id) else {
+        return 0;
+    };
+    db.info(inst.class, inst.subtype)
+        .map(|i| i.range)
+        .unwrap_or(0)
 }
 
 /// `FUN_0041b060`: `reaction < rand()%101` misses.
-pub fn roll_hit(attacker: &CombatStats, rng: &mut OriginalRng) -> bool {
+pub fn roll_hit(attacker: &CombatStats, bow_range: u16, rng: &mut OriginalRng) -> bool {
     let roll = rng.roll() as i32;
-    reaction(attacker) >= roll
+    reaction(attacker, 0, bow_range) >= roll
 }
 
 /// Resolve the active melee weapon's slot, decoded instance and prototype.
@@ -253,7 +369,7 @@ pub fn attack_damage(
         return (dmg.max(0), s.periodic_damage);
     }
     let unarmed = round_even(s.strength as f64 * s.hp as f64 * HUMAN_UNARMED_STR_HP) as i32;
-    if let Some((_, inst, info)) = weapon_info(db, save, s) {
+    let (mut value, poison) = if let Some((_, inst, info)) = weapon_info(db, save, s) {
         let base = db
             .modifier_damage(inst.modifier_index, target_archetype)
             .unwrap_or(info.rating) as i32;
@@ -261,10 +377,20 @@ pub fn attack_damage(
         (base + armed_bonus, inst.poison)
     } else {
         (unarmed, 0)
+    };
+    // `FUN_0041aea8`: the `+0xC6` damage set bonus (humans only).
+    if s.damage_bonus != 0 {
+        if s.bonus_flags & 2 == 0 {
+            value = s.damage_bonus as i32;
+        } else {
+            value += s.damage_bonus as i32;
+        }
     }
+    (value, poison)
 }
 
-/// `FUN_0041ab7c`: base armor plus the rating of equipment slots 3..=5.
+/// `FUN_0041ab7c`: base armor plus the rating of equipment slots 3..=5, then
+/// the `+0xC4` set-bonus term (`+0xD1 & 1` clear replaces, otherwise adds).
 pub fn armor_total(db: &ItemDb, save: &[u8], s: &CombatStats) -> i32 {
     let mut armor = s.base_armor as i32;
     for slot in 3..6 {
@@ -276,6 +402,13 @@ pub fn armor_total(db: &ItemDb, save: &[u8], s: &CombatStats) -> i32 {
             if let Some(info) = db.info(inst.class, inst.subtype) {
                 armor += info.rating as i32;
             }
+        }
+    }
+    if s.armor_bonus != 0 {
+        if s.bonus_flags & 1 == 0 {
+            armor = s.armor_bonus as i32;
+        } else {
+            armor += s.armor_bonus as i32;
         }
     }
     armor
@@ -292,48 +425,70 @@ pub fn mitigate_damage(s: &CombatStats, incoming: i32, armor: i32) -> u16 {
     round_even(value).clamp(0, u16::MAX as i64) as u16
 }
 
-/// Snapshot of the bow fields copied into a projectile by `FUN_0041BF44`.
+/// Snapshot of the projectile payload copied by `FUN_0041BF44`.
+///
+/// `FUN_0041BF44` stores the **bow** class rating at `+0x16` but the **ammo**
+/// instance fields at `+0x18` (poison), `+0x1E` (modifier index) and `+0x1F`
+/// (subtype); `FUN_0041AC40` uses them to pick the damage base.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BowShot {
-    /// Prototype combat value `u16@0x459B7C + subtype*0x40` (`ItemInfo::rating`).
+    /// Prototype combat value of the **bow** (`u16@0x459B7C + subtype*0x40`).
     pub rating: u16,
-    /// Item instance `+0x02` weapon-modifier index into `0x462798`
-    /// (`-1` = no modifier).
+    /// Ammo instance `+0x02` weapon-modifier index (`-1` = none).
     pub modifier: i8,
-    /// Item instance `+0x03` subtype; selects the `0x459B84` probe range.
+    /// Ammo instance `+0x03` subtype; selects the `0x459B7C` rating row.
     pub subtype: u8,
-    /// Item instance `+0x0C` poison added to the target on a hit.
+    /// Ammo instance `+0x0C` poison added to the target on a hit.
     pub poison: u16,
 }
 
-/// `FUN_0041bf44`: bow rating/modifier/subtype/poison from `Equipment[1]`.
+/// `FUN_0041bf44`: bow rating + the ammo's modifier/subtype/poison.
 pub fn bow_shot(db: &ItemDb, save: &[u8], s: &CombatStats) -> Option<BowShot> {
     if s.weapon_slot != 1 {
         return None;
     }
     let id = *s.equipment.get(1)?;
-    if id == 0 {
+    if id == 0 || s.ammo == 0 {
         return None;
     }
-    let inst = ItemDb::decode_instance(save, id)?;
-    let info = db.info(inst.class, inst.subtype)?;
-    if info.class != 1 || info.range == 0 {
+    let bow_inst = ItemDb::decode_instance(save, id)?;
+    let bow_info = db.info(bow_inst.class, bow_inst.subtype)?;
+    if bow_info.class != 1 || bow_info.range == 0 {
         return None;
     }
+    let ammo = ItemDb::decode_instance(save, s.ammo)?;
     Some(BowShot {
-        rating: info.rating,
-        modifier: inst.modifier_index,
-        subtype: inst.subtype,
-        poison: inst.poison,
+        rating: bow_info.rating,
+        modifier: ammo.modifier_index,
+        subtype: ammo.subtype,
+        poison: ammo.poison,
     })
 }
 
-/// `FUN_0041AC40`: projectile damage = `(modifier or bow rating) * bow rating`.
-pub fn ranged_damage(db: &ItemDb, bow: &BowShot, target_archetype: u8) -> (i32, u16) {
-    let base = db
-        .modifier_damage(bow.modifier, target_archetype)
-        .unwrap_or_else(|| db.rating_for_subtype(bow.subtype)) as i64;
-    let raw = base * bow.rating as i64;
+/// `FUN_0041AC40`: projectile damage = `(modifier or ammo rating) * bow rating`
+/// plus the shooter's `+0xC6` set bonus.
+pub fn ranged_damage(
+    db: &ItemDb,
+    bow: &BowShot,
+    target_archetype: u8,
+    owner: &CombatStats,
+) -> (i32, u16) {
+    // The original treats a modifier below `1` as "none" for the projectile
+    // (unlike the melee path, which accepts `0`).
+    let base = if bow.modifier >= 1 {
+        db.modifier_damage(bow.modifier, target_archetype)
+            .unwrap_or_else(|| db.rating_for_subtype(bow.subtype))
+    } else {
+        db.rating_for_subtype(bow.subtype)
+    } as i64;
+    let mut raw = base * bow.rating as i64;
+    if owner.damage_bonus != 0 {
+        if owner.bonus_flags & 2 == 0 {
+            raw = owner.damage_bonus as i64;
+        } else {
+            raw += owner.damage_bonus as i64;
+        }
+    }
     (raw.clamp(0, i32::MAX as i64) as i32, bow.poison)
 }
 
@@ -381,6 +536,7 @@ pub fn resolve_projectile(
     db: &ItemDb,
     save: &[u8],
     bow: &BowShot,
+    owner: &CombatStats,
     defender: &CombatStats,
     rng: &mut OriginalRng,
 ) -> ProjectileRoll {
@@ -394,7 +550,7 @@ pub fn resolve_projectile(
             poison: 0,
         };
     }
-    let (raw, poison) = ranged_damage(db, bow, defender.archetype);
+    let (raw, poison) = ranged_damage(db, bow, defender.archetype, owner);
     let armor = armor_total(db, save, defender);
     let damage = mitigate_damage(defender, raw, armor);
     ProjectileRoll {
@@ -436,7 +592,8 @@ pub fn resolve_melee(
     defender_facing: u8,
     rng: &mut OriginalRng,
 ) -> MeleeRoll {
-    if !roll_hit(attacker, rng) {
+    let range = bow_range(db, save, attacker);
+    if !roll_hit(attacker, range, rng) {
         return MeleeRoll {
             hit: false,
             dodged: false,

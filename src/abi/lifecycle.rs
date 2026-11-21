@@ -303,6 +303,9 @@ pub fn start_game(hero_index: u32, build: CharacterBuild, _variant: i32) -> u32 
     );
     let rt = runtime_mut();
     apply_host_to_app(&mut app, rt.host_w, rt.host_h);
+    // `FUN_0041C69C` for the starting equipment (the map population is built
+    // lazily and recomputes on entry).
+    app.recompute_owner_effects(crate::inventory::InventoryOwner::Protagonist);
     rt.game = Some(Box::new(app));
     rt.active = ActiveMode::Game;
     1

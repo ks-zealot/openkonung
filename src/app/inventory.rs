@@ -172,6 +172,7 @@ impl PlayableApp {
                 *slot = slot.saturating_add(1);
             }
         }
+        self.recompute_owner_effects(owner);
         true
     }
 
@@ -373,6 +374,10 @@ impl PlayableApp {
     /// Deposit the held item into the current owner's inventory (original
     /// `FUN_00424410`): stack ammo first, then weight and free-slot checks,
     /// then insert at slot 0.
+    ///
+    /// When the target is the item's own owner, `FUN_0041E8A8` restores the
+    /// lift-time container instead: the item goes back to the exact slot it was
+    /// taken from (equipment, additional, ammo or bag index).
     pub fn deposit_held(&mut self) -> bool {
         let Some(held) = self.held_item else {
             return false;
@@ -394,9 +399,17 @@ impl PlayableApp {
             let Some(mut slots) = slots_mut_parts(player, party, target) else {
                 return false;
             };
-            if try_stack_ammo(&mut world.res, &mut slots, held.id) {
+            if target == held.owner {
+                if let Some(source) = held.source {
+                    if slots.get(source) == Some(0) {
+                        slots.set(source, held.id);
+                        handled = true;
+                    }
+                }
+            }
+            if !handled && try_stack_ammo(&mut world.res, &mut slots, held.id) {
                 handled = true;
-            } else {
+            } else if !handled {
                 let carried = carried_weight(&world.res, &slots.as_ref());
                 let w = item_weight(&world.res, held.id);
                 if cap < carried.saturating_add(w) {
@@ -415,6 +428,7 @@ impl PlayableApp {
             self.held_item = None;
             self.queue_sound(4);
             self.sweep_owner(target);
+            self.recompute_owner_effects(target);
         }
         handled
     }
@@ -454,7 +468,7 @@ impl PlayableApp {
                 ItemLocation::Additional(slot) => {
                     additional_slot_for_class(class, 0x0E + slot as u16) == Some(slot)
                 }
-                ItemLocation::Special => true,
+                ItemLocation::Special => class == 12,
                 ItemLocation::Inventory(_) => true,
             };
             if !gate_ok || !requirement_ok(&snapshot, &world.res, &slots.as_ref(), held.id) {
@@ -490,6 +504,7 @@ impl PlayableApp {
             };
             self.queue_sound(sound);
             self.sweep_owner(owner);
+            self.recompute_owner_effects(owner);
         }
         moved
     }
@@ -563,7 +578,6 @@ impl PlayableApp {
             .map(|s| capacity(s.endurance_base))
             .unwrap_or(0);
         let mut ok = false;
-        let mut merged = false;
         let mut message: Option<&'static str> = None;
         {
             let PlayableApp {
@@ -572,22 +586,19 @@ impl PlayableApp {
                 party,
                 ..
             } = self;
-            let Some(mut slots) = slots_mut_parts(player, party, target) else {
+            let Some(slots) = slots_mut_parts(player, party, target) else {
                 return false;
             };
-            if try_stack_ammo(&mut world.res, &mut slots, held.id) {
+            // `FUN_00424410`: weight check, then the original `FUN_0042462C`
+            // front insert. The original never merges ammo stacks here.
+            let carried = carried_weight(&world.res, &slots.as_ref());
+            let w = item_weight(&world.res, held.id);
+            if cap < carried.saturating_add(w) {
+                message = Some("Превышен вес");
+            } else if insert_inventory_front(slots.inventory, held.id) {
                 ok = true;
-                merged = true;
             } else {
-                let carried = carried_weight(&world.res, &slots.as_ref());
-                let w = item_weight(&world.res, held.id);
-                if cap < carried.saturating_add(w) {
-                    message = Some("Превышен вес");
-                } else if insert_inventory_front(slots.inventory, held.id) {
-                    ok = true;
-                } else {
-                    message = Some("Мешок у тебя не резиновый!");
-                }
+                message = Some("Мешок у тебя не резиновый!");
             }
         }
         if let Some(m) = message {
@@ -596,9 +607,7 @@ impl PlayableApp {
         if ok {
             self.held_item = None;
             self.queue_sound(4);
-            if !merged {
-                self.sweep_owner(target);
-            }
+            self.sweep_owner(target);
         }
         ok
     }
@@ -699,8 +708,24 @@ impl PlayableApp {
                 }
             }
         }
+        self.after_use_ops(owner, &ops);
         self.queue_sound(9);
         true
+    }
+
+    /// App-level side effects of a potion use that the stat passes cannot
+    /// apply: the subtype-11 ground-marker highlight (`_DAT_0081D628 = 1`) and
+    /// the subtype-13 revive placement (`FUN_00414ABC`).
+    fn after_use_ops(&mut self, owner: InventoryOwner, ops: &[StatOp]) {
+        if ops.contains(&StatOp::HighlightGround) {
+            self.torch_reveal = true;
+        }
+        if ops.contains(&StatOp::Revive) {
+            self.revive_owner_on_free_cell(owner);
+        }
+        // Potion/debuff operations change the stored stats, so the derived
+        // values and the condition bonuses must be recomputed.
+        self.recompute_owner_effects(owner);
     }
 
     /// Apply a held class-9 item to another item (`FUN_0041DAB0` target path).
@@ -735,6 +760,7 @@ impl PlayableApp {
                 }
             }
         }
+        self.after_use_ops(held.owner, &ops);
         // Drop the cursor and put the transformed used item back into the bag
         // (front insert; the original leaves it in its existing slot).
         self.held_item = None;
@@ -820,6 +846,7 @@ impl PlayableApp {
         }
         self.queue_sound(9);
         self.sweep_owner(target_owner);
+        self.recompute_owner_effects(target_owner);
         true
     }
 
@@ -891,19 +918,205 @@ impl PlayableApp {
         self.drop_held_on_ground()
     }
 
-    /// Advance temporary potion timers at the original 60 ms logic rate.
-    pub fn tick_temp_effects(&mut self, dt: f64) {
-        self.temp_effect_accum += dt.max(0.0) * LOGIC_TICK_HZ;
-        let frames = self.temp_effect_accum.floor() as u32;
-        if frames == 0 {
-            return;
+    /// `FUN_0041D048` phase A: the temporary-effect countdown.
+    ///
+    /// The original decrements `Entity+0xCE` **once per 16-frame pass**
+    /// (`(_DAT_0081D640 & 0xF) == 0`) and restores the saved `+0xBC..+0xC2`
+    /// stats when it reaches zero. Phase A walks every non-object group and
+    /// `FUN_0041BD3C` walks every object group; **neither filters by location**,
+    /// so the remake ticks the leader, the party and every actor of every
+    /// population cache it has built.
+    pub fn tick_temp_effect_pass(&mut self) {
+        crate::inventory::tick_player_temp(&mut self.player);
+        for m in self.party.iter_mut() {
+            crate::inventory::tick_entity_temp(&mut m.entity);
         }
-        self.temp_effect_accum -= frames as f64;
-        for _ in 0..frames {
-            crate::inventory::tick_player_temp(&mut self.player);
-            for m in self.party.iter_mut() {
-                crate::inventory::tick_entity_temp(&mut m.entity);
+        for pop in self.population_cache.values_mut() {
+            for actor in pop.actors.iter_mut() {
+                crate::inventory::tick_entity_temp(&mut actor.entity);
+            }
+        }
+        // The restored `*_current` values feed the derived fields again.
+        self.recompute_all_effects();
+    }
+
+    /// `FUN_0041C69C` for one owner: recompute the derived `*_base` stats, HP
+    /// and the `+0xC4/+0xC6/+0xC8` set bonuses from the stored `*_current`
+    /// values and the equipped items' condition records.
+    pub fn recompute_owner_effects(&mut self, owner: InventoryOwner) {
+        let (equipment, additional, extra, stored) = match owner {
+            InventoryOwner::Protagonist => {
+                let p = &self.player;
+                (
+                    p.equipment,
+                    p.additional_equipment,
+                    // `Entity+0xD2`/`+0xD3`: 0 is the remake's "unset" value
+                    // (shipped entities store 0xFF).
+                    [
+                        if p.interface_mode_d2 == 0 {
+                            None
+                        } else {
+                            Some(p.interface_mode_d2 as i8)
+                        },
+                        if p.state_d3 == 0 {
+                            None
+                        } else {
+                            Some(p.state_d3 as i8)
+                        },
+                    ],
+                    crate::character::effects::StoredStats {
+                        dexterity: p.dexterity_current,
+                        charisma: p.charisma_current,
+                        hp: p.hp_internal,
+                        strength: p.strength_current,
+                        endurance: p.endurance_current,
+                    },
+                )
+            }
+            InventoryOwner::Party(i) => {
+                let Some(m) = self.party.get(i) else {
+                    return;
+                };
+                let e = &m.entity;
+                (
+                    e.equipment,
+                    e.additional_equipment,
+                    [
+                        if e.state_d2 == 0 || e.state_d2 == 0xFF {
+                            None
+                        } else {
+                            Some(e.state_d2 as i8)
+                        },
+                        // `Entity` has no `+0xD3` field in the remake (the
+                        // protagonist's `state_d3` is player-only).
+                        None,
+                    ],
+                    crate::character::effects::StoredStats {
+                        dexterity: e.stats.dexterity_current,
+                        charisma: e.stats.charisma_current,
+                        hp: e.stats.hp_internal,
+                        strength: e.stats.strength_current,
+                        endurance: e.stats.endurance_current,
+                    },
+                )
+            }
+        };
+        let r = crate::character::effects::recompute(
+            &self.world.res,
+            &equipment,
+            &additional,
+            extra,
+            stored,
+        );
+        match owner {
+            InventoryOwner::Protagonist => {
+                let p = &mut self.player;
+                p.dexterity_base = r.dexterity;
+                p.charisma_base = r.charisma;
+                p.hp_internal = r.hp;
+                p.strength_base = r.strength;
+                p.endurance_base = r.endurance;
+                p.armor_bonus = r.armor_bonus;
+                p.damage_bonus = r.damage_bonus;
+                p.attack_bonus = r.attack_bonus;
+                p.bonus_flags = r.bonus_flags;
+            }
+            InventoryOwner::Party(i) => {
+                if let Some(m) = self.party.get_mut(i) {
+                    apply_derived_effects(&mut m.entity.stats, &r);
+                }
             }
         }
     }
+
+    /// Recompute every cached population actor of one location.
+    pub fn recompute_effects_for_location(&mut self, loc: u32) {
+        let ids: Vec<usize> = self
+            .population_cache
+            .get(&loc)
+            .map(|p| p.actors.iter().map(|a| a.source_entity_id()).collect())
+            .unwrap_or_default();
+        for id in ids {
+            self.recompute_actor_effects(loc, id);
+        }
+    }
+
+    fn recompute_actor_effects(&mut self, loc: u32, id: usize) {
+        let (equipment, additional, extra, stored) = {
+            let Some(pop) = self.population_cache.get(&loc) else {
+                return;
+            };
+            let Some(a) = pop
+                .actors
+                .iter()
+                .find(|a| a.source_entity_id() == id)
+            else {
+                return;
+            };
+            let e = &a.entity;
+            (
+                e.equipment,
+                e.additional_equipment,
+                [
+                    if e.state_d2 == 0 || e.state_d2 == 0xFF {
+                        None
+                    } else {
+                        Some(e.state_d2 as i8)
+                    },
+                    None,
+                ],
+                crate::character::effects::StoredStats {
+                    dexterity: e.stats.dexterity_current,
+                    charisma: e.stats.charisma_current,
+                    hp: e.stats.hp_internal,
+                    strength: e.stats.strength_current,
+                    endurance: e.stats.endurance_current,
+                },
+            )
+        };
+        let r = crate::character::effects::recompute(
+            &self.world.res,
+            &equipment,
+            &additional,
+            extra,
+            stored,
+        );
+        if let Some(pop) = self.population_cache.get_mut(&loc) {
+            if let Some(a) = pop
+                .actors
+                .iter_mut()
+                .find(|a| a.source_entity_id() == id)
+            {
+                apply_derived_effects(&mut a.entity.stats, &r);
+            }
+        }
+    }
+
+    /// Recompute the protagonist, the party and every cached population.
+    pub fn recompute_all_effects(&mut self) {
+        self.recompute_owner_effects(InventoryOwner::Protagonist);
+        for i in 0..self.party.len() {
+            self.recompute_owner_effects(InventoryOwner::Party(i));
+        }
+        let locs: Vec<u32> = self.population_cache.keys().copied().collect();
+        for loc in locs {
+            self.recompute_effects_for_location(loc);
+        }
+    }
+}
+
+/// Write one [`crate::character::effects::Recompute`] into an `EntityStats`.
+fn apply_derived_effects(
+    stats: &mut crate::population::EntityStats,
+    r: &crate::character::effects::Recompute,
+) {
+    stats.dexterity_base = r.dexterity;
+    stats.charisma_base = r.charisma;
+    stats.hp_internal = r.hp;
+    stats.strength_base = r.strength;
+    stats.endurance_base = r.endurance;
+    stats.armor_bonus = r.armor_bonus;
+    stats.damage_bonus = r.damage_bonus;
+    stats.attack_bonus = r.attack_bonus;
+    stats.bonus_flags = r.bonus_flags;
 }

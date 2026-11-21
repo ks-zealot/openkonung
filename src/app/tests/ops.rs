@@ -206,29 +206,35 @@ fn healing_ops_target_the_protagonist_and_party() {
         eprintln!("skipping: game data not present");
         return;
     };
-    // 0x14E: the healer's skill rises; the leader is restored.
+    // 0x14E: the healer's skill rises, the leader is restored. The original
+    // uses `round((1600 - hp) * 0.015 + healing)` (double at 0x4505E8).
     app.player.hp_internal = 100;
     app.tables.as_mut().unwrap().entities[NPC].stats.healing = 50;
     assert!(run(&mut app, 0x14E));
     assert_eq!(app.player.hp_internal, 1600);
+    let after_single = ((1600 - 100) as f64 * 0.015 + 50.0).round_ties_even() as u16;
     assert_eq!(
         app.tables.as_ref().unwrap().entities[NPC].stats.healing,
-        51,
-        "1600-100 missing HP / 1024 + 50"
+        after_single,
+        "healer skill rises by (1600 - hp) * 0.015"
     );
 
-    // 0x14F: party members are restored, not the settlement group.
+    // 0x14F: the whole party is restored and the **healer's** skill accumulates
+    // for each visible member (leader first, then companions).
     app.recruit_companion(NPC);
     app.player.hp_internal = 100;
     app.party[0].entity.stats.hp_internal = 100;
-    app.party[0].entity.stats.healing = 10;
     app.tables.as_mut().unwrap().entities[280].stats.healing = 0;
     assert!(run(&mut app, 0x14F));
     assert_eq!(app.player.hp_internal, 1600);
     assert_eq!(app.party[0].entity.stats.hp_internal, 1600);
-    assert!(
-        app.party[0].entity.stats.healing > 10,
-        "party member healing skill must rise"
+    let mut expected = after_single as f64;
+    expected = ((1600 - 100) as f64 * 0.015 + expected).round_ties_even();
+    expected = ((1600 - 100) as f64 * 0.015 + expected).round_ties_even();
+    assert_eq!(
+        app.party[0].entity.stats.healing,
+        expected as u16,
+        "the healer's skill accumulates per healed member"
     );
     assert_eq!(
         app.tables.as_ref().unwrap().entities[280].stats.healing,
@@ -458,4 +464,76 @@ fn party_gear_repair_caps_and_refills_durability() {
     assert_eq!(app.world.res.item_durability(over), Some((170.0, 170.0)));
     assert_eq!(app.world.res.item_durability(under), Some((50.0, 50.0)));
     assert_eq!(app.world.res.item_durability(quest), Some((50.0, 200.0)));
+}
+
+/// Quest XP opcodes call the `FUN_0041079C` engine: the grant is banked when
+/// AUTO is off, and spent through the stat/level raisers when `+0x03 & 2` is set.
+#[test]
+fn xp_opcodes_route_through_the_xp_engine() {
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.player.available_xp = 1000;
+    app.player.invested_xp = 0;
+    app.player.temp_effect_timer = 0;
+    app.player.flags_b &= !0x02;
+
+    assert!(run(&mut app, 0x12B), "no-AUTO grant still succeeds");
+    assert_eq!(app.player.available_xp, 1010, "no AUTO: banked");
+
+    app.player.flags_b |= 0x02;
+    let invested = app.player.invested_xp;
+    assert!(run(&mut app, 0x12B));
+    assert!(
+        app.player.available_xp < 1020,
+        "AUTO spends the grant (available {})",
+        app.player.available_xp
+    );
+    assert!(
+        app.player.available_xp + (app.player.invested_xp - invested) == 1020,
+        "the spend only moves experience into invested_xp"
+    );
+}
+
+/// Build-target predicates reject the 0xFF padding key, and `0x155` takes its
+/// requirement key from target 1 while checking target 2's state/timer.
+#[test]
+fn build_predicates_reject_padding_keys_and_0x155_uses_target1_key() {
+    use crate::population::SettlementTarget;
+    let Some(mut app) = build_party_app() else {
+        eprintln!("skipping: game data not present");
+        return;
+    };
+    let si = app
+        .settlements
+        .iter()
+        .position(|s| s.loc_id as u32 == app.current_map)
+        .expect("current settlement");
+    let gid = app.settlements[si].group_id as usize;
+    let first = app.tables.as_ref().unwrap().groups[gid].first_entity as usize;
+    app.tables.as_mut().unwrap().entities[first].stats.building = 9;
+    app.settlements[si].targets.resize(8, SettlementTarget::default());
+    let idle = SettlementTarget {
+        key: 0,
+        state: 0,
+        timer: 0,
+        prop_index: 0,
+    };
+    app.settlements[si].targets[1] = idle;
+    app.settlements[si].targets[2] = idle;
+    app.settlements[si].targets[4] = idle;
+
+    assert!(run(&mut app, 0x151), "idle target, real key, builder present");
+    app.settlements[si].targets[1].key = 0xFF;
+    assert!(!run(&mut app, 0x151), "0xFF padding key is rejected");
+    assert!(!run(&mut app, 0x155), "0x155 reads target 1's key");
+    app.settlements[si].targets[1].key = 0;
+    app.settlements[si].targets[2].key = 0xFF;
+    assert!(
+        run(&mut app, 0x155),
+        "target 2's own key is ignored by 0x155"
+    );
+    app.settlements[si].targets[4].key = 0xFF;
+    assert!(!run(&mut app, 0x152), "target 4's padding key is rejected");
 }

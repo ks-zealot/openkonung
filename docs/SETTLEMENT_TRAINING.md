@@ -99,8 +99,9 @@ pass produced no target/prop event.
      1000 XP (the raise is free but `+0x3C` invested XP records the cost);
    * `+0x33` level += 1 again;
    * if any stat deficit: `melee(+0x40) += (voivode - own)/deficit + 1`, same
-     for archery `+0x44`, then `FUN_0041C69C` (derived = stored when no
-     temporary effect is active).
+     for archery `+0x44`, then `FUN_0041C69C` (the derived `*_base` stats are
+     recomputed from the stored `*_current` ones plus the equipped items'
+     condition bonuses; the 16-frame temporary-effect pass re-runs it).
 
 The stat caps/minima are the `0x45B0AB` table (`[class][stat][level]{cap,min}`,
 `class = (archetype & 7) - 1`, or `1` for `archetype & 0x40`), and the costs are

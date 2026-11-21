@@ -52,9 +52,18 @@ impl PlayableApp {
         self.play_melee_impact(a.archetype, a.weapon_slot, self.combatant_cell(attacker));
         let hp_before = d.hp;
         if roll.lethal {
-            // `FUN_004123BC` case 5 calls `FUN_00418480(defender, 0, 0)`:
-            // melee kills never generate a random item (killer level 0).
+            // `FUN_004123BC` case 5 calls `FUN_00418480(defender, 0, 0)`
+            // (no generated item) and `FUN_0041079C(self, power/4)` plus
+            // `self.melee_mastery += power`.
+            let power = {
+                let res = &self.world.res;
+                res.item_db
+                    .as_ref()
+                    .map(|db| crate::combat::combat_power(db, &res.save_game, &d))
+                    .unwrap_or(0)
+            };
             self.kill_combatant(defender, 0, 0);
+            self.award_kill_reward(attacker, power, true);
         } else {
             self.set_combat_hp(defender, hp_before.saturating_sub(roll.damage));
             self.add_combat_poison(defender, roll.poison);

@@ -581,15 +581,38 @@ fn draw_stats(frame: &mut [u8], fw: usize, fh: usize, res: &mut Res, sheet: &Cha
         .chain(std::iter::once(&sheet.special))
         .map(|&id| item_weight(res, id))
         .sum();
-    // «Броня» = `FUN_0041ab7c`: base armor (`+0x4E`) plus equipment slots 3..=5.
+    // «Броня» = `FUN_0041ab7c`: base armor (`+0x4E`) plus equipment slots 3..=5
+    // and the `+0xC4` set bonus (`FUN_0041C69C`; `+0xD1 & 1` clear replaces).
     let mut armor = s.base_armor as u32;
     for slot in 3..6 {
         if let Some(info) = res.item_info(sheet.equipment[slot]) {
             armor += info.rating as u32;
         }
     }
-    // «Удар» = `FUN_0041aea8` normal path: active weapon slot (`+0x12` in {0,2}).
-    let attack = if s.raw_0x12 == 0 || s.raw_0x12 == 2 {
+    if s.armor_bonus != 0 {
+        let value = if s.bonus_flags & 1 == 0 {
+            s.armor_bonus as i32
+        } else {
+            armor as i32 + s.armor_bonus as i32
+        };
+        armor = value.max(0) as u32;
+    }
+    // «Удар» = `FUN_0041aea8` (melee slots) or `FUN_0041ad44` (bow active): the
+    // ammo prototype rating plus the `+0xC6` damage set bonus.
+    let attack = if s.raw_0x12 == 1 {
+        let mut value = res
+            .item_info(sheet.special)
+            .map(|i| i.rating as i32)
+            .unwrap_or(0);
+        if s.damage_bonus != 0 {
+            if s.bonus_flags & 2 == 0 {
+                value = s.damage_bonus as i32;
+            } else {
+                value += s.damage_bonus as i32;
+            }
+        }
+        value.max(0) as u32
+    } else if s.raw_0x12 == 0 || s.raw_0x12 == 2 {
         res.item_info(sheet.equipment[s.raw_0x12 as usize])
             .map(|i| i.rating as u32)
             .unwrap_or(0)
@@ -684,6 +707,10 @@ pub fn stat_raise_cost(sheet: &CharacterSheet, stat: PrimaryStat) -> u32 {
         return 0;
     };
     let s = &sheet.snapshot;
+    // `FUN_00410B08` returns 0 while a temporary effect is running.
+    if s.temp_effect_timer != 0 {
+        return 0;
+    }
     let value = match stat {
         PrimaryStat::Charisma => s.charisma_current,
         PrimaryStat::Strength => s.strength_current,
@@ -699,6 +726,9 @@ pub fn level_up_available(sheet: &CharacterSheet) -> bool {
         return false;
     };
     let s = &sheet.snapshot;
+    if s.temp_effect_timer != 0 {
+        return false;
+    }
     can_raise_any(
         class,
         s.level,

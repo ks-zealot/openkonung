@@ -257,7 +257,7 @@ fn stat_cost_worked_examples() {
 }
 
 /// A cost applies while its threshold is `> value`; past the last finite tier
-/// it is the `999` sentinel.
+/// it is the `999999` sentinel.
 #[test]
 fn stat_cost_tier_boundaries() {
     // Specialized (Warrior/STR): threshold row applies while spec_thr > v.
@@ -290,14 +290,14 @@ fn stat_cost_tier_boundaries() {
         stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 9),
         5
     );
-    // Past the last finite tier -> 999.
+    // Past the last finite tier -> 999999.
     assert_eq!(
         stat_cost(CharacterClass::Warrior, PrimaryStat::Strength, 100),
-        999
+        999_999
     );
     assert_eq!(
         stat_cost(CharacterClass::Warrior, PrimaryStat::Charisma, 80),
-        999
+        999_999
     );
     // The last finite specialized tier (150/95/75).
     assert_eq!(

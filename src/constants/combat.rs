@@ -17,7 +17,7 @@ pub const SETTLEMENT_PROP_HIT_TIMER: u16 = 1;
 pub const SETTLEMENT_ALERT_FLAGS: u8 = 0x15;
 
 /// Ranged kill money reward: `power / 4`.
-pub const RANGED_KILL_MONEY_DIVISOR: i32 = 4;
+pub const KILL_XP_DIVISOR: i32 = 4;
 
 /// Collision grid row stride (`index = x * 160 + y`).
 pub const COLLISION_ROW_STRIDE: i32 = 160;

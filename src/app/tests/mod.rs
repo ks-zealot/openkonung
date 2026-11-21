@@ -7,6 +7,7 @@ mod cursor;
 mod inventory;
 mod map;
 mod movement;
+mod occupancy;
 mod ops;
 mod party;
 mod save;

@@ -70,9 +70,16 @@ fn reactions_match_the_verified_formulas() {
         melee_mastery: 100,
         archery_mastery: 0,
         periodic_damage: 0,
+        armor_bonus: 0,
+        bonus_flags: 0,
+        ammo: 0,
+        temp_effect_timer: 0,
+        temp_effect_id: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
         equipment: [0; 6],
     };
-    assert_eq!(reaction(&hero), 100);
+    assert_eq!(reaction(&hero, 0, 0), 37); // 100 - 95/1.515 = 37.29 -> 37
 
     let ant = CombatStats {
         archetype: 0x41,
@@ -85,9 +92,16 @@ fn reactions_match_the_verified_formulas() {
         melee_mastery: 0,
         archery_mastery: 0,
         periodic_damage: 0,
+        armor_bonus: 0,
+        bonus_flags: 0,
+        ammo: 0,
+        temp_effect_timer: 0,
+        temp_effect_id: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
         equipment: [0; 6],
     };
-    assert_eq!(reaction(&ant), 59); // round(50 + 35*0.25) = 58.75 -> 59
+    assert_eq!(reaction(&ant, 0, 0), 59); // round(50 + 35*0.25) = 58.75 -> 59
 }
 
 /// The shipped hero knife (120 raw vs ant armor 80) mitigates to exactly `42`.
@@ -140,8 +154,9 @@ fn resolve_melee_uses_facing_dodge_then_mitigation() {
     };
     let hs = CombatStats::from_entity(&hero);
     let as_ = CombatStats::from_entity(&ant);
-    let mut rng = OriginalRng::new(1);
-    // Facing 0 -> 0 has no dodge entry; hero reaction 100 always hits.
+    // Reaction 37 (dex 10, melee 100); seed 37 rolls 21, so the hit lands.
+    let mut rng = OriginalRng::new(37);
+    // Facing 0 -> 0 has no dodge entry.
     let roll = resolve_melee(&db, &game, &hs, 0, &as_, 0, &mut rng);
     assert!(roll.hit);
     assert!(!roll.dodged);
@@ -256,10 +271,43 @@ fn generated_loot_only_rolls_for_a_nonzero_killer_level() {
     assert!(found, "no seed produced a generated item");
 }
 
+/// An otherwise empty body still creates a marker on the low `rand()%101` roll
+/// (`FUN_00418480`); above `0x1E` the early-out returns no marker.
+#[test]
+fn empty_corpse_marker_follows_the_low_roll() {
+    let Some((db, _)) = db_and_game() else {
+        return;
+    };
+    let mut none = 0;
+    let mut marker = 0;
+    for seed in 1..400u32 {
+        let mut rng = OriginalRng::new(seed);
+        let plan = crate::combat::loot::plan_corpse_loot(
+            &db,
+            &mut rng,
+            0,
+            &[0u16; 32],
+            0,
+            0,
+            0,
+            0,
+        );
+        assert!(plan.existing.is_empty() && plan.generated.is_empty() && plan.money == 0);
+        if plan.empty_marker {
+            assert!(!plan.is_empty());
+            marker += 1;
+        } else {
+            assert!(plan.is_empty());
+            none += 1;
+        }
+    }
+    assert!(marker > 0, "no seed produced an empty marker");
+    assert!(none > 0, "some seeds must early-out");
+}
+
 /// `level_tier` steps at levels 4, 7 and 10 (`3/6/8/10`).
 #[test]
-fn level_tiers_match_fun_00417144() {
-    assert_eq!(crate::combat::loot::level_tier(1), 3);
+fn level_tiers_match_fun_00417144() {    assert_eq!(crate::combat::loot::level_tier(1), 3);
     assert_eq!(crate::combat::loot::level_tier(3), 3);
     assert_eq!(crate::combat::loot::level_tier(4), 6);
     assert_eq!(crate::combat::loot::level_tier(7), 8);
@@ -287,17 +335,24 @@ fn bow_lifetime_and_ranged_damage_match_the_original() {
         melee_mastery: 0,
         archery_mastery: 100,
         periodic_damage: 0,
+        armor_bonus: 0,
+        bonus_flags: 0,
+        ammo: 102,
+        temp_effect_timer: 0,
+        temp_effect_id: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
         equipment: [0, 23, 0, 0, 0, 0],
     };
     let bow = bow_shot(&db, &game, &stats).expect("bow shot");
     assert_eq!(bow.rating, 112);
-    assert_eq!(bow.subtype, 8);
-    // No modifier: rating * rating.
-    assert_eq!(ranged_damage(&db, &bow, 0x55), (112 * 112, 0));
+    assert_eq!(bow.subtype, 30, "the AMMO subtype, not the bow's");
+    // No modifier: ammo rating (subtype 30 = 1) * bow rating (112).
+    assert_eq!(ranged_damage(&db, &bow, 0x55, &stats), (112, 0));
     // Modifier 1 matches ants: 5000 * 112.
     let modified = BowShot { modifier: 1, ..bow };
-    assert_eq!(ranged_damage(&db, &modified, 0x55), (5000 * 112, 0));
-    assert_eq!(ranged_damage(&db, &modified, 0x41), (112 * 112, 0));
+    assert_eq!(ranged_damage(&db, &modified, 0x55, &stats), (5000 * 112, 0));
+    assert_eq!(ranged_damage(&db, &modified, 0x41, &stats), (112, 0));
 }
 
 /// The muzzle/draw tables and the per-axis velocity normalization match.
@@ -339,26 +394,26 @@ fn projectile_dodge_and_mitigation_use_the_melee_constants() {
         return;
     };
     let hs = CombatStats::from_entity(&hero);
-    // Hero has no bow in the shipped loadout; use the short-bow rating.
+    // Hero has no bow in the shipped loadout; use the short-bow rating and an
+    // arrow payload (subtype 30, rating 1).
     let bow = BowShot {
         rating: 112,
         modifier: -1,
-        subtype: 8,
+        subtype: 30,
         poison: 0,
     };
     let as_ = CombatStats::from_entity(&ant);
     let mut rng = OriginalRng::new(1);
-    let roll = resolve_projectile(&db, &game, &bow, &as_, &mut rng);
+    let roll = resolve_projectile(&db, &game, &bow, &hs, &as_, &mut rng);
     assert!(roll.hit);
-    assert_eq!(roll.incoming, 112 * 112);
+    assert_eq!(roll.incoming, 112);
     let dodger = CombatStats {
         dexterity: 2000,
         ..as_
     };
     let mut rng = OriginalRng::new(1);
-    let roll = resolve_projectile(&db, &game, &bow, &dodger, &mut rng);
+    let roll = resolve_projectile(&db, &game, &bow, &hs, &dodger, &mut rng);
     assert!(!roll.hit && roll.dodged);
-    let _ = hs;
 }
 
 /// A victim's own arrow stack (instance 102) is copied onto its corpse.
@@ -432,6 +487,10 @@ fn player_stats_view_maps_the_authored_fields() {
         saved_charisma: 0,
         saved_strength: 0,
         saved_endurance: 0,
+        armor_bonus: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
+        bonus_flags: 0,
     };
     let s = CombatStats::from_player(&p);
     assert_eq!(
@@ -439,4 +498,109 @@ fn player_stats_view_maps_the_authored_fields() {
         (1600, 15, 10, 10)
     );
     assert_eq!(s.periodic_damage, 3);
+}
+
+/// `FUN_0041AB7C`: the `+0xC4` armor bonus replaces the base total when the
+/// `+0xD1` add flag is clear and adds to it otherwise.
+#[test]
+fn armor_total_applies_the_c4_set_bonus() {
+    let Some((db, game)) = db_and_game() else {
+        return;
+    };
+    let mut stats = CombatStats {
+        archetype: 5,
+        weapon_slot: 0,
+        hp: 1600,
+        dexterity: 10,
+        strength: 15,
+        endurance: 10,
+        base_armor: 10,
+        melee_mastery: 0,
+        archery_mastery: 0,
+        periodic_damage: 0,
+        armor_bonus: 0,
+        bonus_flags: 0,
+        ammo: 0,
+        temp_effect_timer: 0,
+        temp_effect_id: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
+        equipment: [0; 6],
+    };
+    assert_eq!(armor_total(&db, &game, &stats), 10);
+    stats.armor_bonus = 5;
+    stats.bonus_flags = 1;
+    assert_eq!(armor_total(&db, &game, &stats), 15, "add mode");
+    stats.bonus_flags = 0;
+    assert_eq!(armor_total(&db, &game, &stats), 5, "replace mode");
+}
+
+/// Minimal archer view (short bow 23 + arrows 102) for the A2 formulas.
+fn archer() -> CombatStats {
+    CombatStats {
+        archetype: 3,
+        weapon_slot: 1,
+        hp: 1600,
+        dexterity: 10,
+        strength: 15,
+        endurance: 10,
+        base_armor: 10,
+        melee_mastery: 0,
+        archery_mastery: 100,
+        periodic_damage: 0,
+        armor_bonus: 0,
+        bonus_flags: 0,
+        ammo: 102,
+        temp_effect_timer: 0,
+        temp_effect_id: 0,
+        damage_bonus: 0,
+        attack_bonus: 0,
+        equipment: [0, 23, 0, 0, 0, 0],
+    }
+}
+
+/// `FUN_0041B42C`: the archery numerator is multiplied by
+/// `0.7 * (1 + distance/range)`.
+#[test]
+fn archery_reaction_scales_with_distance() {
+    // 100 - 0.7*(1 + d/25)*95/1.515
+    assert_eq!(reaction(&archer(), 0, 25), 56);
+    assert_eq!(reaction(&archer(), 25, 25), 12);
+}
+
+/// `FUN_0041AEA8`: the `+0xC6` damage bonus adds (`+0xD1 & 2`) or replaces.
+#[test]
+fn attack_damage_applies_the_c6_bonus() {
+    let Some((db, game, hero, ant)) = heroes() else {
+        return;
+    };
+    let mut hs = CombatStats::from_entity(&hero);
+    let (base, _) = attack_damage(&db, &game, &hs, ant.archetype);
+    assert_eq!(base, 120);
+    hs.damage_bonus = 100;
+    hs.bonus_flags = 2;
+    assert_eq!(attack_damage(&db, &game, &hs, ant.archetype).0, 220);
+    hs.bonus_flags = 0;
+    assert_eq!(attack_damage(&db, &game, &hs, ant.archetype).0, 100);
+}
+
+/// `FUN_0041AC40`: the shooter's `+0xC6` is added to `ammo * bow` damage.
+#[test]
+fn ranged_damage_applies_the_c6_bonus() {
+    let Some((db, _game)) = db_and_game() else {
+        return;
+    };
+    let bow = BowShot {
+        rating: 112,
+        modifier: -1,
+        subtype: 30,
+        poison: 0,
+    };
+    let mut owner = archer();
+    assert_eq!(ranged_damage(&db, &bow, 0x55, &owner), (112, 0));
+    owner.damage_bonus = 50;
+    owner.bonus_flags = 2;
+    assert_eq!(ranged_damage(&db, &bow, 0x55, &owner), (162, 0));
+    owner.bonus_flags = 0;
+    assert_eq!(ranged_damage(&db, &bow, 0x55, &owner), (50, 0));
 }

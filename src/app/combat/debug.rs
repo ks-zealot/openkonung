@@ -30,11 +30,7 @@ impl PlayableApp {
         self.ensure_population(self.current_map);
         let pc = (self.player_x.round() as i32, self.player_y.round() as i32);
         let loc = self.current_map;
-        let collision = self
-            .world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        let collision = self.world.collision(loc).unwrap_or(&[]);
         let free: Vec<(i32, i32)> = neighbors(pc.0, pc.1)
             .iter()
             .map(|&(_, x, y)| (x, y))
@@ -166,11 +162,7 @@ impl PlayableApp {
         self.ensure_population(self.current_map);
         let pc = (self.player_x.round() as i32, self.player_y.round() as i32);
         let loc = self.current_map;
-        let collision = self
-            .world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        let collision = self.world.collision(loc).unwrap_or(&[]);
         let mut cell = None;
         for dx in RANGED_TEST_MIN_DISTANCE..RANGED_TEST_MAX_DISTANCE {
             let c = (pc.0 + dx, pc.1);
@@ -200,6 +192,10 @@ impl PlayableApp {
                 a.entity.stats.raw_0x52 = 0;
                 a.entity.equipment = [0; 6];
                 a.entity.inventory = [0; 32];
+                // The population is rebuilt from the authored table on some
+                // frames, so the staged cell must live on the Entity too.
+                a.entity.x = cell.0 as u16;
+                a.entity.y = cell.1 as u16;
                 if let Some(m) = pop.motion.get_mut(&a.entity.index) {
                     m.cell = cell;
                     m.render_cell = cell;
@@ -208,6 +204,8 @@ impl PlayableApp {
                     m.path.clear();
                     m.walking = false;
                     m.frame = 0;
+                    // A staged target must not advance two cells in one tick.
+                    m.walk_frames = 12;
                 }
                 chosen = Some(a.entity.index);
                 break;
@@ -216,6 +214,34 @@ impl PlayableApp {
         let Some(id) = chosen else {
             return 0;
         };
+        // Freeze the staged target's group: `FUN_0041ECC8` re-probes every
+        // ranged cycle, so a chasing mob would close inside the three-cell
+        // minimum before the arrow spawns and the staged shot would be dropped
+        // exactly as the original drops it. The smoke tests arrow flight.
+        if let Some(tables) = self.tables.as_mut() {
+            // The canonical row is what a population rebuild re-reads, so the
+            // staged cell has to be written there as well as on the copy.
+            if let Some(e) = tables.entities.get_mut(id) {
+                e.x = cell.0 as u16;
+                e.y = cell.1 as u16;
+            }
+            // Freeze the runtime group so the staged target stays put:
+            // `FUN_0041ECC8` re-probes every ranged cycle, so a chasing mob
+            // would close inside the three-cell minimum before the arrow spawns
+            // and the staged shot would be dropped exactly as the original drops
+            // it. Clearing the class bits removes the object/citizen AI paths
+            // (`FUN_00412E00` needs `class & 0xC0`, the relation pass `& 0x40`);
+            // the smoke tests arrow flight, not the chase.
+            let source_group = self
+                .population_cache
+                .get(&loc)
+                .and_then(|p| p.actors.iter().find(|a| a.entity.index == id))
+                .map(|a| a.source_group_id);
+            if let Some(g) = source_group.and_then(|g| tables.groups.get_mut(g)) {
+                g.activity_1d = 0;
+                g.class_1e = 0;
+            }
+        }
         self.combat_test_target = Some(id);
         self.combat_test_prop = None;
         self.player.dead = false;
@@ -262,6 +288,11 @@ impl PlayableApp {
             if let Some(a) = pop.actors.iter_mut().find(|a| a.entity.index == id) {
                 a.entity.stats.dexterity_base = RANGED_TEST_DODGE_DEXTERITY;
                 a.entity.stats.dexterity_current = RANGED_TEST_DODGE_DEXTERITY;
+                // `FUN_0041C69C` caps HP at 1600; clamp the staged value now so
+                // the smoke's before/after reports agree.
+                if a.entity.stats.hp_internal > 1600 {
+                    a.entity.stats.hp_internal = 1600;
+                }
                 return 1;
             }
         }
@@ -277,11 +308,24 @@ impl PlayableApp {
         let Some((gx, gy)) = self.prop_cell(prop_index) else {
             return 0;
         };
-        let collision = self
-            .world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        // Stage a stable target state: the settlement pass resets an idle
+        // (non-state-6) target to state 0, which would swap the prop sprite
+        // mid-flight. The authored data uses state 3 here.
+        if let Some(si) = self.settlements.iter().position(|s| s.loc_id as u32 == loc) {
+            let staged = self.settlements[si]
+                .targets
+                .iter_mut()
+                .find(|t| t.prop_index as usize == prop_index)
+                .map(|t| {
+                    t.state = 3;
+                    t.timer = 30000;
+                    *t
+                });
+            if let Some(target) = staged {
+                self.apply_settlement_prop(loc, &target);
+            }
+        }
+        let collision = self.world.collision(loc).unwrap_or(&[]);
         let mut player_cell = None;
         'search: for radius in 1..PROP_TEST_SEARCH_RADIUS {
             for dx in -radius..=radius {
@@ -373,6 +417,30 @@ impl PlayableApp {
                     .map(|m| m.dead as u8)
             })
             .unwrap_or(0);
+        // `FUN_0041ECC8` `+0x02 & 4`: the per-cycle line-of-fire result
+        // (-1 too close, 0 blocked, 1 clear, -2 no probe for a prop target).
+        let los_code = match target {
+            Some(id) if !matches!(self.player_attack_target, Some(crate::combat::CombatTarget::Prop(_))) => {
+                let pc = (self.player_x.round() as i32, self.player_y.round() as i32);
+                self.combatant_cell(crate::combat::CombatTarget::World(id))
+                    .and_then(|tc| {
+                        self.world.collision(self.current_map).and_then(|collision| {
+                            super::acquire::armed_los(
+                                &self.world.res,
+                                collision,
+                                self.player.raw_0x12,
+                                &self.player.equipment,
+                                self.player.special_equipment,
+                                pc,
+                                tc,
+                            )
+                        })
+                    })
+                    .map(|l| l.as_code())
+                    .unwrap_or(-2)
+            }
+            _ => -2,
+        };
         let inv_arrow_qty: u32 = self
             .player
             .inventory
@@ -393,7 +461,7 @@ impl PlayableApp {
             .map(|p| (p.x, p.y))
             .unwrap_or((0.0, 0.0));
         format!(
-            "projectiles={} proj0_x={:.2} proj0_y={:.2} ammo={} ammo_qty={} bow={} bow_durability={:.4} player_money={} player_archery={} inv_arrow_qty={} ranged_order={} ranged_frame={} ranged_frames={} target_id={} target_hp={} target_dead={} prop_index={} prop_state={} prop_flags={}",
+            "projectiles={} proj0_x={:.2} proj0_y={:.2} ammo={} ammo_qty={} bow={} bow_durability={:.4} player_money={} player_archery={} inv_arrow_qty={} ranged_order={} ranged_frame={} ranged_frames={} target_id={} target_hp={} target_dead={} prop_index={} prop_state={} prop_flags={} ai_actions={} ai_cursor={} los={}",
             self.projectiles.len(),
             p0x,
             p0y,
@@ -412,7 +480,10 @@ impl PlayableApp {
             target_dead,
             prop_index,
             prop_state,
-            prop_flags
+            prop_flags,
+            self.ai_schedule.actions(),
+            self.ai_schedule.cursor(),
+            los_code
         )
     }
 
@@ -461,7 +532,7 @@ impl PlayableApp {
             inventory,
             self.combat_attacks,
             self.combat_hits,
-            combat::reaction(&CombatStats::from_player(&self.player))
+            combat::reaction(&CombatStats::from_player(&self.player), 0, 0)
         )
     }
 
@@ -482,11 +553,7 @@ impl PlayableApp {
         else {
             return 0;
         };
-        let collision = self
-            .world
-            .loc(loc)
-            .map(|l| l.collision.as_slice())
-            .unwrap_or(&[]);
+        let collision = self.world.collision(loc).unwrap_or(&[]);
         let center = (
             (rect.x1 as i32 + rect.x2 as i32) / 2,
             (rect.y1 as i32 + rect.y2 as i32) / 2,

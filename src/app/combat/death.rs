@@ -70,6 +70,7 @@ impl PlayableApp {
                     m.entity.stats.hp_internal = 0;
                     m.motion.dead = true;
                     m.motion.combat_target = None;
+                    m.motion.target_marker = 0;
                     m.motion.engaged = false;
                     m.motion.ranged_order = false;
                     m.motion.path.clear();
@@ -116,6 +117,7 @@ impl PlayableApp {
                     if let Some(m) = pop.motion.get_mut(&id) {
                         m.dead = true;
                         m.combat_target = None;
+                        m.target_marker = 0;
                         m.path.clear();
                         m.walking = false;
                         m.render_cell = m.cell;
@@ -137,27 +139,51 @@ impl PlayableApp {
     }
 
     /// Advance one dead combatant's death row to its final frame.
+    ///
+    /// The original frees the collision cell on the second-to-last death frame
+    /// (``& 0xF000`), so living actors may walk over the dying body before the
+    /// final frame is held.
     fn advance_death_frame(&mut self, t: CombatTarget) {
+        let loc = self.current_map;
         match t {
             CombatTarget::Player => {
                 if self.player_death_frame + 1 < self.player_death_frames.max(1) {
                     self.player_death_frame += 1;
                 }
+                if self.player_death_frame == self.player_death_frames.saturating_sub(2) {
+                    let cell = (self.player_x.round() as i32, self.player_y.round() as i32);
+                    self.clear_occupancy_cell(loc, cell);
+                }
             }
             CombatTarget::Party(i) => {
-                if let Some(m) = self.party.get_mut(i) {
+                let clear = if let Some(m) = self.party.get_mut(i) {
                     if m.motion.dead && m.motion.frame + 1 < m.motion.death_frames.max(1) {
                         m.motion.frame += 1;
                     }
+                    (m.motion.dead && m.motion.frame == m.motion.death_frames.saturating_sub(2))
+                        .then_some(m.motion.cell)
+                } else {
+                    None
+                };
+                if let Some(cell) = clear {
+                    self.clear_occupancy_cell(loc, cell);
                 }
             }
             CombatTarget::World(id) => {
-                if let Some(pop) = self.population_cache.get_mut(&self.current_map) {
+                let clear = if let Some(pop) = self.population_cache.get_mut(&loc) {
                     if let Some(m) = pop.motion.get_mut(&id) {
                         if m.dead && m.frame + 1 < m.death_frames.max(1) {
                             m.frame += 1;
                         }
+                        (m.dead && m.frame == m.death_frames.saturating_sub(2)).then_some(m.cell)
+                    } else {
+                        None
                     }
+                } else {
+                    None
+                };
+                if let Some(cell) = clear {
+                    self.clear_occupancy_cell(loc, cell);
                 }
             }
             CombatTarget::Prop(_) => {}

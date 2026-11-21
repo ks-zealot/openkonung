@@ -41,9 +41,13 @@ fn recipe_level(res: &Res, kit: usize, slot: usize) -> u16 {
     }
 }
 
-/// Allocate one class-9 herb instance of `subtype` (the role-2 restock unit).
-fn simple_herb(res: &mut Res, subtype: u8) -> Option<u16> {
-    res.alloc_item_instance(9, subtype, 0, -1, 1.0, 0, 0)
+/// Allocate one class-9 instance of `input` (subtype `2/0/1`) and run the
+/// role-2 craft row `(input, 3)` on it; the product is subtype `5/6/7`.
+///
+/// Returns `None` when the instance table is full (the original then aborts the
+/// whole pass without consuming the quota).
+fn restock_unit(res: &mut Res, healing: &mut u16, subtype: u8) -> Option<u16> {
+    crate::inventory::craft_restock(res, healing, subtype)
 }
 
 /// `FUN_004175FC`: role-2 merchant (herb/potion) restock for `passes` ticks.
@@ -82,24 +86,40 @@ fn tick_role2(res: &mut Res, t: &mut SettlementTrade, passes: u64, healing: &mut
             let produced = match case {
                 5 => {
                     if t.quota2 > 0 {
-                        t.quota2 -= 1;
-                        simple_herb(res, 2)
+                        match restock_unit(res, healing, 2) {
+                            Some(id) => {
+                                t.quota2 -= 1;
+                                Some(id)
+                            }
+                            // Original `return 0`: the pass aborts, quota intact.
+                            None => return,
+                        }
                     } else {
                         None
                     }
                 }
                 6 => {
                     if t.quota0 > 0 {
-                        t.quota0 -= 1;
-                        simple_herb(res, 0)
+                        match restock_unit(res, healing, 0) {
+                            Some(id) => {
+                                t.quota0 -= 1;
+                                Some(id)
+                            }
+                            None => return,
+                        }
                     } else {
                         None
                     }
                 }
                 7 => {
                     if t.quota1 > 0 {
-                        t.quota1 -= 1;
-                        simple_herb(res, 1)
+                        match restock_unit(res, healing, 1) {
+                            Some(id) => {
+                                t.quota1 -= 1;
+                                Some(id)
+                            }
+                            None => return,
+                        }
                     } else {
                         None
                     }
@@ -249,6 +269,33 @@ fn role4_distribute(
             let Some(entity) = tables.entities.get(member) else {
                 continue;
             };
+            // `FUN_004182D4` runs `FUN_0041C69C` before the requirement test, so
+            // the member's derived stats include their current gear bonuses.
+            let stored = crate::character::effects::StoredStats {
+                dexterity: entity.stats.dexterity_current,
+                charisma: entity.stats.charisma_current,
+                hp: entity.stats.hp_internal,
+                strength: entity.stats.strength_current,
+                endurance: entity.stats.endurance_current,
+            };
+            let extra = [
+                if entity.state_d2 == 0 || entity.state_d2 == 0xFF {
+                    None
+                } else {
+                    Some(entity.state_d2 as i8)
+                },
+                None,
+            ];
+            let derived = crate::character::effects::recompute(
+                res,
+                &entity.equipment,
+                &entity.additional_equipment,
+                extra,
+                stored,
+            );
+            let entity = tables.entities.get_mut(member).unwrap();
+            crate::character::effects::apply(&mut entity.stats, &derived);
+            let entity = &tables.entities[member];
             let snap = OwnerSnapshot::from_entity(entity);
             let slots = SlotsRef {
                 equipment: &entity.equipment,
@@ -297,13 +344,42 @@ fn role4_distribute(
     None
 }
 
+/// `FUN_004179C8` branch A production delay: `round(level * 60 / sqrt(smithing))`.
+///
+/// The original evaluates this in x87 and stores it with `FISTP`; with
+/// `smithing == 0` the division yields `+inf`, which stores as `0x80000000`.
+/// Branch B then wraps it to `0x7FFFFFFF`, so a skill-less producer never
+/// completes a slot — reproduced by [`f64`]-free integer arithmetic below.
+fn role4_delay(level: u16, smithing: u16) -> i32 {
+    if smithing == 0 {
+        return i32::MIN;
+    }
+    let v = level as f32 * 60.0 / (smithing as f32).sqrt();
+    v.round_ties_even() as i32
+}
+
+/// `FUN_004179C8` branch B skill growth:
+/// `smithing = round(sqrt(smithing^2 + q / 24))` (`0x45001C` = `1/24`).
+///
+/// `q` is the recipe level for ammo slots and
+/// `round(1 + quality / sqrt(smithing))` otherwise. A zero skill divides by
+/// zero; the resulting x87 NaN store leaves the `u16` at `0`.
+fn role4_grow(smithing: u16, q: i32) -> u16 {
+    if smithing == 0 {
+        return 0;
+    }
+    let s = smithing as f64;
+    let v = (s * s + q as f64 / 24.0).sqrt().round_ties_even();
+    v.clamp(0.0, u16::MAX as f64) as u16
+}
+
 /// `FUN_004179C8`: role-4 merchant (equipment) restock for `passes` ticks.
 ///
 /// With no slot in production, pick the first empty slot whose recipe level the
 /// producer's smithing skill (`skill * 10`) covers; when none is affordable the
-/// existing stock is distributed onto settlement members instead. A slot is
-/// produced after its one-tick timer, which raises the producer's smithing by one
-/// (capped at 500).
+/// existing stock is distributed onto settlement members instead. A reserved
+/// slot completes after `round(level * 60 / sqrt(smithing))` passes and raises
+/// the producer's smithing through [`role4_grow`].
 ///
 /// # Returns
 ///
@@ -328,14 +404,14 @@ fn tick_role4(
                 if t.stock4[slot] == 0 {
                     let level = recipe_level(res, kit, slot);
                     if level as u32 <= *smithing as u32 * 10 {
-                        chosen = Some(slot);
+                        chosen = Some((slot, level));
                         break;
                     }
                 }
             }
-            if let Some(slot) = chosen {
+            if let Some((slot, level)) = chosen {
                 t.last_slot = slot as i8;
-                t.timer4 = 1;
+                t.timer4 = role4_delay(level, *smithing);
             } else if let Some(tables) = tables.as_mut() {
                 if let Some(member) =
                     role4_distribute(res, t, tables, group_id, kit, *smithing, party_ids)
@@ -344,13 +420,25 @@ fn tick_role4(
                 }
             }
         } else {
-            t.timer4 -= 1;
+            // x87 `DEC` wraps: `INT_MIN` becomes `INT_MAX` (never completes).
+            t.timer4 = t.timer4.wrapping_sub(1);
             if t.timer4 <= 0 {
                 let slot = t.last_slot as usize;
                 t.last_slot = -1;
                 if slot < t.stock4.len() && t.stock4[slot] == 0 {
                     if create_role4_item(res, t, kit, slot) {
-                        *smithing = (*smithing).saturating_add(1).min(500);
+                        let q = if slot < 3 {
+                            recipe_level(res, kit, slot) as i32
+                        } else {
+                            let quality = t
+                                .stock4
+                                .get(slot)
+                                .and_then(|&id| res.item_quality(id))
+                                .unwrap_or(0.0);
+                            let skill = (*smithing as f32).sqrt();
+                            (1.0 + quality / skill).round_ties_even() as i32
+                        };
+                        *smithing = role4_grow(*smithing, q);
                     }
                 }
             }
@@ -443,5 +531,31 @@ impl PlayableApp {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{role4_delay, role4_grow};
+
+    /// `FUN_004179C8` branch A: `round(level*60 / sqrt(smithing))`, with the
+    /// x87 `FISTP` of `+inf` (division by a zero skill) storing `INT_MIN`.
+    #[test]
+    fn role4_delay_matches_the_x87_formula() {
+        assert_eq!(role4_delay(1, 9), 20);
+        assert_eq!(role4_delay(60, 100), 360);
+        assert_eq!(role4_delay(60, 400), 180);
+        assert_eq!(role4_delay(9, 0), i32::MIN);
+    }
+
+    /// `FUN_004179C8` branch B: `round(sqrt(smithing^2 + q/24))`; a zero skill
+    /// makes the division NaN and leaves the stored `u16` at zero.
+    #[test]
+    fn role4_grow_uses_the_quarter_day_sqrt() {
+        assert_eq!(role4_grow(1, 30), 2); // sqrt(2.25) = 1.5 -> ties-even 2
+        assert_eq!(role4_grow(2, 30), 2); // 2.29 -> 2
+        assert_eq!(role4_grow(3, 30), 3); // 3.20 -> 3
+        assert_eq!(role4_grow(100, 30), 100); // 100.06 -> 100
+        assert_eq!(role4_grow(0, 30), 0); // NaN store
     }
 }

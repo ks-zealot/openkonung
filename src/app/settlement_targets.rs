@@ -6,6 +6,8 @@
 //! timer-driven state machine:
 //!
 //! ```text
+//! skip only when key >= 0 && timer <= 0 && state == 6 && workers >= 1
+//!
 //! timer > 0, state < 3, workers > 0:
 //!     timer -= 1
 //!     if timer == 0:
@@ -18,7 +20,7 @@
 //!         state += 1
 //!         if state != 6: timer = value
 //!         update_prop()
-//! timer == 0, state == 6, workers > 0:
+//! otherwise (any other idle target):
 //!     changed = true; state = 0; timer = value * 60 / workers; update_prop()
 //! ```
 //!
@@ -40,7 +42,19 @@ use super::*;
 use crate::constants::exe_tables::SETTLEMENT_TARGET_TABLE;
 use crate::population::SettlementTarget;
 
-/// Worker counts for one settlement (`FUN_0041D048`).
+/// Arm a target timer: `value * 60 / workers` as the original's signed divide.
+///
+/// The original divides by `local_24` directly (an x87 `IDIV`, which faults on a
+/// zero divisor and stores a negative quotient as a wrapped `u16`). A zero
+/// worker pool cannot arm a timer, so it is kept at zero; a negative pool wraps
+/// exactly like the original's `AX` store.
+fn arm_timer(value: u16, workers: i32) -> u16 {
+    if workers == 0 {
+        0
+    } else {
+        ((value as i32 * 0x3C) / workers) as u16
+    }
+}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct SettlementWorkers {
     /// Visible low-visual members (`local_24` before the role/owner subtraction).
@@ -156,7 +170,7 @@ impl PlayableApp {
                             state = state.saturating_add(1);
                             if state != 3 {
                                 changed = true;
-                                timer = ((value as i32 * 0x3C) / available) as u16;
+                                timer = arm_timer(value, available);
                             }
                             prop_update = true;
                         }
@@ -170,10 +184,13 @@ impl PlayableApp {
                             prop_update = true;
                         }
                     }
-                } else if state == 6 && available > 0 {
+                } else if !(state == 6 && available >= 1) {
+                    // The original's else branch: a completed target with at
+                    // least one worker is the only one skipped, so every other
+                    // idle target restarts construction.
                     changed = true;
                     state = 0;
-                    timer = ((value as i32 * 0x3C) / available) as u16;
+                    timer = arm_timer(value, available);
                     prop_update = true;
                 }
                 // The original decrements the record in place, so a plain

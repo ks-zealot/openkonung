@@ -3,12 +3,13 @@
 //! Recovered from `konung.res` (PE32/i386, image base `0x400000`):
 //!
 //! ```text
-//! if max_metric(src, target) < 3            -> return -1
-//! range   = u16[0x459B84 + subtype(equipment[0])*0x40]   // 8 samples per unit
+//! if follow_distance(src, target) < 3       -> return -1
+//! range   = u16[0x459B84 + subtype(equipment[1])*0x40]   // 8 samples per unit
 //! dir     = FUN_0043897C(target, src)                     // facing 0..7
 //! start   = FUN_00438A78(src) + 0x45ACD0[dir]             // facing nudge
 //! end     = FUN_00438A78(target); end.y -= 0x1E           // aim at chest height
-//! step    = delta / (max(|dx|,|dy|) + 0.001)              // unit DDA
+//! den     = max(|dx|,|dy|) * 0.25 + 0.001   // 0x45000C / 0x450014
+//! step    = delta / den                     // dominant axis = 4 px/sample
 //! repeat 8*range {
 //!     start += step
 //!     (cx,cy) = FUN_00438AB4(round(start.x), round(start.y) + 0x1E)
@@ -20,13 +21,17 @@
 //! return 0
 //! ```
 //!
-//! The probe is a deterministic 1-pixel-step DDA, **not** a random scatter: the
-//! `FUN_0043EAAE` call in the decompiler output is the x87 `FISTP` round helper,
-//! and the two `8`/`range` loops are one continuous walk.
+//! The probe is a deterministic DDA, **not** a random scatter: the
+//! `FUN_0043EAAE` call in the decompiler output is the x87 `FISTP` round
+//! helper, and the two `8`/`range` loops are one continuous walk. It is *not* a
+//! 1-pixel walk: the `0x45000C` double is 0.25, so four 8-bit pixels are
+//! consumed per sample and the effective reach is four times the sample count.
 //!
 //! Callers in the original: `FUN_00410E84` (armed target acquisition, gated on
-//! `Entity+0x12 == 1`, `equipment[0] != 0`, `ammo(+0xCC) != 0`) and
-//! `FUN_0041ECC8` (actor logic, deciding whether a ranged order stays alive).
+//! `Entity+0x12 == 1`, `equipment[1]` (the bow, `+0x68`) `!= 0`,
+//! `ammo(+0xCC) != 0`) and `FUN_0041ECC8` (actor logic, deciding whether a
+//! ranged order stays alive). The `shots` table is indexed by the **bow's**
+//! subtype, not the melee slot's.
 //!
 //! Not ported: the `mode < 0` projectile branch (`FUN_0043E4EA` height test for
 //! a record in the `0x80BD50` pool). The remake resolves arrows through the real
@@ -53,10 +58,29 @@ pub const MIN_DISTANCE: i32 = 3;
 pub const AIM_RAISE: i32 = 0x1E;
 /// DDA samples per unit of [`crate::item::ItemDb::probe_range`].
 pub const SAMPLES_PER_UNIT: i32 = 8;
-/// `0x450014`: divisor epsilon added to the dominant axis (`x + 0.001`).
+/// `0x45000C`: scale applied to the dominant axis of the DDA denominator
+/// (double, read with `FMUL double ptr`). The dominant axis therefore advances
+/// `1 / STEP_SCALE` = **4 px per sample**, not 1 px.
+pub const STEP_SCALE: f64 = 0.25;
+/// `0x450014`: epsilon added to the scaled dominant axis.
 pub const AXIS_EPSILON: f64 = 0.001;
 /// Defensive cap on `8 * range` so a malformed table cannot spin forever.
 pub const MAX_SAMPLES: i32 = 4096;
+
+/// `FUN_0041130C` DDA step (`0x4114cb`…`0x411505`).
+///
+/// The original computes `den = max(|dx|, |dy|) * 0.25 + 0.001` and divides
+/// both deltas by it, so the dominant axis advances 4 px per sample. The
+/// comparison uses the two scaled denominators, not the raw deltas.
+pub(crate) fn step_for(dx: f64, dy: f64) -> (f64, f64) {
+    let dxn = dx.abs() * STEP_SCALE + AXIS_EPSILON;
+    let dyn_ = dy.abs() * STEP_SCALE + AXIS_EPSILON;
+    if dxn < dyn_ {
+        (dx / dyn_, dy / dyn_)
+    } else {
+        (dx / dxn, dy / dxn)
+    }
+}
 
 /// Result of the probe. `as_code()` reproduces the original `-1 / 0 / 1`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,8 +112,8 @@ impl LineOfFire {
 /// `FUN_0041130C` actor-aim mode.
 ///
 /// `collision` is the `Konung.N` 320×160 `u16` grid (`index = x*160 + y`);
-/// `range` is `u16[0x459B84 + subtype*0x40]` from the active melee weapon's
-/// subtype ([`crate::item::ItemDb::probe_range`]).
+/// `range` is `u16[0x459B84 + subtype*0x40]` from the **bow** subtype
+/// (`equipment[1]`, [`crate::item::ItemDb::probe_range`]).
 pub fn probe(collision: &[u16], src: (i32, i32), target: (i32, i32), range: u16) -> LineOfFire {
     // `FUN_0043881C` (the game's cell distance), not a plain max metric.
     if crate::actors::follow_distance(src, target) < MIN_DISTANCE {
@@ -107,14 +131,7 @@ pub fn probe(collision: &[u16], src: (i32, i32), target: (i32, i32), range: u16)
     let ey = (ey - AIM_RAISE) as f64;
     let dx = ex - fx;
     let dy = ey - fy;
-    let adx = dx.abs() + AXIS_EPSILON;
-    let ady = dy.abs() + AXIS_EPSILON;
-    // Dominant axis advances by one pixel per sample.
-    let (step_x, step_y) = if adx < ady {
-        (dx / ady, dy / ady)
-    } else {
-        (dx / adx, dy / adx)
-    };
+    let (step_x, step_y) = step_for(dx, dy);
 
     let steps = (SAMPLES_PER_UNIT * range as i32).clamp(0, MAX_SAMPLES);
     for _ in 0..steps {
