@@ -11,6 +11,7 @@ mod occupancy;
 mod ops;
 mod party;
 mod save;
+mod selection;
 mod settlement;
 mod sound;
 mod tooltip;

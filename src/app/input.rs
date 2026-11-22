@@ -50,6 +50,21 @@ impl PlayableApp {
         if let Some(slot) = self.party_selected.get_mut(cell) {
             *slot = true;
         }
+        // `0x422D4E`: a portrait click shows the clicked member's inventory
+        // strip, or hides it when that member is already the displayed owner.
+        // The original only issues the command for a real entity, so an empty
+        // cell leaves the strip untouched; the character screen handles its own
+        // rows (`0x81D630`) and must not toggle the world strip.
+        if !self.character_screen {
+            if let Some(owner) = self.owner_for_cell(cell) {
+                if self.inventory_strip_visible && owner == self.inventory_owner {
+                    self.inventory_strip_visible = false;
+                } else {
+                    self.set_inventory_owner(owner);
+                    self.inventory_strip_visible = true;
+                }
+            }
+        }
     }
 
     /// Update the additive-selection modifier (`Event.shiftKey`).
@@ -509,11 +524,17 @@ impl PlayableApp {
         };
         let l = crate::hud::layout(VIRTUAL_W);
         let (mx, my) = (mx.round() as i32, my.round() as i32);
-        self.hovered_slot = (0..l.visible_slots).find(|&slot| {
-            l.inventory_slot_rect(slot, 70)
-                .map(|r| r.contains(mx, my))
-                .unwrap_or(false)
-        });
+        // `_DAT_0081D600 == 0` means the strip is not drawn, so the row is
+        // world/background for hover and clicks.
+        self.hovered_slot = if self.inventory_strip_visible {
+            (0..l.visible_slots).find(|&slot| {
+                l.inventory_slot_rect(slot, 70)
+                    .map(|r| r.contains(mx, my))
+                    .unwrap_or(false)
+            })
+        } else {
+            None
+        };
     }
 
     /// Mouse wheel: scroll the visible inventory strip by one slot.
@@ -587,8 +608,7 @@ impl PlayableApp {
                 } else if self.quest_log_open {
                     self.toggle_quest_log();
                 } else if self.character_screen {
-                    self.character_screen = false;
-                    self.hovered_slot = None;
+                    self.close_character_screen();
                 } else {
                     self.request_menu = true;
                 }
@@ -630,9 +650,6 @@ impl PlayableApp {
             }
             KEY_HOME => {
                 self.fit_detail();
-                if self.camera_follow {
-                    self.center_camera_on_player(true, 0.0);
-                }
             }
             // `C` / `I` toggle the character screen (the original opens it via
             // `FUN_00424330`, bound to VK_I; C is the remake alias).
@@ -643,7 +660,7 @@ impl PlayableApp {
             KEY_V => {
                 self.camera_follow = !self.camera_follow;
                 if self.camera_follow {
-                    self.center_camera_on_player(true, 0.0);
+                    self.center_camera_on_player();
                 }
             }
             KEY_R => {

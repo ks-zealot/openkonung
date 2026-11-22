@@ -144,7 +144,9 @@ impl PlayableApp {
         self.trade_message = None;
         self.trade_message_t = 0.0;
         self.dialog = None;
-        self.character_screen = false;
+        if self.character_screen {
+            self.close_character_screen();
+        }
         self.hovered_slot = None;
     }
 
@@ -181,7 +183,9 @@ impl PlayableApp {
         self.trade_message = None;
         self.trade_message_t = 0.0;
         self.dialog = None;
-        self.character_screen = false;
+        if self.character_screen {
+            self.close_character_screen();
+        }
         self.hovered_slot = None;
         self.trade_balance();
     }

@@ -26,7 +26,7 @@ use crate::coords::{
 use crate::edges::{Edge, Pair};
 use crate::population::{GameTables, Settlement};
 use crate::render::{World, WorldSprite};
-use crate::res::{blit, fill_rect, Img};
+use crate::res::{blit, blit_shaded, fill_rect, Img};
 use crate::world_objects::{ActiveWorldObject, WorldObjectSource};
 
 mod buttons;
@@ -256,7 +256,9 @@ pub struct PlayableApp {
 
     detail_pan: [f64; 2],
     camera_follow: bool,
-    camera_follow_strength: f64,
+    /// Per-pixel `LIGHTS.N` light intensity (0..=31) for the current background
+    /// frame (`FUN_0042532C` night mask pass). Rebuilt every shaded frame.
+    light_frame: Vec<u8>,
     /// `_DAT_0081D614`: `FUN_00430430` tiles the dialogue stone background when
     /// set (default) and leaves the frame untouched when clear. VK `T` toggles
     /// it; not persisted (the original global is not saved).
@@ -345,6 +347,11 @@ pub struct PlayableApp {
     /// Character whose inventory/equipment the character screen and HUD strip
     /// currently edit (original `_81D560`: protagonist or a party member).
     pub inventory_owner: crate::inventory::InventoryOwner,
+    /// `_DAT_0081D600 != 0`: the world inventory strip is drawn for
+    /// [`Self::inventory_owner`]. It starts hidden on New Game/load and is
+    /// toggled by a party-portrait click (`FUN_00424D8C` + `0x422D4E`);
+    /// closing the character screen shows the edited member (`0x424376`).
+    pub inventory_strip_visible: bool,
     /// Item lifted onto the cursor (`_81D670`).
     pub held_item: Option<crate::inventory::HeldItem>,
     /// Visible inventory strip scroll offset (`_81D708`).
@@ -507,7 +514,7 @@ impl PlayableApp {
             shadow_debug: Vec::new(),
             detail_pan: [0.0, 0.0],
             camera_follow: true,
-            camera_follow_strength: 11.0,
+            light_frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H) as usize],
             dialog_background_tiled: true,
             ground_pile: None,
             frame: vec![0u8; (VIRTUAL_W * VIRTUAL_H * 4) as usize],
@@ -541,6 +548,7 @@ impl PlayableApp {
             torch_reveal: false,
             dig_armed: false,
             inventory_owner: crate::inventory::InventoryOwner::Protagonist,
+            inventory_strip_visible: false,
             held_item: None,
             inventory_scroll: 0,
             mouse_left_down: false,
@@ -584,7 +592,7 @@ impl PlayableApp {
         // one-based actor markers before the first movement command.
         app.ensure_population(start_map);
         app.rebuild_occupancy(start_map);
-        app.center_camera_on_player(true, 0.0);
+        app.center_camera_on_player();
         app
     }
 
@@ -650,7 +658,7 @@ impl PlayableApp {
         self.update_combat(dt);
         self.check_game_over_video();
         if self.camera_follow {
-            self.center_camera_on_player(false, dt);
+            self.center_camera_on_player();
         }
         self.draw_detail();
     }

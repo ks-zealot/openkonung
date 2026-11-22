@@ -30,8 +30,7 @@ fn collision_expansion_rules() {
 /// Canonical bytes expand to their documented words and passability follows
 /// the low 12 bits only (`0x1000`/`0x2000` stay walkable).
 #[test]
-fn collision_decode_canonical_bytes() {
-    // (input byte, expanded u16, passable).
+fn collision_decode_canonical_bytes() {    // (input byte, expanded u16, passable).
     let cases: [(u8, u16, bool); 5] = [
         (0x00, 0x0000, true),
         // Low nibble 0x0F => (b << 8) | 0x0FFF, whose low 12 bits are 0xFFF.
@@ -168,4 +167,30 @@ fn surface_dimensions_double_vs_half_scale() {
     let (_, my) = crate::coords::entity_to_local_px(319, 0);
     assert!(mx < LOCAL_PIXEL_W, "entity max x {mx} >= {LOCAL_PIXEL_W}");
     assert!(my < LOCAL_PIXEL_H, "entity max y {my} >= {LOCAL_PIXEL_H}");
+}
+
+/// Camera clamp extent scan (`0x43B045`..`0x43B11B`): the last used terrain row
+/// and column set the original `0x81D758` / `0x81D73C` bounds.
+#[test]
+fn camera_bounds_follow_the_used_terrain_extent() {
+    let mut data = collision_buffer();
+    // Terrain cell (row 10, col 20), low byte non-zero.
+    let o = TERRAIN_OFF + (10 * LOCAL_TERRAIN_W as usize + 20) * 2;
+    data[o] = 1;
+    let (right, bottom) = camera_bounds_from_terrain(&data);
+    assert_eq!(bottom, 10 * 0x20);
+    assert_eq!(right, (20 - 1) * 0x74);
+}
+
+/// Shipped `Konung.4` reproduces the live loader globals (right 3944, bottom
+/// 1984, read from the original with `original_cheat.py state`).
+#[test]
+fn camera_bounds_match_the_live_loader_for_location_four() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("Konung.4");
+    let Ok(data) = std::fs::read(path) else {
+        return;
+    };
+    assert_eq!(camera_bounds_from_terrain(&data), (3944, 1984));
 }

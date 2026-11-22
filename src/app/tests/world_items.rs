@@ -197,6 +197,8 @@ fn settlement_linkage_and_prop_flames_tick() {
         collision: vec![0u16; 320 * 160],
         max_x: 319,
         max_y: 159,
+        camera_right: 20000,
+        camera_bottom: 12000,
     };
     app.world.loc_index.insert(4, app.world.locs.len());
     app.world.locs.push(loc);

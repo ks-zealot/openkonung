@@ -85,6 +85,8 @@ pub(super) fn build_movement_app() -> Option<PlayableApp> {
         collision: vec![0u16; 320 * 160],
         max_x: 319,
         max_y: 159,
+        camera_right: 20000,
+        camera_bottom: 12000,
     };
     let world = World::new(res, vec![loc]);
     let h = *hero(0).unwrap();
@@ -194,6 +196,8 @@ pub(super) fn build_party_app_with_free_location() -> Option<PlayableApp> {
         collision: vec![0u16; 320 * 160],
         max_x: 319,
         max_y: 159,
+        camera_right: 20000,
+        camera_bottom: 12000,
     };
     let index = app.world.locs.len();
     app.world.locs.push(loc);
@@ -239,6 +243,8 @@ pub(super) fn build_party_move_app() -> Option<PlayableApp> {
         collision: vec![0u16; 320 * 160],
         max_x: 319,
         max_y: 159,
+        camera_right: 20000,
+        camera_bottom: 12000,
     };
     let world = World::new(res, vec![loc]);
     let h = *hero(0).unwrap();

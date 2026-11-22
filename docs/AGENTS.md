@@ -57,6 +57,19 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `node tools/settings_smoke.mjs`
 - Headless lighting smoke (packed LIGHTS.RES + 40 LIGHTS.N maps, day/night
   ambient darkening): `node tools/lighting_smoke.mjs`
+- Headless selection-ring smoke (`FUN_0042532C` ellipses: health tiers
+  172/126/178, deselection, unshaded night colour, under-feet anchor):
+  `node tools/ring_smoke.mjs`
+- Headless inventory-strip smoke (`_DAT_0081D600`: hidden on boot, portrait
+  toggle shows/hides, character-screen close shows the edited member):
+  `node tools/strip_smoke.mjs`
+- Original-vs-remake screenshot harness (ambient phases 0/6000/12000/18000 x
+  shadows/day-night/light-effects): render the remake with
+  `node tools/oracle_frames.mjs`, capture the live original with
+  `python tools/oracle_capture.py` (needs a running `konung.res` in gameplay),
+  then compare with `<repo>/.venv/Scripts/python tools/oracle_diff.py`. It
+  writes `tools/oracle/{original,remake,diff}-<frame>-<cfg>.png` and reports the
+  ring alignment plus per-toggle effect sizes.
 - Headless ambient-sound smoke (loc-4 `SOUNDS.RES` bank 280..287, 1% per
   60 ms frame, no ambience over open windows): `node tools/ambient_smoke.mjs`
 - Headless movie smoke (19 transcoded/packed MP4s, intro + trigger handshake):
@@ -86,6 +99,19 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
 - Rust↔Python parity: `python tools/parity.py [base] [profile] [variant]`
   vs `cargo run --release --example dump -- <base> [profile] [variant]`.
   Both print FNV hashes and must match byte-for-byte.
+- **Original-game cheat engine (oracle setup):**
+  `python tools/original_cheat.py <command>` (from `web/`) attaches to the
+  running original `konung.res` — read/write of the runtime tables plus posted
+  window messages, no code injection — and drives its own New Game / world map /
+  Load screens, so parity scenarios are produced by the original's code.
+  Commands: `state`, `dump`, `set`, `give`, `remove`, `items`, `teleport`,
+  `travel`, `discover`, `snapshot`, `load-save`, `new-game`, `entities`,
+  `locations`, `menu`, `key`, `click`, `frame`, `catalog`, `selftest`. `frame
+  <n>` writes the world-frame counter (`0x81D640`) and optionally the three
+  render toggles (`--shadows/--day-night/--light-effects 0|1`), which is how the
+  screenshot harness forces an ambient phase. Reference
+  (addresses, save blocks, item encoding, the map-travel orb rule, caveats):
+  `../ORIGINAL_CHEAT_ENGINE.md`.
 
 ## Wiring
 - `src/lib.rs` is a raw `#[no_mangle]` wasm ABI (no wasm-bindgen): JS copies
@@ -160,6 +186,49 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   drawn until their screens exist). `tools/frame_png.mjs` writes the HUD
   screenshots, `debug_render_intr_hud` gives an isolated 640×480 preview, and
   `tools/intr_sheet.mjs` dumps all 275 sprites.
+- World selection rings (**implemented**): `FUN_0042532C` loops the party
+  selection array `0x81A814` and draws one 56x32 INTR ellipse per selected unit
+  at `viewport + Entity+0xE8/+0xF0 - (0x1D,0x10)` with the **base palette**
+  (rings are never ambient-shaded). The sprite follows current health
+  (`Entity+0x5C`): `< 401` -> INTR[172] red `(238,41,24)`, `< 801` ->
+  INTR[126] yellow `(246,230,41)`, else INTR[178] green `(0,255,0)`; the walk
+  rows `1`/`7` nudge it by `Entity+0x10` against the facing (the exact 8-case
+  switch, `f/2 + 2f` lateral and `f/2 + f` vertical). Ported as
+  `app/world_draw.rs::{selection_rings,draw_selection_rings,
+  selection_ring_position,selection_ring_sprite}`;
+  `intr::IntrRole::SelectionRing` catalogues 126/172/178;
+  `app::tests::selection` + `tools/ring_smoke.mjs` cover the tiers, the bob,
+  deselection and the unshaded night colour.
+- World draw order (`FUN_0042863C`/`FUN_0042532C`/`FUN_00426384`): the selection
+  rings and the `FUN_0042532C` ground-marker pass are drawn **after the terrain
+  and before the shadow darken**, i.e. underneath the depth-sorted props/actors.
+  Markers use the ambient palette unless the torch is out (`_DAT_0081D628`,
+  which also blends the 64x43 `LIGHTS.RES` mask and keeps the base palette).
+  Actors are therefore never darkened by cast shadows; `draw_detail` runs
+  background -> ambient/light pass -> rings -> markers -> shadow darken ->
+  sorted sprites/projectiles.
+- **Camera (ported exact).** `FUN_0041435C` writes the per-frame sprite screen
+  anchor `Entity+0xE4/+0xEC = viewport_origin + Entity+0xE8/+0xF0 +
+  body_anchor(dx,dy)`, and the world loop pushes it into `FUN_00428C94` every
+  frame (`0x424AF2`), which assigns `camera = target - (400,300)` directly
+  (no easing) and clamps to `[0x3A, 0x81D73C-0x81D720]` /
+  `[0x20, 0x81D758-0x81D71C]`. `0x81D73C/0x81D758` are the used-terrain
+  extents computed at map load (`0x43B045`: last used row -> `row*0x20`, last
+  used column -> `(col-1)*0x74`). `src/app/camera.rs` ports it exactly with the
+  **body** anchor (`Res::human_body_anchor`, record `block+0x2F28`, not the
+  composed sprite origin), `Location::camera_bounds` (loc 4 = 3944/1984,
+  matching live `0x81D73C/0x81D758`), and snaps every frame while `camera_follow`
+  is on (`V` remains the manual-pan toggle). `debug_set_player_facing` snaps the
+  camera for the screenshot harness.
+- **Inventory strip visibility (`_DAT_0081D600`, implemented).** The original
+  draws the strip only while an owner is active: `FUN_00428E98` returns early
+  when `0x81D600 == 0`. A fresh New Game/load starts hidden (`0x437D8B` reset);
+  a party-portrait click toggles it (`0x422D4E`: hide when the clicked member is
+  already displayed, otherwise switch to that member and show); closing the
+  character screen shows the edited member (`0x424376`: `0x81D600 = 0x81D630`).
+  `PlayableApp.inventory_strip_visible` models it, `hud::compose` skips the
+  arrows/slots/icons when hidden, and the hidden row is world for hover, clicks,
+  scroll and drag-release. `tools/strip_smoke.mjs`.
 - HUD button strip (**implemented**): the empty lower-left panel is the original
   seven-icon array `0x81CF68[0..7]`, drawn by `FUN_0042CA44` from position
   table `0x45AEA0` (640/800 variants). Slot 0 is the active weapon plaque
@@ -185,8 +254,29 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   `index<<8|0x103`; travel finds the transition record whose destination
   location (`+0x04`) equals the run value and loads it at arrival `+05/+07`
   with facing `+02`. Debug ABI: `debug_reveal_all_locations`,
-  `debug_set_map_open`, `debug_current_map`, `debug_map_location_point`;
-  headless check `tools/map_smoke.mjs`.
+  `debug_set_map_open`, `debug_current_map`, `debug_map_location_point`,
+  `debug_give_leader_item` (headless smokes create the travel orb with
+  `debug_give_leader_item(11, 20)`); headless check `tools/map_smoke.mjs`.
+  **Travel prerequisites (verified from `FUN_0042260C` code 3 / mode 5):** the
+  compiler returns `run*0x100|0x103`, and the handler's `>>8` is `run + 1`
+  (the 1-based location id it compares with the current location and with
+  transition `dst` `+0x04`). Map run values are **0-based** (`run = location-1`);
+  the mask `0x81CF80` is indexed by the run value and `0x45AE30` marks run
+  indices 41..54 reserved. The click aborts on the current location, then
+  requires-and-**consumes** one class-`0x0B` subtype-`20` «Шар магического
+  прыжка» from the leader's **inventory** (`FUN_00433A8C(0x15)` →
+  `FUN_00421AD0`), then scans the runtime transition table (`0x7891B4`,
+  `_81D6E4` x 17) for `dst == run + 1` and sets `_81D6D8 = -dst` plus the record
+  arrival/facing. An unmatched click silently eats the orb. **Implemented**
+  (`app/map.rs`): the click requires and consumes one class-`0x0B` subtype-`20`
+  «Шар магического прыжка» from the leader's inventory
+  (`inventory::remove_inventory_id` = the `FUN_00421AD0` memmove + slot-31
+  clear) *before* the record scan, then matches `dst == run + 1` (the
+  `current_map - 1` self-click guard was already correct). Tests:
+  `app::tests::map::{map_travel_matches_run_plus_one_and_consumes_the_jump_orb,
+  map_travel_requires_the_jump_orb,
+  map_travel_spends_the_orb_even_without_a_matching_record}`.
+  `../ORIGINAL_CHEAT_ENGINE.md` documents the tool that produced this evidence.
 - Quest log (**implemented**, mode 2): `app/quest_log.rs` draws the original
   stone fill + `INTR[1]` border and lists every active runtime `B7` slot with
   its `+0x02` journal line (`QuestData::journal_line`/`line_text`) using the
@@ -658,8 +748,17 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   member-vs-non-member dialogue branches. The HUD panel draws every member
   (portrait + selection marker `INTR[173]` + HP/poison bar); clicking a cell
   selects/deselects (`FUN_00424D8C` selection array `0x81A814`, Shift additive);
-  a new member is auto-selected. A recruited member is **removed from the world
-  group in behaviour** (`0x123` appends it to group 0; the remake keeps the
+  a new member is **not** auto-selected — `FUN_00431820` never writes
+  `0x81A814` (verified live on Sigmar: only the leader stays selected), so it
+  gets no HUD marker and no world-click order until selected. Original write
+  set for `0x123` (byte-diffed from two `KONUNG.SAn` snapshots around the
+  click): copy the NPC record to `group0.first_entity + count`, set
+  `+0x05 = 0`, `+0x02 = 0x60`, `+0x14 = 0xFF` (dialogue id and cell stay),
+  increment group 0's `+0x1C`, decrement the source group's `+0x1C` and compact
+  the following rows, re-mark occupancy, and clear/decrement the five settlement
+  waypoint owners; the dialogue action also sets `B7[207] |= 0x80`. A recruited
+  member is **removed from the world group in behaviour** (`0x123` appends it
+  to group 0; the remake keeps the
   source `Entity` row as a party overlay, filters it from the location
   population and subtracts `party_ids` from settlement group scans, rather than
   compacting canonical source ids) and **follows the leader** (`app/party.rs`:
@@ -756,11 +855,41 @@ stale; trust `KONUNG_SOURCE_OF_TRUTH.md` and the code over them.
   8x8 masks, `0x0AC0` 64x43 mask, nineteen 114x64 tiles) and `LIGHTS.N`
   (`0x3200` low 160x80 map, `0xC800` high 320x160 map); `resource_pack`/packer/
   manifest/app.js carry `KIND_LIGHTS=16` plus all 40 `LIGHTS.N` maps.
-  `lighting.rs` ports `FUN_00428FE0`'s `world_frame % 0x5460` ambient delta
-  (thresholds `0,1800,1830,3570,3600,5400,8100,11700,11880,11910,16155,16200,
-  18900`) and `app/lighting.rs` shades the finished world, blends low-map light
-  tiles back over terrain, and redraws sprites on non-zero high-map cells with
-  their unshaded colors. Gated by `light_effects`; `day_night` disables ambient.
+  `lighting.rs` ports `FUN_00428FE0`'s `world_frame % 0x5460` ambient delta. The
+  assembly reads each threshold as a dword and shifts right by 16, so the
+  comparison at `0x45AE0E+2k` uses table entry `k+1` (the leading `0` is never
+  tested); the effective boundaries are `1800, 1830, 3570, 3600, 5400, 8100,
+  11700, 11880, 11910, 16155, 16200, 18900`, with the branch bodies re-derived
+  and verified live against `0x5076BC`. The night flag `_DAT_0082D168` covers
+  `8100..18900`. The ambient delta applies
+  whenever `day_night != 0`, **regardless of `light_effects`**
+  (`FUN_0042863C` stores it in `0x5076BC` unconditionally and `FUN_0043D971`
+  shades every palette from it); the option only gates the `LIGHTS.N` low-map
+  mask blend, and that blend only runs in the night window. The delta is applied
+  as the original **palette fade** (`FUN_004392B4` ramps + `0x43E3E4`): for
+  `d < 0` `trunc(v * (1 - f))` with `f = |d| * 0.01` accumulated in f32, for
+  `d > 0` `v + trunc((max - v) * f)`; `v` is the 5-bit red/blue or the **6-bit**
+  green of the 565 palette (`shade_rgb`), never an 8-bit additive delta.
+  **The `LIGHTS.N` re-light pass (phase 2) is recovered exactly.** `FUN_0042532C`
+  enters it only when `_DAT_0082D168 != 0 && light_effects (0x81D604) != 0`
+  (`0x425354..0x425364`); it walks the visible cells, reads the low map
+  (`0x650318 + row*0x50 + col`) and two high-map bytes per cell
+  (`0x617FD8 + row*0xA0 + 2*col`), and draws each non-zero cell's 114x64
+  `LIGHTS.RES` tile (`0x5A1010 + (id-1)*0x1C80`) through `FUN_0043CC49`. That
+  blitter rebuilds red/green from the terrain palette entry by first brightening
+  with the flicker map (`FUN_0043E7FA(0x82D16C, 0x82D170)` →
+  `0x479C0C`/`0x4801D0` = `level + trunc((max-level)*f)`, max 63 red / 31 green)
+  and then applying the **negative** ambient ramp whose index is `|delta| - L`
+  (`0x479C8C[L] = 0x479D0C + |delta+L|*0x80`, `0x480250[L]` likewise, identity
+  when `L >= |delta|`), so a lit cell is *less dark* by `L` steps. Blue keeps the
+  plain ambient ramp with no flicker and no `L`. The flicker words are
+  `0x82D16C = rand()%4+8` / `0x82D170 = rand()%8+0x10`, **halved** on the default
+  `0x81D580` path — random every frame, so lit terrain cannot match a screenshot
+  pixel-for-pixel. Ported as `lighting::shade_lit` + `lighting::Flicker` driven by
+  `app/lighting.rs::build_light_frame`; the 64x43 torch mask keeps
+  `lighting::torch_pixel`. Sprites on
+  non-zero high-map cells use the unshaded palette. The `_DAT_0081D608` sunrise
+  flag (randomised once per cycle, 90% set) is modelled as set.
 - Ground shadows (**implemented**): the original has no dirty-rectangle system;
   it keeps 600 per-scanline run lists (`DAT_004C6B50`). `FUN_0043C040` clips a
   sprite-shaped RLE mask into them and `FUN_0043D247` halves the colour of

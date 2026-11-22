@@ -7,13 +7,18 @@ impl PlayableApp {
     ///
     /// The order follows the original draw tree:
     ///
-    /// 1. base terrain plus GRAPH placements (`FUN_00426384`);
-    /// 2. the dynamic depth pass of props, NPCs, companions and the protagonist,
-    ///    sorted by projected anchor (documented provisional key, section 25);
+    /// 1. base terrain plus GRAPH placements, then the ambient/`LIGHTS.N`
+    ///    background pass (palette versions are per element in the original);
+    /// 2. the `FUN_0042532C` selection rings and ground-object pass (unshaded
+    ///    rings; markers ambient-shaded unless the torch is out), both before the
+    ///    darken and under the actors;
     /// 3. ground shadows (`FUN_0043C040`/`FUN_0043D247`) while the `shadows`
-    ///    config word is set;
-    /// 4. the projectile pool, then ambient and `LIGHTS.N` lighting;
-    /// 5. the `FUN_0042532C` ground-object pass;
+    ///    config word is set - the original halves the terrain/rings/markers
+    ///    pixels before the depth-sorted sprites are drawn;
+    /// 4. the dynamic depth pass of props, NPCs, companions and the protagonist,
+    ///    sorted by projected anchor, each blitted with its own palette version
+    ///    (unshaded on lit high-map cells);
+    /// 5. the projectile pool (base palette in the original);
     /// 6. the HUD, then the interface modes (map, quest log, exchange, character
     ///    screen, dialogue), the hover text and finally the game-drawn cursor.
     pub(super) fn draw_detail(&mut self) {
@@ -45,8 +50,23 @@ impl PlayableApp {
         self.world
             .draw_background(&mut self.frame, fw, fh, self.current_map, iox, ioy);
 
-        // Dynamic depth pass: props + NPC/mob actors + protagonist, ordered by
-        // projected anchor. The exact original depth key is unresolved (§25);
+        // Ambient + `LIGHTS.N` terrain pass. In the original every element picks
+        // its palette version when it is drawn, so the background is shaded
+        // here, the rings/markers decide individually, and sprites are shaded at
+        // blit time from `sprite_ambient`.
+        self.apply_background_lighting(iox, ioy);
+
+        // `FUN_0042532C`: the selection ellipses are drawn right after the
+        // terrain and before the ground markers and the actors, with the base
+        // (unshaded) palette.
+        self.draw_selection_rings(iox, ioy);
+
+        // `FUN_0042532C` ground-object pass: before the shadow darken and under
+        // the actors; ambient palette unless the torch is out.
+        self.draw_world_markers(iox, ioy);
+
+        // Dynamic depth pass data: props + NPC/mob actors + protagonist, ordered
+        // by projected anchor. The exact original depth key is unresolved (§25);
         // this is a documented provisional anchor sort (never raw Entity x/y).
         let mut sprites: Vec<WorldSprite> = self.world.collect_props(self.current_map);
         self.collect_actor_sprites(&mut sprites);
@@ -81,10 +101,11 @@ impl PlayableApp {
             Err(_) => {}
         }
 
-        // `FUN_00426384` + `FUN_0043C040` + `FUN_0043D247`: actor, equipped-item
-        // overlay and projectile ground shadows. Gated by the `shadows` config
-        // word (`0x81D620`); collected after terrain/props and darkened before
-        // the sprite depth blit, exactly like the original.
+        // `FUN_00426384`: shadow masks for the current location's actors,
+        // equipment overlays and props, then `FUN_0043D247` halves those pixels.
+        // The original runs this after the terrain/rings/markers and **before**
+        // the depth-sorted props/actors, so the ground darkens but the actors do
+        // not. Gated by the `shadows` config word (`0x81D620`).
         if crate::config::config().shadows != 0 {
             // Screen-space clip: `origin` below already includes the camera pan.
             let clip = (0, 0, fw as i32 - 1, fh as i32 - 1);
@@ -146,20 +167,40 @@ impl PlayableApp {
         for s in &sprites {
             let ax = iox + s.lx.round() as i32 + s.gx;
             let ay = ioy + s.ly.round() as i32 + s.gy;
-            blit(
-                &mut self.frame,
-                fw,
-                fh,
-                &s.img.data,
-                s.img.w,
-                s.img.h,
-                ax,
-                ay,
-            );
+            // The original chooses the palette version per sprite: the ambient
+            // delta (`FUN_0043D971`) unless the sprite's cell is a lit
+            // `LIGHTS.N` high-map cell, which uses the unshaded palette.
+            let delta = self.sprite_ambient(s.lx, s.ly);
+            if delta.is_zero() {
+                blit(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    &s.img.data,
+                    s.img.w,
+                    s.img.h,
+                    ax,
+                    ay,
+                );
+            } else {
+                blit_shaded(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    &s.img.data,
+                    s.img.w,
+                    s.img.h,
+                    ax,
+                    ay,
+                    delta,
+                );
+            }
         }
 
         // Ranged projectile pool (`0x80B0D0`) is drawn after the entity/prop
-        // depth pass (original sort key `y + 0x5E`).
+        // depth pass (original sort key `y + 0x5E`). The original passes the
+        // base palette (`FUN_0043CEAA(..., DAT_005076f4, ...)`), so arrows are
+        // not ambient-shaded.
         {
             let PlayableApp {
                 frame,
@@ -179,58 +220,6 @@ impl PlayableApp {
             }
         }
 
-        // Day/night ambient + LIGHTS maps are applied to the finished world
-        // (terrain/entities/props/projectiles) before the interface overlays.
-        self.apply_world_lighting(&sprites, iox, ioy);
-
-        // Game.N WorldObject pass (`FUN_0042532C` marker pass). The original
-        // draws this after terrain/entities/party rings and outside the depth
-        // sort, in x-then-y scan order; sprite anchor is the Entity projection
-        // (`FUN_00438A78`) minus half the sprite size.
-        {
-            let PlayableApp {
-                frame,
-                world,
-                active_world_objects,
-                torch_reveal,
-                ..
-            } = self;
-            // `_DAT_0081D628` (torch): the original also draws the 64x43
-            // LIGHTS.RES mask behind each nearby ground marker and blits the
-            // marker with its bright palette. We blend the mask and keep the
-            // marker's unshaded colors (markers are already drawn after the
-            // lighting pass).
-            let torch_mask = if *torch_reveal {
-                world
-                    .res
-                    .lights
-                    .as_ref()
-                    .map(|l| (l.large.w, l.large.h, l.large.data.clone()))
-            } else {
-                None
-            };
-            for obj in active_world_objects.iter() {
-                // `FUN_0042532C`: `-1 < (i16)marker[+0x10]` — buried records
-                // (negative money) are part of the active pool but invisible
-                // until the copper mirror flips their money.
-                if obj.money < 0 {
-                    continue;
-                }
-                let Some(img) = world.res.intr_sprite(obj.sprite as usize) else {
-                    continue;
-                };
-                let (lx, ly) = entity_to_local_px(obj.x, obj.y);
-                if let Some((mw, mh, mask)) = torch_mask.as_ref() {
-                    let hx = iox + lx - 0x20 + img.w as i32 / 2;
-                    let hy = ioy + ly - 0x15 + img.h as i32 / 2;
-                    blend_light_mask(frame, fw, fh, *mw, *mh, mask, hx, hy);
-                }
-                let ax = iox + lx - img.w as i32 / 2;
-                let ay = ioy + ly - img.h as i32 / 2;
-                blit(frame, fw, fh, &img.data, img.w, img.h, ax, ay);
-            }
-        }
-
         // Original INTR HUD: whole-screen overlay, empty inventory slot strip and
         // (once bound) party portraits. Composited after the world and its
         // overlays; transparent regions keep the world visible. Debug overlays
@@ -244,6 +233,7 @@ impl PlayableApp {
             self.cursor_virtual.1.round() as i32,
         );
         let hud_press = self.hud_press.map(|(code, _)| code);
+        let inventory_visible = self.inventory_strip_visible;
         {
             let PlayableApp {
                 frame,
@@ -294,6 +284,7 @@ impl PlayableApp {
                 fh,
                 &mut world.res,
                 &owner_inventory,
+                inventory_visible,
                 inventory_scroll,
                 held_id,
                 cursor_px,
@@ -501,7 +492,207 @@ impl PlayableApp {
             }
         }
     }
+
+    /// Selection ellipses of the selected party units (`FUN_0042532C`).
+    ///
+    /// The original loops the selection array `0x81A814` (up to 10, `0`
+    /// terminated) and draws one 56x32 INTR ellipse per unit at
+    /// `(viewport + Entity+0xE8 - cam_x - 0x1D, viewport + Entity+0xF0 - cam_y -
+    /// 0x10)`, with the base (unshaded) palette. The sprite is chosen by current
+    /// health (`Entity+0x5C`):
+    ///
+    /// ```text
+    /// hp < 401   -> INTR[172] (blue)
+    /// hp < 801   -> INTR[126] (cyan)
+    /// otherwise  -> INTR[178] (green)
+    /// ```
+    ///
+    /// While the unit is in a walk row (`1`/`7`) the ellipse is nudged by the
+    /// current frame byte against the facing (the original 8-case switch), so it
+    /// stays under the feet during the step bob.
+    pub fn selection_rings(&self) -> Vec<(usize, i32, i32)> {
+        let iox = self.detail_pan[0].round() as i32;
+        let ioy = self.detail_pan[1].round() as i32;
+        let mut out = Vec::new();
+        let mut push = |hp: u16, lx: f64, ly: f64, action: u8, frame: u8, facing: u8| {
+            let sprite = selection_ring_sprite(hp);
+            let (x, y) = selection_ring_position(iox, ioy, lx, ly, action, frame, facing);
+            out.push((sprite, x, y));
+        };
+        if self.party_selected.first().copied().unwrap_or(false) {
+            let (action, frame, _) = self.player_pose(self.player_active);
+            let (lx, ly) = entity_to_local_px_f(self.player_render_x, self.player_render_y);
+            push(
+                self.player.hp_internal,
+                lx,
+                ly,
+                action as u8,
+                frame as u8,
+                self.player_dir.max(0) as u8,
+            );
+        }
+        for (i, m) in self.party.iter().enumerate() {
+            if !self.party_selected.get(i + 1).copied().unwrap_or(false) {
+                continue;
+            }
+            let (lx, ly) = entity_to_local_px_f(
+                m.motion.render_cell.0 as f64,
+                m.motion.render_cell.1 as f64,
+            );
+            push(
+                m.entity.stats.hp_internal,
+                lx,
+                ly,
+                m.motion.action,
+                m.motion.frame,
+                m.motion.facing,
+            );
+        }
+        out
+    }
+
+    /// Draw the selection ellipses (base palette, never ambient-shaded).
+    fn draw_selection_rings(&mut self, _iox: i32, _ioy: i32) {
+        let rings = self.selection_rings();
+        if rings.is_empty() {
+            return;
+        }
+        let fw = VIRTUAL_W as usize;
+        let fh = VIRTUAL_H as usize;
+        for (sprite, x, y) in rings {
+            let Some(img) = self.world.res.intr_sprite(sprite) else {
+                continue;
+            };
+            blit(&mut self.frame, fw, fh, &img.data, img.w, img.h, x, y);
+        }
+    }
+
+    /// `FUN_0042532C` ground WorldObject pass.
+    ///
+    /// Drawn after the selection rings, **before** the shadow darken and under
+    /// the depth-sorted actors, in x-then-y scan order; the sprite anchor is the
+    /// Entity projection (`FUN_00438A78`) minus half the sprite size. With the
+    /// torch out (`_DAT_0081D628`) the original blends the 64x43 `LIGHTS.RES`
+    /// mask and uses the base palette; otherwise the markers use the ambient
+    /// palette version (`FUN_0043D971`).
+    fn draw_world_markers(&mut self, iox: i32, ioy: i32) {
+        let fw = VIRTUAL_W as usize;
+        let fh = VIRTUAL_H as usize;
+        let torch = self.torch_reveal;
+        let ambient = if torch {
+            crate::lighting::Ambient::default()
+        } else {
+            self.ambient_delta()
+        };
+        let torch_mask = if torch {
+            self.world
+                .res
+                .lights
+                .as_ref()
+                .map(|l| (l.large.w, l.large.h, l.large.data.clone()))
+        } else {
+            None
+        };
+        for obj in self.active_world_objects.iter() {
+            // `FUN_0042532C`: `-1 < (i16)marker[+0x10]` — buried records
+            // (negative money) are part of the active pool but invisible until
+            // the copper mirror flips their money.
+            if obj.money < 0 {
+                continue;
+            }
+            let Some(img) = self.world.res.intr_sprite(obj.sprite as usize) else {
+                continue;
+            };
+            let (lx, ly) = entity_to_local_px(obj.x, obj.y);
+            if let Some((mw, mh, mask)) = torch_mask.as_ref() {
+                let hx = iox + lx - 0x20 + img.w as i32 / 2;
+                let hy = ioy + ly - 0x15 + img.h as i32 / 2;
+                blend_light_mask(&mut self.frame, fw, fh, *mw, *mh, mask, hx, hy);
+            }
+            let ax = iox + lx - img.w as i32 / 2;
+            let ay = ioy + ly - img.h as i32 / 2;
+            if ambient.is_zero() {
+                blit(&mut self.frame, fw, fh, &img.data, img.w, img.h, ax, ay);
+            } else {
+                blit_shaded(
+                    &mut self.frame,
+                    fw,
+                    fh,
+                    &img.data,
+                    img.w,
+                    img.h,
+                    ax,
+                    ay,
+                    ambient,
+                );
+            }
+        }
+    }
 }
+
+/// Selection-ellipse INTR index for a unit's current internal health.
+///
+/// `FUN_0042532C` tests `Entity+0x5C` against `0x191` (401) and `0x321` (801);
+/// the shipped ellipses are 56x32 in both INTR archives and use palette 0.
+pub fn selection_ring_sprite(hp: u16) -> usize {
+    if hp < 0x191 {
+        172
+    } else if hp < 0x321 {
+        126
+    } else {
+        178
+    }
+}
+
+/// Screen top-left of one selection ellipse.
+///
+/// `(iox, ioy)` is the world pan (`viewport - camera`) and `(lx, ly)` the
+/// unit's stored projection (`Entity+0xE8/+0xF0` = the drawn render cell). The
+/// walk rows (`1` battle / `7` peace) nudge the ellipse by the current frame
+/// byte, one of the eight original facing cases; all arithmetic is the
+/// original's integer (`f / 2 + f * 2`, `f / 2 + f`).
+pub fn selection_ring_position(
+    iox: i32,
+    ioy: i32,
+    lx: f64,
+    ly: f64,
+    action: u8,
+    frame: u8,
+    facing: u8,
+) -> (i32, i32) {
+    let mut x = iox + lx.round() as i32 - 0x1D;
+    let mut y = ioy + ly.round() as i32 - 0x10;
+    let row = action as usize;
+    if row == crate::anim::ACT_BATTLE_WALK || row == crate::anim::ACT_PEACE_WALK {
+        let f = frame as i32;
+        let side = f / 2 + f * 2;
+        let diag = f / 2 + f;
+        match facing & 7 {
+            0 => x -= f + f * 4,
+            1 => {
+                x -= side;
+                y -= diag;
+            }
+            2 => y -= side,
+            3 => {
+                x += side;
+                y -= diag;
+            }
+            4 => x += f + f * 4,
+            5 => {
+                x += side;
+                y += diag;
+            }
+            6 => y += side,
+            _ => {
+                x -= side;
+                y += diag;
+            }
+        }
+    }
+    (x, y)
+}
+
 
 /// Blend the 64x43 `LIGHTS.RES` mask over `frame` at `(ax, ay)` (torch
 /// highlight, `_DAT_0081D628`). The mask is an 8-bit intensity; the lighting
@@ -533,7 +724,7 @@ fn blend_light_mask(
             let a = ((v as u32 * 31) / 255) as u8;
             let o = (py as usize * fw + px as usize) * 4;
             let dst = [frame[o], frame[o + 1], frame[o + 2], frame[o + 3]];
-            let lit = crate::lighting::light_pixel(dst, a);
+            let lit = crate::lighting::torch_pixel(dst, a);
             frame[o..o + 4].copy_from_slice(&lit);
         }
     }

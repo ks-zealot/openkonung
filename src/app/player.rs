@@ -156,7 +156,7 @@ impl PlayableApp {
         self.target = None;
         self.player_attack_target = None;
         self.player_attack_ranged = false;
-        self.center_camera_on_player(true, 0.0);
+        self.center_camera_on_player();
     }
 
     /// Diagnostic: protagonist has an active walk segment or queued route.
@@ -447,7 +447,7 @@ impl PlayableApp {
         self.teleport_cooldown = 0.9;
         self.fit_detail();
         if self.camera_follow {
-            self.center_camera_on_player(true, 0.0);
+            self.center_camera_on_player();
         }
         true
     }

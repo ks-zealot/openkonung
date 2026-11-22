@@ -298,6 +298,17 @@ impl PlayableApp {
         self.hovered_slot = None;
     }
 
+    /// Close the character screen and show the edited member's world strip.
+    ///
+    /// `0x424376`: closing mode 3 copies `0x81D630` (the member whose rows the
+    /// screen just rendered) into `0x81D600`, so the strip becomes visible for
+    /// that member. The edited member is already [`Self::inventory_owner`].
+    pub fn close_character_screen(&mut self) {
+        self.character_screen = false;
+        self.inventory_strip_visible = true;
+        self.hovered_slot = None;
+    }
+
     /// Healing skill of an owner (`Entity+0x48`), used as the alchemy quality
     /// source by [`crate::inventory::craft`].
     fn owner_healing(&mut self, owner: InventoryOwner) -> Option<&mut u16> {
@@ -903,14 +914,16 @@ impl PlayableApp {
                 crate::character_screen::ScreenHit::None => self.deposit_held(),
             };
         }
-        let l = crate::hud::layout(VIRTUAL_W);
-        for slot in 0..l.visible_slots {
-            if let Some(r) = l.inventory_slot_rect(slot, 70) {
-                if r.contains(vx, vy) {
-                    let idx = self.inventory_scroll + slot;
-                    let loc = ItemLocation::Inventory(idx);
-                    return self.try_craft_held_at(self.inventory_owner, loc)
-                        || self.deposit_held();
+        if self.inventory_strip_visible {
+            let l = crate::hud::layout(VIRTUAL_W);
+            for slot in 0..l.visible_slots {
+                if let Some(r) = l.inventory_slot_rect(slot, 70) {
+                    if r.contains(vx, vy) {
+                        let idx = self.inventory_scroll + slot;
+                        let loc = ItemLocation::Inventory(idx);
+                        return self.try_craft_held_at(self.inventory_owner, loc)
+                            || self.deposit_held();
+                    }
                 }
             }
         }

@@ -242,6 +242,7 @@ impl PlayableApp {
         self.drag_start = None;
         self.mouse_left_down = false;
         self.inventory_owner = InventoryOwner::Protagonist;
+        self.inventory_strip_visible = false;
         self.inventory_scroll = 0;
         self.shift_down = false;
         self.ctrl_down = false;
@@ -280,7 +281,7 @@ impl PlayableApp {
         self.apply_settlement_props();
         // `FUN_0043ADF0` recalculation for the restored state.
         self.recompute_all_effects();
-        self.center_camera_on_player(true, 0.0);
+        self.center_camera_on_player();
         Ok(())
     }
 

@@ -97,6 +97,12 @@ if (wasm.debug_render_intr_hud(640)) {
 if (wasm.boot(0, -1) !== 1) throw new Error('boot failed');
 wasm.on_resize(800, 600);
 
+// A fresh game hides the world inventory strip (`_DAT_0081D600 == 0`); one
+// leader-portrait click shows it, so the HUD screenshots below match play.
+wasm.pointer_down(1, 36, 36);
+wasm.pointer_up(1, 36, 36);
+wasm.step(0.016);
+
 function save(name) {
   const ptr = wasm.frame_ptr();
   const len = wasm.frame_w() * wasm.frame_h() * 4;

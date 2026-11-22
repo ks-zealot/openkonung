@@ -165,6 +165,8 @@ fn the_current_settlement_suppresses_its_arrival_door() {
             collision: vec![0u16; 320 * 160],
             max_x: 319,
             max_y: 159,
+            camera_right: 20000,
+            camera_bottom: 12000,
         };
         let index = app.world.locs.len();
         app.world.locs.push(loc);
@@ -217,4 +219,37 @@ fn the_current_settlement_suppresses_its_arrival_door() {
     assert_eq!(app.current_map, 16, "other records still travel");
     assert_eq!(app.player_dir, 5, "arrival facing is the record's +0x02");
     assert_eq!((app.player_x, app.player_y), (50.0, 50.0));
+}
+
+/// The camera pins the protagonist's **sprite anchor** at the screen centre,
+/// exactly like `FUN_00428C94(leader+0xE4, leader+0xEC)` with
+/// `target - (400, 300)` (no easing).
+#[test]
+fn camera_pins_the_sprite_anchor_to_the_screen_centre() {
+    let Some(mut app) = build_movement_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    app.center_camera_on_player();
+    // The target uses the **body** anchor record (`0x414016`), not the
+    // composed sprite's bounding box.
+    let (action, fi, _) = app.player_pose(app.player_active);
+    let dir = (app.player_dir.max(0) as usize) & 7;
+    let (gx, gy) = app.world.res.human_body_anchor(
+        app.player.hero.visual_index as usize,
+        action,
+        dir,
+        fi,
+    );
+    let (px, py) = crate::coords::entity_to_local_px_f(app.player_render_x, app.player_render_y);
+    assert_eq!(
+        app.detail_pan[0] + px + gx as f64,
+        crate::app::VIRTUAL_W as f64 / 2.0,
+        "body anchor x"
+    );
+    assert_eq!(
+        app.detail_pan[1] + py + gy as f64,
+        crate::app::VIRTUAL_H as f64 / 2.0,
+        "body anchor y"
+    );
 }

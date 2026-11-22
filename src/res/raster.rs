@@ -182,9 +182,56 @@ pub fn blit(
     ox: i32,
     oy: i32,
 ) {
+    blit_with(
+        dst,
+        dw,
+        dh,
+        src,
+        sw,
+        sh,
+        ox,
+        oy,
+        crate::lighting::Ambient::default(),
+    );
+}
+
+/// [`blit`] with the ambient palette fade applied to the source RGB.
+///
+/// The original draws sprites through a palette version built by
+/// `FUN_0043D971` (the `FUN_00428FE0` delta baked into every palette entry via
+/// the startup ramps), so shading the RGBA copy at blit time with
+/// [`crate::lighting::shade_rgb`] is the exact equivalent. Alpha is never
+/// scaled: only fully transparent pixels are skipped, and partially
+/// transparent ones are shaded first and then composited.
+pub fn blit_shaded(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    ox: i32,
+    oy: i32,
+    delta: crate::lighting::Ambient,
+) {
+    blit_with(dst, dw, dh, src, sw, sh, ox, oy, delta);
+}
+
+fn blit_with(
+    dst: &mut [u8],
+    dw: usize,
+    dh: usize,
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    ox: i32,
+    oy: i32,
+    delta: crate::lighting::Ambient,
+) {
     if sw == 0 || sh == 0 {
         return;
     }
+    let shade = !delta.is_zero();
     for sy in 0..sh {
         let dy = oy + sy as i32;
         if dy < 0 || dy >= dh as i32 {
@@ -202,15 +249,25 @@ pub fn blit(
             if a == 0 {
                 continue;
             }
+            let (r, g, b) = if shade {
+                let [r, g, b] =
+                    crate::lighting::shade_rgb([src[si], src[si + 1], src[si + 2]], delta);
+                (r, g, b)
+            } else {
+                (src[si], src[si + 1], src[si + 2])
+            };
             let di = drow + dx as usize * 4;
             if a == 255 {
-                dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+                dst[di] = r;
+                dst[di + 1] = g;
+                dst[di + 2] = b;
+                dst[di + 3] = 255;
             } else {
                 let sa = a as u32;
                 let inv = 255 - sa;
-                dst[di] = ((src[si] as u32 * sa + dst[di] as u32 * inv) / 255) as u8;
-                dst[di + 1] = ((src[si + 1] as u32 * sa + dst[di + 1] as u32 * inv) / 255) as u8;
-                dst[di + 2] = ((src[si + 2] as u32 * sa + dst[di + 2] as u32 * inv) / 255) as u8;
+                dst[di] = ((r as u32 * sa + dst[di] as u32 * inv) / 255) as u8;
+                dst[di + 1] = ((g as u32 * sa + dst[di + 1] as u32 * inv) / 255) as u8;
+                dst[di + 2] = ((b as u32 * sa + dst[di + 2] as u32 * inv) / 255) as u8;
                 dst[di + 3] = 255;
             }
         }
@@ -333,37 +390,6 @@ pub fn fill_rect(dst: &mut [u8], dw: usize, dh: usize, x: i32, y: i32, w: i32, h
         let row = yy as usize * dw * 4;
         for xx in x0..x1 {
             let di = row + xx as usize * 4;
-            dst[di..di + 4].copy_from_slice(&c);
-        }
-    }
-}
-
-/// Draw a filled ellipse using a simple scanline test.
-pub fn fill_ellipse(
-    dst: &mut [u8],
-    dw: usize,
-    dh: usize,
-    cx: f32,
-    cy: f32,
-    rx: f32,
-    ry: f32,
-    c: [u8; 4],
-) {
-    if rx <= 0.0 || ry <= 0.0 {
-        return;
-    }
-    let y0 = (cy - ry).floor().max(0.0) as i32;
-    let y1 = (cy + ry).ceil().min(dh as f32 - 1.0) as i32;
-    for yy in y0..=y1 {
-        let dy = (yy as f32 + 0.5 - cy) / ry;
-        if dy.abs() > 1.0 {
-            continue;
-        }
-        let half = rx * (1.0 - dy * dy).max(0.0).sqrt();
-        let sx = (cx - half).floor() as i32;
-        let ex = (cx + half).ceil() as i32;
-        for xx in sx.max(0)..=ex.min(dw as i32 - 1) {
-            let di = yy as usize * dw * 4 + xx as usize * 4;
             dst[di..di + 4].copy_from_slice(&c);
         }
     }

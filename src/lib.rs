@@ -195,6 +195,7 @@ pub extern "C" fn debug_intr_role(id: u32) -> u32 {
         HudIcon => 15,
         MapParchment => 16,
         MapOverlay => 17,
+        SelectionRing => 18,
     }
 }
 

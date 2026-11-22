@@ -104,6 +104,9 @@ pub enum IntrRole {
     AutoButton,
     /// Party-panel selection marker (`INTR[173]`).
     SelectionMarker,
+    /// World selection ellipse under selected party units (`INTR[126]`, `[172]`,
+    /// `[178]`; 56x32, chosen by current health in `FUN_0042532C`).
+    SelectionRing,
     /// Party-panel HP-indicator fill (`INTR[174..177]`).
     HealthBar,
     /// Character portrait (`INTR[200..274]`).
@@ -142,13 +145,13 @@ pub fn role_of(id: usize) -> IntrRole {
         SELECTION_MARKER => IntrRole::SelectionMarker,
         174..=177 => IntrRole::HealthBar,
         200..=274 => IntrRole::Portrait,
+        126 | 172 | 178 => IntrRole::SelectionRing,
         22..=168 => IntrRole::ItemIcon,
         MAP_PARCHMENT => IntrRole::MapParchment,
         MAP_STONE_TILE => IntrRole::Panel,
         MAP_OVERLAY => IntrRole::MapOverlay,
         8..=16 => IntrRole::HudIcon,
         0 | 1 | 6 => IntrRole::WindowFrame,
-        172 | 178 => IntrRole::Panel,
         180..=183 => IntrRole::Button,
         171 | 184..=199 => IntrRole::SmallUi,
         _ => IntrRole::Unclassified,

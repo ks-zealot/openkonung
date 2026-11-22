@@ -66,9 +66,15 @@ for (let y = 60; y < 420; y++) {
 console.log('map frame', { fw, fh, mapPixels, startMap });
 if (mapPixels < 10000) throw new Error('map overlay did not render');
 
-// Location 2 must have a transition record in Game.1; click its first pixel.
-const loc = 2;
-const packed = wasm.debug_map_location_point(loc);
+// The jump orb is the world-map travel cost (`FUN_00433A8C(0x15)`), so the
+// leader must carry one before the click can travel.
+if (!wasm.debug_give_leader_item(11, 20)) throw new Error('could not add the travel orb');
+
+// Location 3 must have a transition record in the loaded Game.1 profile. Map
+// run values are 0-based (`run = location - 1`); the click handler compares the
+// record's `dst (+0x04)` with `run + 1`.
+const loc = 3;
+const packed = wasm.debug_map_location_point(loc - 1);
 if (packed === 0xffffffff) throw new Error(`no map run for location ${loc}`);
 const lx = packed >>> 16;
 const ly = packed & 0xffff;

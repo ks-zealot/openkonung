@@ -118,3 +118,139 @@ fn map_consumes_world_clicks_and_weapon_button_cycles_slots() {
     app.key_down(KEY_ESCAPE);
     assert!(!app.map_open);
 }
+
+/// Synthetic destination locations for the world-map travel tests.
+fn add_free_locations(app: &mut PlayableApp, ids: &[u32]) {
+    for &id in ids {
+        let loc = crate::loc::Location {
+            loc_id: id,
+            data: Vec::new(),
+            props: Vec::new(),
+            gates: Vec::new(),
+            graph_placements: Vec::new(),
+            collision: vec![0u16; 320 * 160],
+            max_x: 319,
+            max_y: 159,
+            camera_right: 20000,
+            camera_bottom: 12000,
+        };
+        let index = app.world.locs.len();
+        app.world.locs.push(loc);
+        app.world.loc_index.insert(id, index);
+    }
+}
+
+fn test_edge(rec: usize, to: u32, arrival: [i32; 2]) -> crate::edges::Edge {
+    crate::edges::Edge {
+        rec,
+        meta: 3,
+        from: 4,
+        to,
+        src: arrival,
+        dst: [0, 0],
+        dst2: [0, 0],
+        side: "?",
+        profiles: vec![1],
+    }
+}
+
+/// Client coordinates of the first map pixel whose run value is `run`.
+fn map_click_at(run: u8) -> Option<(i32, i32)> {
+    let (mx, my) = crate::world_map::point_for_location(run)?;
+    let l = crate::hud::layout(VIRTUAL_W);
+    let (dx, dy) = crate::world_map::overlay_offset(VIRTUAL_W);
+    Some((l.viewport.x + dx + mx, l.viewport.y + dy + my))
+}
+
+/// Give the leader one class-11/subtype-20 jump orb in inventory slot `slot`.
+fn give_jump_orb(app: &mut PlayableApp, slot: usize) -> u16 {
+    let game1 = std::fs::read(install_dir().join("Game.1")).unwrap();
+    app.world.res.set_save_game(&game1);
+    let id = 1u16;
+    assert!(app.world.res.set_item_class(id, 11));
+    assert!(app.world.res.set_item_subtype(id, 20));
+    app.player.inventory.fill(0);
+    app.player.inventory[slot] = id;
+    id
+}
+
+/// `0x42260C` code 3 (interface mode 5): a map click travels to the transition
+/// record whose `dst (+0x04)` equals **`run + 1`** and consumes one class-11
+/// subtype-20 «Шар магического прыжка» from the leader's inventory.
+///
+/// The edge list deliberately contains a record whose destination equals the
+/// 0-based run value, first, so a regression to `edge.to == run` would travel
+/// to the wrong location.
+#[test]
+fn map_travel_matches_run_plus_one_and_consumes_the_jump_orb() {
+    let Some(mut app) = build_movement_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    add_free_locations(&mut app, &[14, 15]);
+    app.current_map = 4;
+    // run 14 is location 15; the 0-based decoy comes first.
+    app.edges = vec![test_edge(0, 14, [60, 60]), test_edge(1, 15, [40, 40])];
+    app.discovered_locations = [0; 56];
+    app.discovered_locations[14] = 1;
+
+    give_jump_orb(&mut app, 2);
+    app.player.inventory[3] = 9;
+    app.map_open = true;
+
+    let (vx, vy) = map_click_at(14).expect("run 14 has a map region");
+    assert!(app.map_click(vx, vy));
+    assert_eq!(app.current_map, 15, "destination is dst == run + 1");
+    assert_eq!(
+        app.player.inventory[2], 9,
+        "FUN_00421AD0 shifts the following slots down"
+    );
+    assert_eq!(app.player.inventory[31], 0);
+    assert!(!app.map_open, "a successful travel closes the map");
+    assert_eq!((app.player_x, app.player_y), (40.0, 40.0));
+    assert_eq!(app.player_dir, 3, "arrival facing is the record meta");
+}
+
+/// Without the jump orb in the leader's inventory the click is a no-op
+/// (`FUN_00433A8C(0x15)` returns 0): no travel, no consumption, map stays open.
+#[test]
+fn map_travel_requires_the_jump_orb() {
+    let Some(mut app) = build_movement_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    add_free_locations(&mut app, &[14, 15]);
+    app.current_map = 4;
+    app.edges = vec![test_edge(1, 15, [40, 40])];
+    app.discovered_locations = [0; 56];
+    app.discovered_locations[14] = 1;
+    app.map_open = true;
+
+    let (vx, vy) = map_click_at(14).expect("run 14 has a map region");
+    assert!(app.map_click(vx, vy));
+    assert_eq!(app.current_map, 4, "no orb, no travel");
+    assert!(app.map_open, "the map stays open");
+}
+
+/// The orb is spent *before* the record scan, so a discovered location with no
+/// matching transition still consumes it (original `FUN_0042260C` order).
+#[test]
+fn map_travel_spends_the_orb_even_without_a_matching_record() {
+    let Some(mut app) = build_movement_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    add_free_locations(&mut app, &[14, 15]);
+    app.current_map = 4;
+    app.edges = vec![test_edge(0, 13, [10, 10])];
+    app.discovered_locations = [0; 56];
+    app.discovered_locations[14] = 1;
+    give_jump_orb(&mut app, 0);
+    app.map_open = true;
+
+    let (vx, vy) = map_click_at(14).expect("run 14 has a map region");
+    assert!(app.map_click(vx, vy));
+    assert_eq!(app.current_map, 4, "no matching record, no travel");
+    assert!(app.map_open);
+    assert_eq!(app.player.inventory[0], 0, "the orb is still consumed");
+}

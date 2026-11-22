@@ -354,6 +354,9 @@ impl PlayableApp {
     /// `inventory_scroll` (`_81D708`); an empty or out-of-range slot yields
     /// `None` so the panel keeps whatever the other branches produced.
     fn hovered_item_text(&self) -> Option<String> {
+        if !self.inventory_strip_visible {
+            return None;
+        }
         let slot = self.hovered_slot?;
         let layout = crate::hud::layout(VIRTUAL_W);
         if slot >= layout.visible_slots {

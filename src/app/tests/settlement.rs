@@ -17,6 +17,8 @@ fn add_free_location(app: &mut PlayableApp, loc_id: u32) {
             collision: vec![0u16; 320 * 160],
             max_x: 319,
             max_y: 159,
+            camera_right: 20000,
+            camera_bottom: 12000,
         };
         let index = app.world.locs.len();
         app.world.locs.push(loc);

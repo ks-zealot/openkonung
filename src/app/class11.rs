@@ -190,8 +190,9 @@ impl PlayableApp {
             24 => {
                 // `_DAT_0081D610 = 0`: leave the interface (the shovel is used
                 // from the character screen) before arming the dig cursor.
-                self.character_screen = false;
-                self.hovered_slot = None;
+                if self.character_screen {
+                    self.close_character_screen();
+                }
                 self.dig_armed = true;
                 true
             }
@@ -737,7 +738,9 @@ impl PlayableApp {
 
     /// Case 20: open the world map (mode 5). Reusable.
     fn class11_map_orb(&mut self, _owner: InventoryOwner, _id: u16) -> bool {
-        self.character_screen = false;
+        if self.character_screen {
+            self.close_character_screen();
+        }
         self.quest_log_open = false;
         self.map_open = true;
         self.map_overlay = None;

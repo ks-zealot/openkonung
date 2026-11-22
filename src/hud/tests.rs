@@ -362,6 +362,7 @@ fn item_icons_are_centered_in_their_slots() {
         auto: None,
         icons: Vec::new(),
         pressed: None,
+        inventory_visible: true,
     };
     let art = solid(40, 40, [10, 200, 10, 255]);
     compose(&mut frame, fw, fh, &l, &state, |id| {

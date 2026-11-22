@@ -59,13 +59,15 @@ impl PlayableApp {
     /// `FUN_00424330` entry (same as the remake's `C` binding).
     pub(super) fn toggle_character_screen(&mut self) {
         self.queue_sound(crate::sound::events::UI_CLICK);
-        self.character_screen = !self.character_screen;
         if self.character_screen {
-            self.map_open = false;
-            self.map_overlay = None;
-            self.quest_log_open = false;
-            self.sweep_all_owners();
+            self.close_character_screen();
+            return;
         }
+        self.character_screen = true;
+        self.map_open = false;
+        self.map_overlay = None;
+        self.quest_log_open = false;
+        self.sweep_all_owners();
         self.hovered_slot = None;
     }
 

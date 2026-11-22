@@ -194,6 +194,10 @@ pub struct Location {
     pub max_x: i32,
     /// Largest prop grid y or `LOCAL_TERRAIN_H - 1`.
     pub max_y: i32,
+    /// Camera clamp right bound (`0x81D73C`), from the used terrain extent.
+    pub camera_right: i32,
+    /// Camera clamp bottom bound (`0x81D758`), from the used terrain extent.
+    pub camera_bottom: i32,
 }
 
 impl Location {
@@ -233,6 +237,49 @@ impl Location {
         }
         cells
     }
+
+    /// Camera clamp extent `(right, bottom)` in local pixels.
+    ///
+    /// The map loader scans the freshly loaded terrain block from the far edge
+    /// inwards (`0x43B045` / `0x43B0B4`): the last row whose low tile byte is
+    /// non-zero gives `bottom = row * 0x20`, the last such column gives
+    /// `right = (col - 1) * 0x74`. Those values are `0x81D758` / `0x81D73C` and
+    /// clamp the camera (see [`crate::app::camera`]).
+    pub fn camera_bounds(&self) -> (i32, i32) {
+        (self.camera_right, self.camera_bottom)
+    }
+}
+
+/// Port of the map-loader camera-extent scan (`0x43B045`..`0x43B11B`).
+///
+/// Operates on the raw terrain block (80 u16 columns x 160 rows, low byte
+/// tested) so it can be computed once per [`Location`] parse.
+pub fn camera_bounds_from_terrain(data: &[u8]) -> (i32, i32) {
+    let cols = LOCAL_TERRAIN_W as usize;
+    let rows = LOCAL_TERRAIN_H as usize;
+    let cell = |row: usize, col: usize| -> u16 {
+        let o = TERRAIN_OFF + (row * cols + col) * 2;
+        if o + 2 <= data.len() {
+            u16(data, o) as u16
+        } else {
+            0
+        }
+    };
+    let mut bottom = 0;
+    for row in (1..rows).rev() {
+        if (0..cols).any(|col| cell(row, col) & 0xff != 0) {
+            bottom = row as i32 * 0x20;
+            break;
+        }
+    }
+    let mut right = 0;
+    for col in (1..cols).rev() {
+        if (0..rows).any(|row| cell(row, col) & 0xff != 0) {
+            right = (col as i32 - 1) * 0x74;
+            break;
+        }
+    }
+    (right, bottom)
 }
 
 /// Expand the Konung.N collision/passability source block at `0x06400`.
@@ -459,6 +506,7 @@ pub fn make_location(loc_id: u32, data: Vec<u8>) -> Result<Location, String> {
     let gates = group_gates(&props);
     let graph_placements = parse_graph_placements(&data);
     let collision = parse_collision(&data).map_err(|e| format!("Konung.{}: {}", loc_id, e))?;
+    let (camera_right, camera_bottom) = camera_bounds_from_terrain(&data);
     Ok(Location {
         loc_id,
         data,
@@ -468,6 +516,8 @@ pub fn make_location(loc_id: u32, data: Vec<u8>) -> Result<Location, String> {
         collision,
         max_x,
         max_y,
+        camera_right,
+        camera_bottom,
     })
 }
 

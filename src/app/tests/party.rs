@@ -60,6 +60,57 @@ fn party_portrait_click_is_consumed_and_selects() {
     );
 }
 
+/// `_DAT_0081D600`: a fresh game has no inventory strip. A portrait click shows
+/// the clicked member's strip, clicking the same member again hides it
+/// (`0x422D4E`), and closing the character screen shows the edited member
+/// (`0x424376`).
+#[test]
+fn inventory_strip_visibility_follows_the_portrait_toggle() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    assert!(!app.inventory_strip_visible, "fresh game has no strip");
+    app.set_shift(false);
+
+    app.pointer_down(1, 36.0, 36.0);
+    assert!(app.inventory_strip_visible, "portrait click shows the strip");
+    assert_eq!(app.inventory_owner, crate::inventory::InventoryOwner::Protagonist);
+
+    app.pointer_down(1, 36.0, 36.0);
+    assert!(
+        !app.inventory_strip_visible,
+        "clicking the displayed owner again hides it"
+    );
+
+    app.toggle_character_screen();
+    assert!(app.character_screen);
+    app.toggle_character_screen();
+    assert!(!app.character_screen);
+    assert!(
+        app.inventory_strip_visible,
+        "closing the character screen shows the edited member's strip"
+    );
+}
+
+/// A hidden strip leaves its row inert: no slot is hovered, so the row behaves
+/// as world (the original skips the whole strip pass when `0x81D600 == 0`).
+#[test]
+fn hidden_inventory_strip_row_is_not_hoverable() {
+    let Some(mut app) = build_test_app() else {
+        eprintln!("skipping: original resources not present");
+        return;
+    };
+    let l = crate::hud::layout(800);
+    let sx = (l.inventory_origin.0 + 10) as f64;
+    let sy = (l.inventory_origin.1 + 10) as f64;
+    app.update_hover(sx, sy);
+    assert_eq!(app.hovered_slot, None, "hidden strip has no hovered slot");
+    app.inventory_strip_visible = true;
+    app.update_hover(sx, sy);
+    assert_eq!(app.hovered_slot, Some(0), "visible strip hit-tests slot 0");
+}
+
 // A playable app with one synthetic, fully-free location so world clicks issue
 // real routes (the plain `build_test_app` has no location, so every route is
 // rejected). Player starts at `(100, 80)`.
@@ -92,7 +143,19 @@ fn sigma_joins_the_party_through_dialogue() {
     app.dialog_click_option(0);
     assert_eq!(app.party.len(), 1, "companion recruited");
     assert_eq!(app.party[0].entity.index, 539);
-    assert!(app.party_selected[1], "new member auto-selected");
+    assert_eq!(app.party[0].entity.group_id, 0, "moved into reserved group 0");
+    assert_eq!(app.party[0].entity.flags_a, 0x60, "peace/idle order byte");
+    assert_eq!(app.party[0].entity.dialogue_id, 97, "dialogue id is kept");
+    // `FUN_00431820` never writes the selection array `0x81A814`: the original
+    // leaves only the leader selected after a recruit (verified live), so the
+    // new member gets no HUD marker and no world-click order until selected.
+    assert!(app.party_selected[0], "leader stays selected");
+    assert!(!app.party_selected[1], "new member is not auto-selected");
+    assert_eq!(
+        app.party_selected.iter().filter(|&&v| v).count(),
+        1,
+        "the selection set is unchanged"
+    );
     assert!(
         app.quest_flags[207] & 0x80 != 0,
         "flag 207 set by the action"
@@ -260,9 +323,14 @@ fn selected_companion_receives_the_world_click_move() {
     app.dialog_click_option(0); // recruit (op 0x123)
     assert_eq!(app.party.len(), 1);
     assert!(
-        app.party_selected[0] && app.party_selected[1],
-        "leader + recruit selected"
+        app.party_selected[0] && !app.party_selected[1],
+        "the recruit is not auto-selected (original leaves 0x81A814 alone)"
     );
+    // Select the new member through the HUD cell with Shift (additive,
+    // `FUN_00424D8C`): only selected units receive the move order.
+    app.set_shift(true);
+    app.select_party_member(1);
+    app.set_shift(false);
 
     // Click a cell ~8 east of the leader. The original command 0 stores the same
     // clicked cell on every selected unit, so the companion is commanded too.
@@ -308,7 +376,10 @@ fn tab_toggles_every_selected_party_member() {
     app.dialog_click_option(0); // 1771 -> 1774
     app.dialog_click_option(0); // recruit (op 0x123)
     assert_eq!(app.party.len(), 1);
-    assert!(app.party_selected[0] && app.party_selected[1]);
+    assert!(app.party_selected[0] && !app.party_selected[1]);
+    app.set_shift(true);
+    app.select_party_member(1); // Shift+cell adds the new member
+    app.set_shift(false);
 
     let leader_before = app.player.flags_b & crate::anim::FLAG_BATTLE;
     let sig_before = app.party[0].entity.flags_b & crate::anim::FLAG_BATTLE;

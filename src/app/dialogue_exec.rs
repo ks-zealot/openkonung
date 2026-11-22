@@ -177,14 +177,14 @@ impl PlayableApp {
         }
     }
 
-    /// Add the dialogue NPC as a party companion (original recruit `0x123`).
+    /// Test fixture: add the dialogue NPC as a party companion (`0x123` shape).
     ///
     /// The canonical `Entity` is taken verbatim from the parsed `Game.N` tables;
     /// a fresh [`ActorMotion`] is seeded at the NPC's current cell. The NPC is
-    /// removed from its location group (`FUN_00431820` moves the entity into the
-    /// reserved party group 0 and compacts the old group), so it no longer
-    /// renders as a world NPC; it is rendered as a follower instead. The new
-    /// member is auto-selected into the party selection set.
+    /// removed from its location population (the original moves it into the
+    /// reserved party group 0). Like `FUN_00431820`, the **selection array is
+    /// not touched** - callers that need the member selected must do so
+    /// explicitly (Shift+cell / `select_party_member`).
     #[allow(dead_code)]
     pub(super) fn recruit_companion(&mut self, npc_entity: usize) {
         if self.party.iter().any(|m| m.entity.index == npc_entity) {
@@ -244,12 +244,6 @@ impl PlayableApp {
         if let Some(pop) = self.population_cache.get_mut(&loc) {
             pop.actors.retain(|a| a.source_entity_id() != npc_entity);
             pop.motion.remove(&npc_entity);
-        }
-
-        // Auto-select the new member (`FUN_00424D8C` adds it to the selection).
-        let cell_index = self.party.len();
-        if cell_index < crate::hud::PARTY_CELLS {
-            self.party_selected[cell_index] = true;
         }
     }
 

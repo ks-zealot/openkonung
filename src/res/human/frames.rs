@@ -84,6 +84,36 @@ pub fn render_graph_4d28_frame(
 // --- resource container ---
 
 impl Res {
+    /// Body-frame screen anchor `(gx, gy)` for a human visual/action/direction/
+    /// frame index.
+    ///
+    /// The original camera target `Entity+0xE4/+0xEC` is
+    /// `viewport_origin + Entity+0xE8/+0xF0 + body_anchor` (`FUN_0041435C`), and
+    /// the body anchor record lives at `block + 0x2F28 + action*0x300 +
+    /// direction*0x60 + fi*8` (`+4` = x, `+6` = y). It is **not** the composed
+    /// sprite's bounding-box origin: equipped overlays may extend past the body,
+    /// which `compose_human` folds into its `minx/miny`.
+    pub fn human_body_anchor(
+        &self,
+        base_id: usize,
+        action: usize,
+        direction: usize,
+        fi: usize,
+    ) -> (i32, i32) {
+        let Some(&base_pos) = self.human_base_positions.get(base_id) else {
+            return (0, 0);
+        };
+        let goff = base_pos
+            + HUMAN_BODY_ANCHOR_TABLE_OFFSET
+            + action * HUMAN_BODY_ACTION_STRIDE
+            + direction * HUMAN_BODY_DIRECTION_STRIDE
+            + fi * HUMAN_ANCHOR_RECORD_SIZE;
+        if goff + 8 > self.graph.len() {
+            return (0, 0);
+        }
+        (i16(&self.graph, goff + 4), i16(&self.graph, goff + 6))
+    }
+
     /// Animation-0 frame of a `Game.res` human variant, facing the direction
     /// byte at variant `+0x01 & 7`, with the variant's equipment table.
     ///

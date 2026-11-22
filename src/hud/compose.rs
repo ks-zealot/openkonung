@@ -111,6 +111,10 @@ pub struct HudState {
     pub icons: Vec<(usize, i32, i32)>,
     /// Command code whose icon is drawn pressed (`|0x80`, 2 px higher).
     pub pressed: Option<u8>,
+    /// `_DAT_0081D600 != 0`: draw the inventory strip (arrows, slot
+    /// backgrounds, item icons). A fresh game/load starts hidden; a party
+    /// portrait click shows it and clicking the same member hides it.
+    pub inventory_visible: bool,
 }
 
 /// Composite the HUD onto `frame` using `lookup` to resolve INTR sprites.
@@ -144,44 +148,49 @@ pub fn compose<F>(
         }
     }
 
-    // Scroll-arrow end caps (drawn by the original strip renderer even at
-    // scroll 0), before the slot backgrounds.
-    for &(id, x, y) in &layout.arrows {
-        if let Some(im) = lookup(id) {
-            blit(frame, fw, fh, &im.data, im.w, im.h, x, y);
+    // Inventory strip (`0x81D600 != 0`): scroll-arrow end caps, empty slot
+    // backgrounds and item icons. With no active owner (`FUN_00428E98` returns
+    // early) the strip row shows the world untouched.
+    if state.inventory_visible {
+        // Scroll-arrow end caps (drawn by the original strip renderer even at
+        // scroll 0), before the slot backgrounds.
+        for &(id, x, y) in &layout.arrows {
+            if let Some(im) = lookup(id) {
+                blit(frame, fw, fh, &im.data, im.w, im.h, x, y);
+            }
         }
-    }
 
-    // Empty inventory slot backgrounds, repeated across the strip.
-    if let Some(slot) = lookup(layout.slot_id) {
-        let step = layout.slot_step;
-        for i in 0..layout.visible_slots {
-            let x = layout.inventory_origin.0 + i as i32 * step;
-            blit(
-                frame,
-                fw,
-                fh,
-                &slot.data,
-                slot.w,
-                slot.h,
-                x,
-                layout.inventory_origin.1,
-            );
+        // Empty inventory slot backgrounds, repeated across the strip.
+        if let Some(slot) = lookup(layout.slot_id) {
+            let step = layout.slot_step;
+            for i in 0..layout.visible_slots {
+                let x = layout.inventory_origin.0 + i as i32 * step;
+                blit(
+                    frame,
+                    fw,
+                    fh,
+                    &slot.data,
+                    slot.w,
+                    slot.h,
+                    x,
+                    layout.inventory_origin.1,
+                );
+            }
         }
-    }
 
-    // Item icons, centered in their visible cells (empty cells keep the slot
-    // background drawn above). `icon` is the original INTR index.
-    for item in &state.items {
-        let Some(cell) = inventory_slot_rect(layout, item.slot, 70) else {
-            continue;
-        };
-        let Some(im) = lookup(item.icon) else {
-            continue;
-        };
-        let ox = cell.x + (cell.w - im.w as i32) / 2;
-        let oy = cell.y + (cell.h - im.h as i32) / 2;
-        blit(frame, fw, fh, &im.data, im.w, im.h, ox, oy);
+        // Item icons, centered in their visible cells (empty cells keep the slot
+        // background drawn above). `icon` is the original INTR index.
+        for item in &state.items {
+            let Some(cell) = inventory_slot_rect(layout, item.slot, 70) else {
+                continue;
+            };
+            let Some(im) = lookup(item.icon) else {
+                continue;
+            };
+            let ox = cell.x + (cell.w - im.w as i32) / 2;
+            let oy = cell.y + (cell.h - im.h as i32) / 2;
+            blit(frame, fw, fh, &im.data, im.w, im.h, ox, oy);
+        }
     }
 
     // Optional AUTO button (character screen supplies it via `HudState.auto`).
@@ -230,6 +239,7 @@ pub fn draw_game_hud(
     fh: usize,
     res: &mut Res,
     inventory: &[u16; 32],
+    inventory_visible: bool,
     scroll: usize,
     held: Option<u16>,
     cursor: (i32, i32),
@@ -246,25 +256,27 @@ pub fn draw_game_hud(
     // Resolve the visible inventory icons (fixed scroll for this task). The
     // protagonist's array is read directly; nothing is re-initialized here.
     let mut items = Vec::new();
-    for slot in 0..l.visible_slots {
-        let idx = scroll + slot;
-        let Some(&id) = inventory.get(idx) else {
-            continue;
-        };
-        if id == 0 || Some(id) == held {
-            continue;
-        }
-        if let Some(info) = res.item_info(id) {
-            let count = if info.class == 12 {
-                res.item_quantity(id)
-            } else {
-                None
+    if inventory_visible {
+        for slot in 0..l.visible_slots {
+            let idx = scroll + slot;
+            let Some(&id) = inventory.get(idx) else {
+                continue;
             };
-            items.push(ItemIcon {
-                slot,
-                icon: info.icon as usize,
-                count,
-            });
+            if id == 0 || Some(id) == held {
+                continue;
+            }
+            if let Some(info) = res.item_info(id) {
+                let count = if info.class == 12 {
+                    res.item_quantity(id)
+                } else {
+                    None
+                };
+                items.push(ItemIcon {
+                    slot,
+                    icon: info.icon as usize,
+                    count,
+                });
+            }
         }
     }
 
@@ -278,6 +290,7 @@ pub fn draw_game_hud(
         auto: None,
         icons: icon_plan(l.logical_w, weapon_slot, battle).to_vec(),
         pressed,
+        inventory_visible,
     };
     compose(frame, fw, fh, &l, &state, |id| res.intr_sprite(id));
 

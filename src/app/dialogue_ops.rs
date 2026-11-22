@@ -720,8 +720,9 @@ impl QuestContext {
     /// Before the join the apprentice's elapsed-time profession gain is applied
     /// (see the inline trace), then the entity moves to group 0, its own
     /// settlement waypoint owner is cleared, and a fresh motion record is
-    /// seeded at its authored cell. The new member is auto-selected into the
-    /// party selection set.
+    /// seeded at its authored cell. The **selection array is not touched**:
+    /// the original leaves `0x81A814` unchanged (verified live: only the leader
+    /// stays selected after recruiting Sigmar).
     fn recruit_entity(&mut self, id: usize) -> bool {
         if self.party.iter().any(|m| m.entity.index == id) {
             return true;
@@ -813,10 +814,10 @@ impl QuestContext {
         motion.action =
             crate::anim::idle_action(crate::anim::battle_from_flags(entity.flags_b)) as u8;
         self.party.push(PartyMember { entity, motion });
-        let cell_index = self.party.len();
-        if cell_index < crate::hud::PARTY_CELLS {
-            self.party_selected[cell_index] = true;
-        }
+        // `FUN_00431820` does **not** touch the selection array `0x81A814`
+        // (verified live: after recruiting Sigmar only the leader stays
+        // selected), so the new member is neither highlighted in the HUD party
+        // panel nor moved by a world click until it is selected explicitly.
         true
     }
 

@@ -286,6 +286,26 @@ pub extern "C" fn debug_set_player_cell(x: i32, y: i32) -> u32 {
     1
 }
 
+/// Test-only: set the protagonist facing (0..7) and snap the camera.
+///
+/// The oracle harness uses it to match the original's New Game facing before a
+/// screenshot (the sprite anchor, and therefore `FUN_00428C94`'s camera, depends
+/// on the direction's frame anchor).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is a status, never an
+/// address.
+#[no_mangle]
+pub extern "C" fn debug_set_player_facing(dir: u32) -> u32 {
+    let Some(g) = runtime_mut().game.as_deref_mut() else {
+        return 0;
+    };
+    g.player_dir = (dir & 7) as i32;
+    g.center_camera_on_player();
+    1
+}
+
 /// Protagonist attack target: world entity id, -2 for a non-world target, -1
 /// for none.
 ///
@@ -338,4 +358,123 @@ pub extern "C" fn debug_clear_combat_targets() -> u32 {
     };
     g.debug_clear_combat_targets();
     1
+}
+
+/// Test-only: create a `(class, subtype)` item instance and put it in the
+/// leader's first free inventory slot. Returns the new instance id, or 0 when
+/// no game exists / the inventory is full / the prototype is unknown.
+///
+/// This is the wasm-side equivalent of the original-side cheat engine
+/// (`web/tools/original_cheat.py give`), used by headless smokes that need a
+/// specific carried item (the world-map travel orb, for example). Durability is
+/// the prototype value for the durable classes; class 12 stacks start at one.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the instance id, never
+/// an address.
+#[no_mangle]
+pub extern "C" fn debug_give_leader_item(class: u32, subtype: u32) -> u32 {
+    let Some(g) = runtime_mut().game.as_deref_mut() else {
+        return 0;
+    };
+    let class = class as u8;
+    let subtype = subtype as u8;
+    let Some(info) = g.world.res.item_info_for(class, subtype) else {
+        return 0;
+    };
+    // Classes 6..=11 ignore durability; 12 is a stack. The stride-0x80 tables
+    // expose no prototype durability, so keep the neutral default there.
+    let durability = if matches!(class, 0..=5) {
+        let value = info.durability as f32;
+        if value > 0.0 { value } else { 100.0 }
+    } else {
+        0.0
+    };
+    let Some(id) = g.world.res.alloc_item_instance(class, subtype, -1, -1, durability, 0, 0)
+    else {
+        return 0;
+    };
+    if class == 12 {
+        g.world.res.set_item_quantity(id, 1);
+    }
+    let Some(slot) = g.player.inventory.iter().position(|&v| v == 0) else {
+        return 0;
+    };
+    g.player.inventory[slot] = id;
+    id as u32
+}
+
+/// Number of world selection ellipses the draw pass would emit
+/// (`FUN_0042532C`: one per selected party unit).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is a count, never an
+/// address.
+#[no_mangle]
+pub extern "C" fn debug_selection_ring_count() -> u32 {
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| g.selection_rings().len() as u32)
+        .unwrap_or(0)
+}
+
+/// One field of selection ring `index`: `0` = INTR sprite id, `1` = screen x of
+/// the ellipse's top-left, `2` = screen y. Returns -1 out of range.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is the requested field,
+/// never an address.
+#[no_mangle]
+pub extern "C" fn debug_selection_ring(index: u32, field: u32) -> i32 {
+    let Some(g) = runtime_mut().game.as_deref() else {
+        return -1;
+    };
+    let Some(&(sprite, x, y)) = g.selection_rings().get(index as usize) else {
+        return -1;
+    };
+    match field {
+        0 => sprite as i32,
+        1 => x,
+        2 => y,
+        _ => -1,
+    }
+}
+
+/// Test-only: set one party-selection cell (`0x81A814` model).
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is a status, never an
+/// address.
+#[no_mangle]
+pub extern "C" fn debug_set_party_selected(cell: u32, value: u32) -> u32 {
+    let Some(g) = runtime_mut().game.as_deref_mut() else {
+        return 0;
+    };
+    let Some(slot) = g.party_selected.get_mut(cell as usize) else {
+        return 0;
+    };
+    *slot = value != 0;
+    1
+}
+
+/// 1 while the world inventory strip is drawn (`_DAT_0081D600 != 0` in the
+/// original): a fresh game/load starts hidden, a party-portrait click toggles
+/// it, and closing the character screen shows the edited member.
+///
+/// # Memory contract
+///
+/// No pointers cross this boundary; the returned value is a status, never an
+/// address.
+#[no_mangle]
+pub extern "C" fn debug_inventory_strip_visible() -> u32 {
+    runtime_mut()
+        .game
+        .as_deref()
+        .map(|g| u32::from(g.inventory_strip_visible))
+        .unwrap_or(0)
 }

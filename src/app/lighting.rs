@@ -1,20 +1,24 @@
-//! World lighting pass (`FUN_00428FE0` ambient + `FUN_0042532C` LIGHTS maps).
+//! World lighting (`FUN_00428FE0` ambient + `FUN_0042532C` LIGHTS maps).
 //!
-//! The original renders terrain and entity sprites through palette versions:
-//! at night the ambient delta is baked into the palette, `LIGHTS.N` low-map
-//! cells re-light terrain with the `LIGHTS.RES` 114x64 masks, and entity cells
-//! whose high-map byte is non-zero use the unshaded palette.
+//! The original renders every element through a **palette version** chosen at
+//! draw time:
 //!
-//! The remake already has decoded RGBA sprites, so this pass applies the same
-//! three decisions directly to the framebuffer: shade the finished world, blend
-//! the light masks back over lit terrain cells, then redraw sprites standing on
-//! lit high-map cells with their original colors.
+//! * terrain and GRAPH placements: ambient delta (`FUN_0043D971`) and, on
+//!   `LIGHTS.N` low-map cells, the `LIGHTS.RES` 114x64 re-light masks;
+//! * selection rings: base palette (never ambient-shaded);
+//! * ground markers: ambient unless a torch is out (then the base palette over
+//!   the light mask);
+//! * props/actors: ambient, except sprites on a cell whose `LIGHTS.N` high-map
+//!   byte is non-zero, which use the **unshaded** palette; projectiles use the
+//!   base palette (`FUN_0043CEAA(..., DAT_005076f4, ...)`).
+//!
+//! The remake has decoded RGBA pixels, so the background pass shades the
+//! finished terrain once, and [`PlayableApp::sprite_ambient`] +
+//! `Res::blit_shaded` reproduce the per-sprite palette choice at blit time.
 
 use super::*;
-use crate::lighting::{ambient, light_pixel, shade_channel};
+use crate::lighting::{ambient, shade_rgb};
 use crate::loc::{terrain_to_local_px, LOCAL_TERRAIN_H, LOCAL_TERRAIN_W};
-use crate::render::WorldSprite;
-use crate::res::{TERRAIN_TILE_H, TERRAIN_TILE_W};
 
 impl PlayableApp {
     /// Override the world frame counter that drives the `FUN_00428FE0` ambient
@@ -45,113 +49,157 @@ impl PlayableApp {
         })
     }
 
-    /// Apply ambient darkening, terrain light masks and the lit-sprite redraw.
+    /// Apply ambient darkening, terrain light masks and the lit-sprite palette
+    /// choice.
     ///
     /// Three decisions of the original palette versions are reproduced:
     ///
     /// 1. every framebuffer pixel is shaded by the `FUN_00428FE0` ambient delta
-    ///    (skipped while the `light_effects` config word is off, neutral while
-    ///    `day_night` is off);
+    ///    (zero while `day_night` is off; **not** gated by `light_effects`,
+    ///    because `FUN_0042863C` stores the delta in `0x5076BC` unconditionally);
     /// 2. a `LIGHTS.N` low-map cell with a non-zero id re-lights its terrain tile
-    ///    through the `LIGHTS.RES` 114x64 mask;
-    /// 3. a sprite whose cell has a non-zero high-map byte is redrawn with its
-    ///    unshaded colors over the result.
+    ///    through the `LIGHTS.RES` 114x64 mask, only while `light_effects` is on
+    ///    and the phase is in the night window (`_DAT_0082D168`).
     ///
-    /// `ox`/`oy` are the camera pan of the finished world so both passes land on
-    /// the same pixels.
-    pub(super) fn apply_world_lighting(&mut self, sprites: &[WorldSprite], ox: i32, oy: i32) {
+    /// The per-element palette choice (3) is applied at blit time by
+    /// [`PlayableApp::sprite_ambient`] + `blit_shaded`, so the background pass
+    /// must run *before* the unshaded overlays (selection rings) and the
+    /// ambient-shaded ground markers, and before the sprites.
+    ///
+    /// `ox`/`oy` are the camera pan of the finished background so both passes
+    /// land on the same pixels.
+    pub(super) fn apply_background_lighting(&mut self, ox: i32, oy: i32) {
         let cfg = crate::config::config();
-        if cfg.light_effects == 0 {
-            return;
-        }
         let amb = ambient(self.world_frame, cfg.day_night);
         if amb.is_zero() {
             return;
         }
-        let fw = VIRTUAL_W as usize;
-        let fh = VIRTUAL_H as usize;
-        for px in self.frame.chunks_exact_mut(4) {
-            px[0] = shade_channel(px[0], amb.r);
-            px[1] = shade_channel(px[1], amb.g);
-            px[2] = shade_channel(px[2], amb.b);
+        // The ambient palette delta is applied to terrain, props and entities
+        // regardless of the `light_effects` option: `FUN_0042863C` stores the
+        // `FUN_00428FE0` result in `0x5076BC` unconditionally, and
+        // `FUN_0043D971` picks the shaded palette version from it. The option
+        // only gates the `LIGHTS.N` mask/re-light pass.
+        //
+        // `FUN_0042532C` enters that pass only when the night flag
+        // `0x82D168 != 0` **and** `light_effects` (`0x81D604`) is on
+        // (`0x425354..0x425364`). The low-map byte selects a 114x64
+        // `LIGHTS.RES` tile whose bytes are the light intensity `L` (0..31);
+        // `FUN_0043CC49` then rebuilds red/green through the ambient ramp whose
+        // index is `|delta| - L` (so the cell is *less* dark) after the
+        // per-frame fire flicker lift, while blue keeps the plain ambient ramp.
+        // See `lighting::shade_lit`.
+        self.light_frame.fill(0);
+        let mut flicker = crate::lighting::Flicker::NONE;
+        if cfg.light_effects != 0 && crate::lighting::is_night_phase(self.world_frame) {
+            self.build_light_frame(ox, oy);
+            flicker = crate::lighting::Flicker::roll(&mut self.combat_rng).halved();
         }
+        {
+            let light = &self.light_frame;
+            for (i, px) in self.frame.chunks_exact_mut(4).enumerate() {
+                let l = light[i];
+                let [r, g, b] = if l == 0 {
+                    shade_rgb([px[0], px[1], px[2]], amb)
+                } else {
+                    crate::lighting::shade_lit([px[0], px[1], px[2]], amb, l, flicker)
+                };
+                px[0] = r;
+                px[1] = g;
+                px[2] = b;
+            }
+        }
+    }
 
-        let Some(map) = self.world.light_map(self.current_map) else {
+    /// Build the per-pixel `LIGHTS.N` light intensity for this frame.
+    ///
+    /// Mirrors the `FUN_0042532C` night loop: for every low-map cell with a
+    /// non-zero id, blit the 114x64 `LIGHTS.RES` tile at the terrain tile's
+    /// screen origin; a non-zero byte of a later cell overwrites an earlier one
+    /// (a zero byte is transparent). The tile bytes are already the 0..31
+    /// `L` that [`crate::lighting::shade_lit`] subtracts from the ambient ramp
+    /// index, so they are stored verbatim.
+    fn build_light_frame(&mut self, ox: i32, oy: i32) {
+        let fw = VIRTUAL_W as usize;
+        let PlayableApp {
+            world,
+            light_frame,
+            current_map,
+            ..
+        } = self;
+        let Some(map) = world.light_map(*current_map) else {
             return;
         };
-        // Terrain light masks (`LIGHTS.N` low map, 160 rows x 80 columns).
         for row in 0..LOCAL_TERRAIN_H {
             for col in 0..LOCAL_TERRAIN_W {
                 let value = map.low_at(col, row);
                 if value == 0 {
                     continue;
                 }
+                let Some(tile) = world.res.light_tile(value) else {
+                    continue;
+                };
+                let (tw, th) = (tile.w, tile.h);
                 let (lx, ly) = terrain_to_local_px(col, row);
                 let sx = ox + lx;
                 let sy = oy + ly;
-                if sx >= VIRTUAL_W
-                    || sy >= VIRTUAL_H
-                    || sx + TERRAIN_TILE_W <= 0
-                    || sy + TERRAIN_TILE_H <= 0
+                if sx >= VIRTUAL_W as i32
+                    || sy >= VIRTUAL_H as i32
+                    || sx + tw as i32 <= 0
+                    || sy + th as i32 <= 0
                 {
                     continue;
                 }
-                // Clone the mask row data so the frame/world borrows stay split.
-                let tile = self
-                    .world
-                    .res
-                    .light_tile(value)
-                    .map(|t| (t.w, t.h, t.data.clone()));
-                let Some((tw, th, data)) = tile else {
-                    continue;
-                };
                 for y in 0..th {
                     let py = sy + y as i32;
-                    if py < 0 || py >= VIRTUAL_H {
+                    if py < 0 || py >= VIRTUAL_H as i32 {
                         continue;
                     }
                     for x in 0..tw {
                         let px = sx + x as i32;
-                        if px < 0 || px >= VIRTUAL_W {
+                        if px < 0 || px >= VIRTUAL_W as i32 {
                             continue;
                         }
-                        let a = data[y * tw + x];
-                        if a == 0 {
+                        let v = tile.data[y * tw + x];
+                        if v == 0 {
                             continue;
                         }
-                        let o = (py as usize * fw + px as usize) * 4;
-                        let [r, g, b, al] = [
-                            self.frame[o],
-                            self.frame[o + 1],
-                            self.frame[o + 2],
-                            self.frame[o + 3],
-                        ];
-                        let lit = light_pixel([r, g, b, al], a);
-                        self.frame[o..o + 4].copy_from_slice(&lit);
+                        light_frame[py as usize * fw + px as usize] = v;
                     }
                 }
             }
         }
+    }
 
-        // Lit entity cells use the unshaded palette in the original.
-        for s in sprites {
-            let (cx, cy) =
-                crate::coords::local_px_to_entity(s.lx.round() as i32, s.ly.round() as i32);
-            if map.high_at(cx, cy) == 0 {
-                continue;
-            }
-            let ax = ox + s.lx.round() as i32 + s.gx;
-            let ay = oy + s.ly.round() as i32 + s.gy;
-            blit(
-                &mut self.frame,
-                fw,
-                fh,
-                &s.img.data,
-                s.img.w,
-                s.img.h,
-                ax,
-                ay,
-            );
+    /// Ambient palette delta currently in effect (zero on a neutral phase or
+    /// with the day/night cycle disabled).
+    ///
+    /// `light_effects` does **not** clear it: `FUN_0043D971` applies the ambient
+    /// delta to every palette regardless of that option; only the `LIGHTS.N`
+    /// re-light masks are gated by it.
+    pub(super) fn ambient_delta(&self) -> crate::lighting::Ambient {
+        let cfg = crate::config::config();
+        ambient(self.world_frame, cfg.day_night)
+    }
+
+    /// Ambient palette delta for one sprite at its local projection.
+    ///
+    /// The original picks a palette version per draw: `FUN_0043D971` (ambient)
+    /// unless the sprite's cell has a non-zero `LIGHTS.N` high-map byte, which
+    /// selects the **unshaded** palette (`DAT_005076f4 + palette`). Returns the
+    /// neutral delta for the unshaded case so callers can use the plain blit.
+    pub(super) fn sprite_ambient(&self, lx: f64, ly: f64) -> crate::lighting::Ambient {
+        let delta = self.ambient_delta();
+        if delta.is_zero() {
+            return delta;
         }
+        let Some(map) = self.world.light_map(self.current_map) else {
+            return delta;
+        };
+        let (cx, cy) =
+            crate::coords::local_px_to_entity(lx.round() as i32, ly.round() as i32);
+        if map.high_at(cx, cy) != 0 {
+            return crate::lighting::Ambient::default();
+        }
+        delta
     }
 }

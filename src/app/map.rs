@@ -1,10 +1,19 @@
 //! World-map screen (interface mode 5): open/close, click hit-test and travel.
 //!
-//! Faithful to `FUN_0042CBD0(4)` + `FUN_00428390` + `FUN_004381C8` mode 5.
+//! Faithful to `FUN_0042CBD0(4)` + `FUN_00428390` + `FUN_004381C8` mode 5. A
+//! click resolves the run value (0-based), then `FUN_0042260C` code 3 requires
+//! and consumes one class-11 subtype-20 «Шар магического прыжка» from the
+//! leader's inventory (`FUN_00433A8C(0x15)` / `FUN_00421AD0`) and matches the
+//! transition `dst (+0x04)` against `run + 1` (the compiler's `>>8`).
 //! Rendering lives in [`crate::world_map`]; this module owns the state and the
 //! travel side effect.
 
 use super::*;
+
+/// Class-11 subtype-20 «Шар магического прыжка»: the world-map travel cost
+/// (`FUN_00433A8C(0x15)` finds it in the leader's inventory, `FUN_00421AD0`
+/// removes the slot).
+const TRAVEL_ORB: (u8, u8) = (0x0B, 0x14);
 
 impl PlayableApp {
     /// Toggle interface mode 5 (`FUN_0042CBD0(4)`, or the close branch).
@@ -63,7 +72,25 @@ impl PlayableApp {
         if loc as u32 == self.current_map.saturating_sub(1) {
             return true;
         }
-        let edge = self.edges.iter().find(|e| e.to == loc as u32).cloned();
+        // `FUN_00433A8C(0x15)`: the leader's **inventory** must hold a class-11
+        // subtype-20 «Шар магического прыжка»; without one the click does
+        // nothing at all.
+        let Some(orb) = self
+            .player
+            .inventory
+            .iter()
+            .copied()
+            .find(|&id| id != 0 && self.world.res.item_class_subtype(id) == Some(TRAVEL_ORB))
+        else {
+            return true;
+        };
+        // `FUN_00421AD0`: consume the orb *before* the record scan, so an
+        // unmatched click still spends it (original behaviour).
+        crate::inventory::remove_inventory_id(&mut self.player.inventory, orb);
+        // `FUN_0042260C` shifts the compiler's `run*0x100|0x103` by 8, i.e. it
+        // compares the transition `dst (+0x04)` with **`run + 1`** (the 1-based
+        // location id). The run table itself is 0-based.
+        let edge = self.edges.iter().find(|e| e.to == loc as u32 + 1).cloned();
         if let Some(e) = edge {
             let [ax, ay] = e.arrival();
             let from = self.current_map;

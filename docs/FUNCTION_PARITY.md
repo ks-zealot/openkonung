@@ -2189,3 +2189,120 @@ and fixes:
 After the fixes the live diff is 0 except the dynamic paper-doll pose/cursor:
 New Hero portraits/title/description 0; character-sheet stats/party/AUTO/
 free-XP 0, status text 4 px.
+
+---
+
+## 21. Wave E1 - selection rings, draw order, ambient audit (2026-11-22)
+
+Live oracle: `konung.res` started directly from a complete install (the CD
+launcher's registry check is bypassed), Esc skipped the intro, `new-game --hero
+0 --class warrior` -> Dragomir at loc 4 cell (72,34), matching the remake's boot.
+Screenshots at phases 0/6000/12000/18000 x shadows/day-night/light-effects
+(`tools/oracle_capture.py`, `tools/oracle_frames.mjs`, `tools/oracle_diff.py`).
+
+**Selection rings (`0x42532C`).** The pass loops `0x81A814` and draws 56x32
+INTR ellipses at `viewport + Entity+0xE8/+0xF0 - (0x1D,0x10)`, base palette,
+with the exact 8-case walk bob. Health tiers from `Entity+0x5C`:
+`< 401` INTR[172] red `(238,41,24)`, `< 801` INTR[126] yellow `(246,230,41)`,
+else 178 green `(0,255,0)`; the earlier "cyan/blue" note was a BGR read. Ported
+in `app/world_draw.rs` (+ `IntrRole::SelectionRing`), checked by
+`app::tests::selection` and `tools/ring_smoke.mjs` (tiers, position, deselect,
+unshaded at night).
+
+**Draw order (`0x42532C` / `0x42863C` / `0x426384`).** Rings and ground markers
+are drawn after the terrain and **before** the `0x426384` shadow darken, under
+the depth-sorted props/actors; markers are ambient-shaded unless the torch is
+out. The remake previously drew markers after the lighting pass, over the
+actors and unshaded. Reordered to `background -> ambient/light -> rings ->
+markers -> shadow darken -> sprites -> projectiles`. The old ledger text calling
+this "markers after entities" was wrong.
+
+**Ambient audit (`0x428FE0`).** The threshold table is read as dwords shifted
+right by 16, so the comparison at `0x45AE0E+2k` uses entry `k+1`; every branch
+body was re-derived and verified live against `0x5076BC`. Two real bugs:
+the `[16200,18900)` branch used a runaway positive ramp (neon-green frames) and
+the `0x81D608`-gated plates were collapsed; `light_effects` wrongly gated the
+ambient itself. Now: exact branch port (`lighting.rs`), ambient always applied
+when `day_night != 0`, masks only in the night window `8100..18900` **and** with
+`light_effects`, and mask bytes scaled 0..255 -> 0..31 (the previous raw pass
+saturated most lit tiles to near-white). `lighting_smoke.mjs` now asserts all
+four properties.
+
+**Findings from the first pass (both fixed below).** (1) `0x428C94` camera
+target: the original centres the sprite screen anchor `Entity+0xE4/+0xEC`, the
+remake centred the ground projection. (2) `0x428E98` strip visibility: the
+original draws the inventory strip only after a party cell activates
+`_DAT_0081D600`; the remake always showed the leader's. The first-pass
+`(-8,-78)` measurement came from screenshots taken while the camera was moved,
+so it was not treated as evidence (the code below is).
+
+**Camera port (code evidence, 2026-11-22).** The world loop
+(`0x424AF2`, also `0x4366B8`/`0x437FE3`) pushes `[leader+0xEC]`/`[leader+0xE4]`
+into `FUN_00428C94` every frame; `FUN_00428C94` assigns
+`camera = target - (400,300)` (no easing) and clamps to the per-map terrain
+extents (`0x43B045`..`0x43B11B`; loc 4 = 3944/1984, matching live
+`0x81D73C`/`0x81D758`). The target uses the **body** anchor record
+(`block+0x2F28`), not the composed sprite origin. Ported exactly with
+`Res::human_body_anchor`, `Location::camera_bounds` and a per-frame snap. The
+screenshot-derived `(-8,-78)` was discarded (the earlier camera was moved during
+capture); the fresh oracle run measures a **0 px ring shift** and 97.6% exact
+pixels at neutral phase with shadows off.
+
+**Inventory strip (`_DAT_0081D600`, fixed 2026-11-22).** `FUN_00428E98` returns
+early without an owner; `0x422D4E` toggles the clicked member's strip;
+`0x424376` shows the edited member after the character screen closes;
+New Game/load starts hidden. `PlayableApp.inventory_strip_visible` implements the
+state, the HUD skips the strip sprites, and the hidden row behaves as world for
+hover/clicks/scroll/drag. `tools/strip_smoke.mjs`.
+
+**Ambient palette fade (fixed 2026-11-22).** The ambient delta is **not** an
+additive 8-bit shift. `FUN_004392B4` builds per-field ramps with
+`f = i * 0.01` accumulated in single precision, and the palette builder
+`0x43E3E4` maps each source field through them: `d < 0` ->
+`trunc(v * (1 - f))`; `d > 0` -> `v + trunc((max - v) * f)`, with truncation
+toward zero (`FUN_0043EAAE` sets the FPU RC bits). Red/blue are 5-bit, green is
+the 6-bit 565 field. `lighting.rs::shade_rgb` implements this and replaces the
+old `shade_channel`; the background pass and `blit_shaded` use it. The f32
+accumulation matters (e.g. `10 * (1 - f(20))` truncates to 7, not 8). Cases
+measured live are asserted in `lighting::tests::shade_rgb_matches_the_original_palette_fade`.
+
+**Night-mask re-light (fixed 2026-11-22).** `FUN_0042532C` enters the
+`LIGHTS.N` pass only when `_DAT_0082D168 != 0` **and** `light_effects
+(0x81D604) != 0` (`0x425354..0x425364`); it walks the visible cells, reads the
+low map (`0x650318 + row*0x50 + col`) and two high-map bytes per cell
+(`0x617FD8 + row*0xA0 + 2*col`), and draws each non-zero cell's 114x64
+`LIGHTS.RES` tile (`0x5A1010 + (id-1)*0x1C80`) through `FUN_0043CC49`. That
+blitter does **not** mix toward a warm colour: it rebuilds red/green from the
+terrain palette entry by first brightening with the flicker map
+(`FUN_0043E7FA(0x82D16C, 0x82D170)` fills `0x479C0C`/`0x4801D0` with
+`level + trunc((max-level)*f)`, `max` 63 red / 31 green) and then applying the
+**negative** ambient ramp whose index is `|delta| - L`
+(`0x479C8C[L] = 0x479D0C + |delta+L|*0x80`, `0x480250[L]` likewise; identity once
+`L >= |delta|`), so a lit cell is *less dark* by `L` ramp steps. Blue keeps the
+plain ambient ramp `0x5076B8` with no flicker and no `L`. The flicker words are
+`0x82D16C = rand()%4+8` / `0x82D170 = rand()%8+0x10`, halved on the default
+`0x81D580` path. `lighting::shade_lit` + `lighting::Flicker` port this and
+replace the warm-white `light_pixel` mix (now `lighting::torch_pixel`, used only
+by the 64x43 torch mask).
+
+**Remaining night-mask residual.** With the ambient and the mask both ported the
+oracle pairs are **96.2-97.8% exact in every config at frame 0 and 6000**, and
+96.3%/96.7% for `12000`/`18000` with `light_effects=0`. The mask-on pairs move
+from 81.8%/83.4% to **84.6%/84.5%** exact (95.6%/96.3% within 2 levels) and the
+lit-cell deltas now match measured values (phase 12000 turns `(16,24,0)` into
+`(33,36,0)` at `L = 31`). What is left is not a modelling gap: the pass applies
+`rand()`-driven flicker to every lit pixel every frame, so lit terrain cannot
+match a screenshot pixel-for-pixel, and each oracle config is a separate live
+capture with its own actor positions. The per-toggle effect sizes still agree
+(mask-on `changed` ~11-14% in both, mask-off 6.1% vs 5.4%).
+
+**Verification.** `cargo test` 637; wasm + manifest rebuilt; smoke, shadow,
+lighting, ring, strip, feedback, map, save, combat, mob-AI, ranged, trade all
+pass; `parity_index.py --check` OK (the `0x43CC49` row is now `PARITY`). The
+oracle pair is a **0 px ring shift** and 97.6% exact at frame 0 with shadows off
+(97.2% with shadows); after the palette-fade and mask ports the shaded phases
+are 96.2-97.3% exact with `light_effects` off (`12000-nolight` 96.3%,
+`18000-nolight` 96.7%) and 84.5-84.6% with the mask on (`12000-all`, `18000-all`;
+95.6%/96.3% within 2 levels), the residue being the per-frame random fire
+flicker plus live-capture actor motion. The per-toggle effect sizes still agree
+(frame 12000 `day_night=0` 73.3% vs ~80%; `light_effects=0` 6.1% vs 5.4%).
